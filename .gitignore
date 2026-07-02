@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+coverage/
+.env
+.env.*
+*.log
+.tmp-acct-*/
+.tmp-e2e-*/
+.cursor/
+.agents/
+*.mdc
