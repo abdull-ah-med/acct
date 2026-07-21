@@ -1,0 +1,56 @@
+import { describe, expect, it } from "vitest";
+import {
+  parseCredentialInput,
+  formatCredentialOutput,
+  isSafeHost,
+  hostAllowed,
+} from "../../src/credential/protocol.js";
+
+describe("credential protocol (git-scm.com/docs/git-credential)", () => {
+  it("parses key=value lines terminated by blank line", () => {
+    const attrs = parseCredentialInput(
+      "protocol=https\nhost=github.com\npath=org/repo.git\n\nignored=after\n",
+    );
+    expect(attrs.protocol).toBe("https");
+    expect(attrs.host).toBe("github.com");
+    expect(attrs.path).toBe("org/repo.git");
+    expect(attrs.ignored).toBeUndefined();
+  });
+
+  it("formats output with trailing blank line", () => {
+    const out = formatCredentialOutput({
+      username: "alice",
+      password: "gho_TEST_ONLY_secret",
+    });
+    expect(out).toBe(
+      "username=alice\npassword=gho_TEST_ONLY_secret\n\n",
+    );
+  });
+
+  it("formats quit=true fail-closed response", () => {
+    expect(formatCredentialOutput({ quit: "1" })).toBe("quit=1\n\n");
+  });
+
+  it("rejects empty or malicious hosts", () => {
+    expect(isSafeHost(undefined)).toBe(false);
+    expect(isSafeHost("")).toBe(false);
+    expect(isSafeHost("github.com")).toBe(true);
+    expect(isSafeHost("github.com\nhost=evil")).toBe(false);
+    expect(isSafeHost("github.com%0Ahost=evil")).toBe(false);
+  });
+
+  it("matches hosts ignoring port when needed", () => {
+    expect(hostAllowed("github.com", "github.com")).toBe(true);
+    expect(hostAllowed("github.com:443", "github.com")).toBe(true);
+    expect(hostAllowed("evil.com", "github.com")).toBe(false);
+  });
+
+  it("parses url attribute into parts", () => {
+    const attrs = parseCredentialInput(
+      "url=https://alice@github.com/org/repo.git\n\n",
+    );
+    expect(attrs.protocol).toBe("https");
+    expect(attrs.host).toBe("github.com");
+    expect(attrs.username).toBe("alice");
+  });
+});
