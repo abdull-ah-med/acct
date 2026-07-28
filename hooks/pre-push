@@ -1,0 +1,3 @@
+#!/bin/sh
+# acct managed pre-push
+acct hook-run pre-push || exit $?
