@@ -1,0 +1,3 @@
+#!/bin/sh
+# acct managed pre-commit — installed copy uses `acct hook-run`
+acct hook-run pre-commit || exit $?
