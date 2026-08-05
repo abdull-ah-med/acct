@@ -1,19 +1,37 @@
 {
   "name": "acct",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Directory-scoped GitHub identity and auth — one account, one identity, one directory tree",
   "type": "module",
+  "main": "./dist/cli/index.js",
+  "types": "./dist/cli/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js"
+    }
+  },
   "bin": {
     "acct": "./bin/acct.js",
     "git-credential-acct": "./bin/git-credential-acct.js"
   },
+  "files": [
+    "bin",
+    "dist",
+    "hooks",
+    "shell",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
     "test": "vitest run",
+    "test:e2e": "npm run build && node scripts/e2e-extensive.mjs",
     "test:watch": "vitest",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test:e2e": "npm run build && node scripts/e2e-extensive.mjs"
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm run lint && npm run build && npm test"
   },
   "engines": {
     "node": ">=20"
@@ -27,6 +45,18 @@
     "identity"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "homepage": "https://github.com/acct-sh/acct#readme",
+  "bugs": {
+    "url": "https://github.com/acct-sh/acct/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/acct-sh/acct.git"
+  },
   "dependencies": {
     "@napi-rs/keyring": "^1.1.2",
     "commander": "^12.1.0",
