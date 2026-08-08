@@ -1,6 +1,6 @@
 {
   "name": "acct-sh",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Directory-scoped GitHub identity and auth — one account, one identity, one directory tree",
   "type": "module",
   "main": "./dist/cli/index.js",
