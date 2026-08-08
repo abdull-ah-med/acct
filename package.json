@@ -23,7 +23,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "logo.svg"
+    "logo.svg",
+    "website.jpg"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -51,7 +52,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://github.com/abdull-ah-med/acct#readme",
+  "homepage": "https://acct-web.vercel.app/",
   "bugs": {
     "url": "https://github.com/abdull-ah-med/acct/issues"
   },
