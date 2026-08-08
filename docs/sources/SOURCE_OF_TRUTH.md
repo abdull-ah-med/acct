@@ -6,11 +6,13 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| gitcredentials | https://git-scm.com/docs/gitcredentials | 2026-08-08 |
-| git-credential protocol | https://git-scm.com/docs/git-credential | 2026-08-08 |
+| gitcredentials | https://git-scm.com/docs/gitcredentials | 2026-08-08 (re-fetched for E2E security fix) |
+| git-credential protocol | https://git-scm.com/docs/git-credential | 2026-08-08 (re-fetched for E2E security fix) |
 | api-credentials (helpers) | https://git-scm.com/docs/api-credentials | 2026-08-08 |
 | GCM multiple users | https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/multiple-users.md | 2026-08-08 |
 | GCM credstores | https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/credstores.md | 2026-08-08 |
+| Empty helper reset (git.git) | https://github.com/git/git/commit/24321375cda79f141be72d1a842e930df6f41725 | 2026-08-08 |
+| GH_TOKEN vs git HTTPS (cli#2771) | https://github.com/cli/cli/issues/2771 | 2026-08-08 |
 
 ## Git config / identity / includeIf
 
