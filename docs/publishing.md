@@ -1,8 +1,13 @@
 # Publishing
 
-`acct-sh` is published to npm as a public SemVer package (CLI bins remain `acct` and `git-credential-acct`). Releases are cut from git tags.
+`acct-sh` is published to:
 
-Auth is **npm Trusted Publishing (OIDC)** from GitHub Actions — not a long-lived `NPM_TOKEN`. Classic write tokens were revoked by npm (2025-12-09).
+- **npmjs.org** as `acct-sh` (primary install path)
+- **GitHub Packages** as `@acct-sh/acct-sh` (scoped; GitHub requires `@owner/...`)
+
+CLI bins remain `acct` and `git-credential-acct` on both. Releases are cut from git tags.
+
+Auth for npmjs is **Trusted Publishing (OIDC)**. Auth for GitHub Packages is `GITHUB_TOKEN` (`packages: write`). Classic npm write tokens were revoked by npm (2025-12-09).
 
 ## Versioning
 
@@ -51,10 +56,13 @@ git push origin main --tags
 5. The [Release](../.github/workflows/release.yml) workflow:
    - Runs lint, tests, build, and `pack:check`
    - Verifies the tag matches `package.json`
-   - Publishes via OIDC (`id-token: write`); provenance is automatic
+   - Publishes to npmjs.org via OIDC (`id-token: write`); provenance is automatic
+   - Publishes to GitHub Packages as `@acct-sh/acct-sh` (`packages: write`)
    - Creates a GitHub Release for the tag
 
-To cut a GitHub Release for an existing tag (e.g. after a local first publish), run **Actions → Release → Run workflow** and set `tag` to `v0.1.0`.
+To publish GitHub Packages / cut a Release for an existing tag (e.g. after a local first npmjs publish), run **Actions → Release → Run workflow** and set `tag` to `v0.1.0`.
+
+After the first GitHub Packages publish, open the package → **Package settings** → set visibility to **Public** if it is still private (GitHub defaults new packages to private).
 
 ## Local dry run
 
