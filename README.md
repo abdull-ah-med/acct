@@ -17,6 +17,8 @@ pnpm add -g acct-sh
 npx acct-sh status
 ```
 
+Also published to [GitHub Packages](https://github.com/abdull-ah-med/acct/pkgs/npm/acct-sh) as `@abdull-ah-med/acct-sh` (same bins).
+
 ## Quick start
 
 ```bash

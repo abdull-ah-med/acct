@@ -14,10 +14,11 @@ on:
 permissions:
   contents: write
   id-token: write
+  packages: write
 
 jobs:
   publish:
-    name: Publish to npm + GitHub Release
+    name: Publish to npm + GitHub Packages
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -60,16 +61,41 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm (skip if version already exists)
+      - name: Publish to npmjs.org (skip if version already exists)
         run: |
           set -euo pipefail
           version="${{ steps.tag.outputs.version }}"
           if npm view "acct-sh@$version" version >/dev/null 2>&1; then
-            echo "acct-sh@$version already on npm — skipping publish"
+            echo "acct-sh@$version already on npmjs.org — skipping"
           else
             # Auth via npm Trusted Publishing (OIDC). Do not set NODE_AUTH_TOKEN.
             npm publish --access public
           fi
+
+      # GitHub Packages requires a scope matching the repo owner.
+      # Keep npmjs name as acct-sh; publish a scoped twin here.
+      - name: Publish to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.tag.outputs.version }}"
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          scoped="@${owner}/acct-sh"
+
+          {
+            echo "@${owner}:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+          } >> .npmrc
+
+          if npm view "${scoped}@${version}" --registry=https://npm.pkg.github.com version >/dev/null 2>&1; then
+            echo "${scoped}@${version} already on GitHub Packages — skipping"
+            exit 0
+          fi
+
+          npm pkg set "name=${scoped}"
+          # Already built + tested above; avoid re-running prepublishOnly
+          npm publish --registry=https://npm.pkg.github.com --access public --ignore-scripts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -78,8 +104,11 @@ jobs:
           name: ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
           body: |
-            **Install:** `npm install -g acct-sh`
+            **Install (npmjs):** `npm install -g acct-sh`
 
-            npm: https://www.npmjs.com/package/acct-sh
+            **Install (GitHub Packages):** `npm install -g @abdull-ah-med/acct-sh`
+
+            - npmjs: https://www.npmjs.com/package/acct-sh
+            - GitHub Packages: https://github.com/abdull-ah-med/acct/pkgs/npm/acct-sh
 
             CLI bins: `acct`, `git-credential-acct`
