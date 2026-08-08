@@ -87,12 +87,12 @@ Walk out → that identity is gone.
 
 ## Resolution order
 
-1. `ACCT_PROFILE` (explicit)
+1. CLI `--profile` (explicit; gh plane / status)
 2. Repo-local `.acct`
 3. Longest matching directory binding
 4. Unbound
 
-Local always beats global.
+Local always beats global. Ambient `ACCT_PROFILE` does **not** override git credential helper or hooks — directory wins.
 
 ## Commands
 
