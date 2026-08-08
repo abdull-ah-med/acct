@@ -36,9 +36,20 @@ export interface ResolveInput {
   gitToplevel?: string | null;
   localAcct?: LocalAcctFile | null;
   config: AcctConfig;
+  /**
+   * Explicit CLI `--profile` (process-local). Takes precedence over .acct / bindings.
+   * Ambient ACCT_PROFILE is ignored unless allowEnvProfile is true (tests / legacy only).
+   */
+  forcedProfileId?: string;
+  /**
+   * When true, honor ambient ACCT_PROFILE. Default false — security planes must not
+   * trust sticky env (I4). Shell hook already strips env before resolve.
+   */
+  allowEnvProfile?: boolean;
 }
 
 export type ResolveReason =
+  | "cli"
   | "env"
   | "local"
   | "binding"

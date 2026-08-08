@@ -13,8 +13,9 @@ const TOKEN_KEYS = [
  * Build env exports for the shell hook.
  *
  * Directory bindings / .acct win: sticky ACCT_PROFILE from a previous hook
- * export must not block rebinding on cd (T2/T5). Explicit one-off override
- * remains available via `ACCT_PROFILE=… acct exec …`.
+ * export must not block rebinding on cd (T2/T5 / I4). Credential helper and
+ * enforce hooks also ignore ambient ACCT_PROFILE. Explicit override for the
+ * gh plane: `acct exec --profile …` (git HTTPS still follows cwd).
  */
 export async function buildShellEnvExports(
   cwd: string = process.cwd(),
