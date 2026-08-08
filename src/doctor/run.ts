@@ -33,6 +33,8 @@ export function runDoctor(
   findings.push(...checkCredentialHelpers(env));
   findings.push(...checkManagedBlock(env));
   findings.push(...checkStaleGhToken(cwd, env, config));
+  findings.push(...checkAmbientProfile(cwd, env));
+  findings.push(...checkHooksAbsolute(env));
   findings.push(...checkSshKeys(config, env));
   findings.push(...checkBindings(config));
   findings.push(...checkSecretBackend(env));
@@ -108,11 +110,83 @@ function checkManagedBlock(env: NodeJS.ProcessEnv): DoctorFinding[] {
       },
     ];
   }
-  return [
+  const findings: DoctorFinding[] = [
     {
       severity: "ok",
       code: "installed",
       message: "acct managed includeIf block present",
+    },
+  ];
+  // Managed block must reset helpers then install acct (I8)
+  const begin = text.indexOf("# >>> acct managed begin >>>");
+  const end = text.indexOf("# <<< acct managed end <<<", begin);
+  const managed = begin >= 0 && end > begin ? text.slice(begin, end) : "";
+  if (!managed.includes('helper = ""') || !/helper = /.test(managed)) {
+    findings.push({
+      severity: "error",
+      code: "managed-helper-reset-missing",
+      message: "Managed gitconfig block lacks credential.helper reset + acct shim",
+      fix: "acct install",
+    });
+  }
+  return findings;
+}
+
+function checkAmbientProfile(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): DoctorFinding[] {
+  const ambient = env.ACCT_PROFILE?.trim();
+  if (!ambient) return [];
+  const resolved = resolveFromCwd(cwd, env, { allowEnvProfile: false });
+  if (resolved.profile && resolved.profile.id !== ambient) {
+    return [
+      {
+        severity: "warn",
+        code: "ambient-acct-profile-ignored",
+        message: `Ambient ACCT_PROFILE=${ambient} differs from cwd profile ${resolved.profile.id} — git auth follows cwd (I4)`,
+        fix: "Unset ACCT_PROFILE, or cd / use .acct / acct exec --profile for gh only",
+      },
+    ];
+  }
+  return [
+    {
+      severity: "ok",
+      code: "ambient-acct-profile",
+      message: "Ambient ACCT_PROFILE matches cwd resolution (still ignored by helper)",
+    },
+  ];
+}
+
+function checkHooksAbsolute(env: NodeJS.ProcessEnv): DoctorFinding[] {
+  const preCommit = path.join(hooksDir(env), "pre-commit");
+  if (!fs.existsSync(preCommit)) return [];
+  const body = fs.readFileSync(preCommit, "utf8");
+  if (/^acct /m.test(body) || /\nacct /m.test(body)) {
+    return [
+      {
+        severity: "error",
+        code: "hooks-bare-acct",
+        message: "Hooks call bare `acct` (PATH-dependent)",
+        fix: "acct install  # rewrites absolute node + acct.js paths (I11b)",
+      },
+    ];
+  }
+  if (!body.includes("hook-run")) {
+    return [
+      {
+        severity: "warn",
+        code: "hooks-unexpected",
+        message: "pre-commit hook does not look like acct-managed content",
+        fix: "acct install",
+      },
+    ];
+  }
+  return [
+    {
+      severity: "ok",
+      code: "hooks-absolute",
+      message: "Enforce hooks use absolute acct invocation",
     },
   ];
 }
@@ -122,7 +196,7 @@ function checkStaleGhToken(
   env: NodeJS.ProcessEnv,
   _config: AcctConfig,
 ): DoctorFinding[] {
-  const resolved = resolveFromCwd(cwd, env);
+  const resolved = resolveFromCwd(cwd, env, { allowEnvProfile: false });
   if (!resolved.profile) return [];
   if (env.GH_TOKEN || env.GITHUB_TOKEN) {
     return [
@@ -145,14 +219,15 @@ function checkSshKeys(
   const findings: DoctorFinding[] = [];
   const acctSshDir = path.join(acctConfigDir(env), "ssh");
   for (const p of config.profiles) {
-    if (p.protocol !== "ssh") continue;
     if (!p.sshKeyPath) {
-      findings.push({
-        severity: "error",
-        code: "ssh-missing-key",
-        message: `Profile ${p.id} is ssh but has no sshKeyPath`,
-        fix: `acct profile ssh-key ${p.id} --generate`,
-      });
+      if (p.protocol === "ssh") {
+        findings.push({
+          severity: "error",
+          code: "ssh-missing-key",
+          message: `Profile ${p.id} is ssh but has no sshKeyPath`,
+          fix: `acct profile ssh-key ${p.id} --generate`,
+        });
+      }
       continue;
     }
     if (!fs.existsSync(p.sshKeyPath)) {

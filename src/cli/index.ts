@@ -69,7 +69,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .description(
       "Directory-scoped GitHub identity and auth — one account, one identity, one directory",
     )
-    .version("0.1.0");
+    .version("0.1.2");
 
   program
     .command("init")
@@ -215,6 +215,10 @@ export async function runCli(argv: string[]): Promise<void> {
     .argument("<id>")
     .option("--generate", "Generate ed25519 key")
     .option("--path <path>", "Attach existing private key")
+    .option(
+      "--protocol <protocol>",
+      "Set preferred protocol https|ssh (default: leave unchanged; generate defaults to ssh)",
+    )
     .action((id, opts) => {
       let config = loadConfig();
       const p = getProfile(config, id);
@@ -222,18 +226,29 @@ export async function runCli(argv: string[]): Promise<void> {
       if (opts.generate) {
         const { privateKey, publicKey } = generateSshKey(p);
         p.sshKeyPath = privateKey;
-        p.protocol = "ssh";
+        // Dual plane: keep HTTPS helper unless user forces --protocol ssh
+        if (opts.protocol === "https" || opts.protocol === "ssh") {
+          p.protocol = opts.protocol as Protocol;
+        } else {
+          p.protocol = "ssh";
+        }
         config = upsertProfile(config, p);
         saveConfig(config);
         writeProfileInclude(p);
         console.log(`Generated ${privateKey}`);
         console.log(`Public key:\n${readPublicKey(privateKey)}`);
         console.log(`(also at ${publicKey})`);
+        console.log(
+          "Note: HTTPS credential helper remains installed (I8b). Use --protocol to prefer clone style.",
+        );
         return;
       }
       if (opts.path) {
         p.sshKeyPath = path.resolve(opts.path);
-        p.protocol = "ssh";
+        // Do not drop HTTPS isolation — only change protocol if explicitly requested
+        if (opts.protocol === "https" || opts.protocol === "ssh") {
+          p.protocol = opts.protocol as Protocol;
+        }
         config = upsertProfile(config, p);
         saveConfig(config);
         writeProfileInclude(p);
@@ -277,8 +292,26 @@ export async function runCli(argv: string[]): Promise<void> {
   program
     .command("status")
     .description("Show profile resolution for cwd")
-    .action(async () => {
-      const resolved = resolveFromCwd();
+    .option(
+      "--profile <id>",
+      "Explicit profile for display / gh principal (does not rebind git helper)",
+    )
+    .action(async (opts) => {
+      const resolved = resolveFromCwd(process.cwd(), process.env, {
+        forcedProfileId: opts.profile,
+        allowEnvProfile: false,
+      });
+      const ambient = process.env.ACCT_PROFILE?.trim();
+      if (ambient && !opts.profile) {
+        const cwdOnly = resolveFromCwd(process.cwd(), process.env, {
+          allowEnvProfile: false,
+        });
+        if (cwdOnly.profile && ambient !== cwdOnly.profile.id) {
+          console.log(
+            `warning: ambient ACCT_PROFILE=${ambient} is ignored for git auth (cwd resolves to ${cwdOnly.profile.id}). Use --profile or .acct / cd.`,
+          );
+        }
+      }
       console.log(`cwd: ${process.cwd()}`);
       console.log(`reason: ${resolved.reason}`);
       console.log(`enforce: ${resolved.enforce}`);
@@ -305,8 +338,12 @@ export async function runCli(argv: string[]): Promise<void> {
   program
     .command("whoami")
     .description("Short expected vs actual")
-    .action(async () => {
-      const resolved = resolveFromCwd();
+    .option("--profile <id>", "Explicit profile (gh plane)")
+    .action(async (opts) => {
+      const resolved = resolveFromCwd(process.cwd(), process.env, {
+        forcedProfileId: opts.profile,
+        allowEnvProfile: false,
+      });
       if (!resolved.profile) {
         console.log("unbound");
         return;
@@ -332,19 +369,34 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("exec")
-    .description("Run a command with profile env (no gh auth switch)")
+    .description(
+      "Run a command with profile GH_TOKEN (no gh auth switch). Git HTTPS still follows cwd/.acct.",
+    )
     .allowUnknownOption(true)
+    .option(
+      "--profile <id>",
+      "Inject this profile's token for gh (does not rebind git credential helper)",
+    )
     .argument("<command...>")
-    .action(async (command: string[]) => {
+    .action(async (command: string[], opts) => {
       if (isDangerousGhArgv(command)) {
         throw new Error(
           `Refusing to run "${command.join(" ")}" under acct exec — it mutates global gh/git state. Use acct profile flows instead.`,
         );
       }
-      const resolved = resolveFromCwd();
+      // GH plane: optional --profile. Git helper ignores ambient ACCT_PROFILE (I4).
+      const resolved = resolveFromCwd(process.cwd(), process.env, {
+        forcedProfileId: opts.profile,
+        allowEnvProfile: false,
+      });
       const env = resolved.profile
         ? await envForProfile(resolved.profile)
         : { ...process.env };
+      if (command[0] === "git" && opts.profile) {
+        console.error(
+          "acct note: --profile affects GH_TOKEN only; git HTTPS credentials follow directory/.acct (https://github.com/cli/cli/issues/2771).",
+        );
+      }
       const code = await new Promise<number>((resolve) => {
         const child = spawn(command[0]!, command.slice(1), {
           stdio: "inherit",
@@ -360,10 +412,15 @@ export async function runCli(argv: string[]): Promise<void> {
     .command("clone")
     .argument("<url>")
     .argument("[dir]")
-    .option("--profile <id>", "Force profile")
+    .option(
+      "--profile <id>",
+      "Inject profile GH_TOKEN for helpers that honor it; git still uses cwd binding",
+    )
     .action(async (url, dir, opts) => {
-      if (opts.profile) process.env.ACCT_PROFILE = opts.profile;
-      const resolved = resolveFromCwd();
+      const resolved = resolveFromCwd(process.cwd(), process.env, {
+        forcedProfileId: opts.profile,
+        allowEnvProfile: false,
+      });
       const env = resolved.profile
         ? await envForProfile(resolved.profile)
         : process.env;
