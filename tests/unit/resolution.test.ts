@@ -61,7 +61,7 @@ describe("resolution (invariants I1–I5)", () => {
     expect(r.reason).toBe("local");
   });
 
-  it("I4 ACCT_PROFILE overrides local and binding", () => {
+  it("I4 ambient ACCT_PROFILE is ignored by default (directory wins)", () => {
     const r = resolveProfile({
       cwd: "/Users/x/Work/repo",
       gitToplevel: "/Users/x/Work/repo",
@@ -69,11 +69,36 @@ describe("resolution (invariants I1–I5)", () => {
       env: { ACCT_PROFILE: "work" },
       config: base,
     });
+    expect(r.profile?.id).toBe("personal");
+    expect(r.reason).toBe("local");
+  });
+
+  it("I4 CLI forcedProfileId selects profile", () => {
+    const r = resolveProfile({
+      cwd: "/Users/x/Work/repo",
+      gitToplevel: "/Users/x/Work/repo",
+      localAcct: { profile: "personal" },
+      forcedProfileId: "work",
+      config: base,
+    });
+    expect(r.profile?.id).toBe("work");
+    expect(r.reason).toBe("cli");
+  });
+
+  it("I4 allowEnvProfile=true honors ambient (legacy/test only)", () => {
+    const r = resolveProfile({
+      cwd: "/Users/x/Work/repo",
+      gitToplevel: "/Users/x/Work/repo",
+      localAcct: { profile: "personal" },
+      env: { ACCT_PROFILE: "work" },
+      allowEnvProfile: true,
+      config: base,
+    });
     expect(r.profile?.id).toBe("work");
     expect(r.reason).toBe("env");
   });
 
-  it("I5 unbound returns null profile", () => {
+  it("I5 unbound returns null profile with defaultEnforce", () => {
     const r = resolveProfile({
       cwd: "/tmp/elsewhere",
       gitToplevel: "/tmp/elsewhere",
@@ -81,6 +106,14 @@ describe("resolution (invariants I1–I5)", () => {
     });
     expect(r.profile).toBeNull();
     expect(r.reason).toBe("unbound");
+    expect(r.enforce).toBe("strict");
+  });
+
+  it("unbound uses config.defaultEnforce=off when configured", () => {
+    const r = resolveProfile({
+      cwd: "/tmp/elsewhere",
+      config: { ...base, defaultEnforce: "off" },
+    });
     expect(r.enforce).toBe("off");
   });
 
@@ -91,7 +124,6 @@ describe("resolution (invariants I1–I5)", () => {
     };
     const r = resolveProfile({
       cwd: "/Users/x/Work/.tmp-bound/nested",
-      // Parent monorepo / test harness git root — must not hide the binding
       gitToplevel: "/Users/x/Work",
       config,
     });

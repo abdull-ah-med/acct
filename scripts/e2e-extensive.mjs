@@ -238,11 +238,20 @@ async function main() {
       ok("local .acct overrides binding");
     else fail("local .acct", r.stdout);
 
-    // ACCT_PROFILE env wins
+    // ACCT_PROFILE ambient must NOT override (I4) — warning may appear
     r = acct(["status"], { ...env, ACCT_PROFILE: ABDULL.id }, aqsaRoot);
-    if (r.stdout.includes("abdull-ah-med") && r.stdout.includes("reason: env"))
-      ok("ACCT_PROFILE overrides binding");
-    else fail("ACCT_PROFILE", r.stdout);
+    if (
+      r.stdout.includes("aqsa-05") &&
+      !r.stdout.includes("reason: env") &&
+      (r.stdout.includes("ignored") || r.stdout.includes("aqsa"))
+    )
+      ok("ambient ACCT_PROFILE does not override binding (I4)");
+    else fail("ACCT_PROFILE ignored", r.stdout);
+
+    r = acct(["status", "--profile", ABDULL.id], env, aqsaRoot);
+    if (r.stdout.includes("abdull-ah-med") && r.stdout.includes("reason: cli"))
+      ok("CLI --profile selects profile for status");
+    else fail("CLI --profile", r.stdout);
   }
 
   // ---------- identity includeIf ----------
@@ -343,11 +352,14 @@ async function main() {
     if (r.status === 0) ok("malicious host input does not crash");
     else fail("malicious host crash", r.stderr);
 
-    // Unbound strict: default unbound enforce is off — should not return profile token
+    // Unbound strict: defaultEnforce is strict → quit=1, no password
     r = helper("get", getBody, unboundRoot);
-    if (!r.stdout.includes("password="))
-      ok("unbound dir returns no password");
-    else fail("unbound leak", r.stdout);
+    if (
+      !r.stdout.includes("password=") &&
+      r.stdout.includes("quit=1")
+    )
+      ok("unbound strict → quit=1 fail-closed");
+    else fail("unbound leak", JSON.stringify(r.stdout));
 
     // erase
     r = helper(
