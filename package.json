@@ -22,7 +22,8 @@
     "shell",
     "LICENSE",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "logo.svg"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
