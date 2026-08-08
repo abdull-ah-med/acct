@@ -42,6 +42,10 @@ describe("enforce hooks (I11b)", () => {
     const { node, acctJs } = resolveAcctCliPaths();
     expect(body).toContain(node);
     expect(body).toContain(acctJs);
-    expect(fs.statSync(path.join(dir, "pre-commit")).mode & 0o111).toBeTruthy();
+    if (process.platform === "win32") {
+      expect(fs.existsSync(path.join(dir, "pre-commit.cmd"))).toBe(true);
+    } else {
+      expect(fs.statSync(path.join(dir, "pre-commit")).mode & 0o111).toBeTruthy();
+    }
   });
 });
