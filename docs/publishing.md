@@ -20,6 +20,7 @@ npm requires the package to exist before you can attach a Trusted Publisher.
 ```bash
 npm login
 npm run lint && npm test && npm run build
+# Do not pass --provenance locally; it only works in CI (OIDC).
 npm publish --access public
 ```
 
