@@ -20,6 +20,8 @@ async function readStdin(): Promise<string> {
 /**
  * git-credential-acct entrypoint.
  * On strict failure: emit quit=true with no password (fail closed).
+ * Ambient ACCT_PROFILE is ignored — directory / .acct win (I4).
+ * Cite: https://git-scm.com/docs/gitcredentials (quit=true; helper="")
  */
 export async function runCredentialHelper(argv: string[]): Promise<void> {
   const op = argv[0];
@@ -39,7 +41,8 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
   // Do not prefer $PWD — it can disagree with the process cwd after chdir.
   const cwd = process.cwd();
 
-  const resolved = resolveFromCwd(cwd, process.env);
+  // I4: never allowEnvProfile for the credential helper
+  const resolved = resolveFromCwd(cwd, process.env, { allowEnvProfile: false });
   const profile = resolved.profile;
   const enforce = resolved.enforce;
 
@@ -53,6 +56,7 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
     }
 
     if (!profile) {
+      // I6: unbound + strict → quit so osxkeychain/gh cannot answer
       if (enforce === "strict") {
         output.write(formatCredentialOutput({ quit: "1" }));
       }

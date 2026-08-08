@@ -17,6 +17,11 @@ export function profileIncPath(
   return path.join(gitIncDir(env), `${profile.id}.inc`);
 }
 
+/**
+ * Always emit HTTPS helper reset + acct helper (I8 / I8b) so SSH key attach
+ * cannot drop HTTPS isolation. Additionally emit sshCommand when sshKeyPath set.
+ * Cite: https://git-scm.com/docs/gitcredentials (helper=""); ssh_config IdentitiesOnly
+ */
 export function renderProfileInclude(
   profile: Profile,
   helperCommand: string,
@@ -27,23 +32,18 @@ export function renderProfileInclude(
     "[user]",
     `\tname = ${profile.name}`,
     `\temail = ${profile.email}`,
+    // I8b: always clear competing helpers for this gitdir, then install acct
+    "[credential]",
+    '\thelper = ""',
+    `\thelper = ${helperValue}`,
+    "[credential \"https://" + profile.host + "\"]",
+    "\tuseHttpPath = false",
+    `\tusername = ${profile.githubUser}`,
   ];
 
-  if (profile.protocol === "https") {
-    lines.push(
-      "[credential]",
-      '\thelper = ""',
-      `\thelper = ${helperValue}`,
-      "[credential \"https://" + profile.host + "\"]",
-      "\tuseHttpPath = false",
-      `\tusername = ${profile.githubUser}`,
-    );
-  }
-
-  if (profile.protocol === "ssh" && profile.sshKeyPath) {
+  if (profile.sshKeyPath) {
     const key = profile.sshKeyPath.replace(/\\/g, "/");
     const host = assertSafeSshHost(profile.host);
-    // IdentitiesOnly=yes — https://man.openbsd.org/ssh_config.5
     lines.push(
       "[core]",
       `\tsshCommand = ssh -i ${shellQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`,
@@ -81,10 +81,6 @@ export function writeProfileInclude(
 }
 
 function resolveHelperConfigValue(env: NodeJS.ProcessEnv): string {
-  // Always install a shim under ACCT_CONFIG_DIR/bin (paths without spaces are
-  // reliable). Git appends the operation and runs via the shell; spaces in the
-  // project path ("untitled folder 3") break unquoted absolute helpers.
-  // Spec: https://git-scm.com/docs/gitcredentials
   return ensureCredentialShim(env);
 }
 
@@ -132,6 +128,12 @@ exec node ${shellQuote(target)} "$@"
   return shim.replace(/\\/g, "/");
 }
 
+/**
+ * Managed block: global helper reset + acct shim, then per-binding includeIf.
+ * Global reset ensures unbound/strict quit cannot be bypassed by osxkeychain
+ * that was configured outside includeIf.
+ * Cite: https://git-scm.com/docs/gitcredentials ; git.git commit 24321375
+ */
 export function buildIncludeIfBlock(
   config: AcctConfig,
   env: NodeJS.ProcessEnv = process.env,
@@ -139,7 +141,18 @@ export function buildIncludeIfBlock(
   const useInsensitive =
     process.platform === "win32" || process.platform === "darwin";
   const keyword = useInsensitive ? "gitdir/i" : "gitdir";
-  const lines: string[] = [BEGIN, "# Managed by acct — do not edit", ""];
+  const helper = quoteHelper(ensureCredentialShim(env));
+  const lines: string[] = [
+    BEGIN,
+    "# Managed by acct — do not edit",
+    "",
+    "# Global helper reset: empty string clears lower-priority helpers, then acct.",
+    "# https://git-scm.com/docs/gitcredentials",
+    "[credential]",
+    '\thelper = ""',
+    `\thelper = ${helper}`,
+    "",
+  ];
 
   for (const binding of config.bindings) {
     const profile = config.profiles.find((p) => p.id === binding.profileId);

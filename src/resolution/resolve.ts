@@ -12,32 +12,51 @@ function enforceFor(
 
 /**
  * Resolve which profile applies to a working directory.
- * Order: ACCT_PROFILE env → repo .acct → longest binding → unbound.
+ * Order: CLI --profile → repo .acct → longest binding → unbound.
+ * Ambient ACCT_PROFILE is ignored unless allowEnvProfile is set (I4).
+ * Cite: docs/invariants.md; shell/env.ts strips sticky env for the same reason.
  */
 export function resolveProfile(input: ResolveInput): ResolveResult {
   const env = input.env ?? process.env;
   // Bindings are directory-scoped: match against cwd, not git toplevel.
   // git toplevel is only for locating repo-local `.acct` (see resolveFromCwd).
-  // Using toplevel here breaks subfolder bindings inside a larger repo (and
-  // any cwd that lives under an unrelated parent git work tree).
   const cwd = normalizePath(input.cwd);
   const defaultEnforce = input.config.defaultEnforce;
 
-  const envName = env.ACCT_PROFILE?.trim();
-  if (envName) {
-    const profile = getProfile(input.config, envName);
+  const forced = input.forcedProfileId?.trim();
+  if (forced) {
+    const profile = getProfile(input.config, forced);
     if (!profile) {
       return {
         profile: null,
-        reason: "env",
+        reason: "cli",
         enforce: defaultEnforce,
       };
     }
     return {
       profile,
-      reason: "env",
+      reason: "cli",
       enforce: enforceFor(profile, undefined, defaultEnforce),
     };
+  }
+
+  if (input.allowEnvProfile) {
+    const envName = env.ACCT_PROFILE?.trim();
+    if (envName) {
+      const profile = getProfile(input.config, envName);
+      if (!profile) {
+        return {
+          profile: null,
+          reason: "env",
+          enforce: defaultEnforce,
+        };
+      }
+      return {
+        profile,
+        reason: "env",
+        enforce: enforceFor(profile, undefined, defaultEnforce),
+      };
+    }
   }
 
   if (input.localAcct?.profile) {
@@ -69,6 +88,7 @@ export function resolveProfile(input: ResolveInput): ResolveResult {
   return {
     profile: null,
     reason: "unbound",
-    enforce: "off",
+    // I6: unbound uses defaultEnforce (strict by default) so helper can quit=1
+    enforce: defaultEnforce,
   };
 }
