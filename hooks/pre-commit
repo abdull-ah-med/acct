@@ -1,3 +1,5 @@
 #!/bin/sh
-# acct managed pre-commit — installed copy uses `acct hook-run`
-acct hook-run pre-commit || exit $?
+# Packaged template only — `acct install` rewrites hooks with absolute
+# node + acct.js paths (I11b). Do not rely on this bare form.
+echo "acct: run \`acct install\` to generate absolute-path hooks" >&2
+exit 1
