@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import {
   renderProfileInclude,
   stripManagedBlock,
@@ -35,16 +37,29 @@ describe("identity includeIf", () => {
     expect(inc).toContain("username = work-user");
   });
 
-  it("renders IdentitiesOnly sshCommand for ssh profiles", () => {
+  it("renders IdentitiesOnly sshCommand and keeps HTTPS helper (I8b)", () => {
     const ssh: Profile = {
       ...profile,
       protocol: "ssh",
       sshKeyPath: "/tmp/id_work",
     };
     const inc = renderProfileInclude(ssh, "acct");
+    expect(inc).toContain('helper = ""');
+    expect(inc).toContain("helper = !'acct'");
     expect(inc).toContain("IdentitiesOnly=yes");
     expect(inc).toContain("-i /tmp/id_work");
     expect(inc).toContain("HostName=github.com");
+  });
+
+  it("https profile with sshKeyPath gets both planes", () => {
+    const dual: Profile = {
+      ...profile,
+      protocol: "https",
+      sshKeyPath: "/tmp/id_work",
+    };
+    const inc = renderProfileInclude(dual, "acct");
+    expect(inc).toContain('helper = ""');
+    expect(inc).toContain("IdentitiesOnly=yes");
   });
 
   it("quotes ssh key paths with spaces", () => {
@@ -75,19 +90,29 @@ describe("identity includeIf", () => {
     expect(next).toContain("st = status");
   });
 
-  it("builds includeIf for bindings", () => {
-    const config: AcctConfig = {
-      version: 1,
-      defaultEnforce: "strict",
-      profiles: [profile],
-      bindings: [{ path: "/Users/x/Work", profileId: "work" }],
-    };
-    const block = buildIncludeIfBlock(config, {
-      HOME: "/Users/x",
-      ACCT_CONFIG_DIR: "/Users/x/.config/acct",
-    });
-    expect(block).toContain("includeIf");
-    expect(block).toContain("/Users/x/Work/");
-    expect(block).toContain("work.inc");
+  it("builds includeIf for bindings with global helper reset", () => {
+    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+    try {
+      const config: AcctConfig = {
+        version: 1,
+        defaultEnforce: "strict",
+        profiles: [profile],
+        bindings: [{ path: "/Users/x/Work", profileId: "work" }],
+      };
+      const block = buildIncludeIfBlock(config, {
+        HOME: "/Users/x",
+        ACCT_CONFIG_DIR: tmp,
+      });
+      expect(block).toContain('helper = ""');
+      expect(block).toMatch(/helper = !'/);
+      const resetIdx = block.indexOf('helper = ""');
+      const includeIdx = block.indexOf("includeIf");
+      expect(resetIdx).toBeGreaterThanOrEqual(0);
+      expect(includeIdx).toBeGreaterThan(resetIdx);
+      expect(block).toContain("/Users/x/Work/");
+      expect(block).toContain("work.inc");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
