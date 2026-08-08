@@ -35,8 +35,8 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
-      - run: npm test
       - run: npm run build
+      - run: npm test
       - run: npm run pack:check
       - run: npm run test:security
         env:

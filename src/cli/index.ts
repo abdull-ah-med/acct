@@ -69,7 +69,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .description(
       "Directory-scoped GitHub identity and auth — one account, one identity, one directory",
     )
-    .version("0.1.2");
+    .version("0.1.3");
 
   program
     .command("init")

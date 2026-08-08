@@ -52,6 +52,20 @@ describe("credential helper security planes (I4/I6)", () => {
   };
 
   beforeEach(async () => {
+    // bin/git-credential-acct.js loads dist/ (gitignored) — ensure build exists
+    const built = fs.existsSync(
+      path.resolve("dist/credential/helper.js"),
+    );
+    if (!built) {
+      const b = spawnSync("npm", ["run", "build"], {
+        encoding: "utf8",
+        cwd: process.cwd(),
+      });
+      if (b.status !== 0) {
+        throw new Error(`npm run build failed: ${b.stderr || b.stdout}`);
+      }
+    }
+
     tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-helper-sec-"));
     workDir = path.join(tmp, "work");
     unboundDir = path.join(tmp, "unbound");
