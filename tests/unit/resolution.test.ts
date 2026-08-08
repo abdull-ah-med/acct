@@ -83,4 +83,19 @@ describe("resolution (invariants I1–I5)", () => {
     expect(r.reason).toBe("unbound");
     expect(r.enforce).toBe("off");
   });
+
+  it("binding matches cwd even when git toplevel is an ancestor outside the binding", () => {
+    const config: AcctConfig = {
+      ...base,
+      bindings: [{ path: "/Users/x/Work/.tmp-bound", profileId: "work" }],
+    };
+    const r = resolveProfile({
+      cwd: "/Users/x/Work/.tmp-bound/nested",
+      // Parent monorepo / test harness git root — must not hide the binding
+      gitToplevel: "/Users/x/Work",
+      config,
+    });
+    expect(r.profile?.id).toBe("work");
+    expect(r.reason).toBe("binding");
+  });
 });

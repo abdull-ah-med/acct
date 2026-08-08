@@ -16,7 +16,11 @@ function enforceFor(
  */
 export function resolveProfile(input: ResolveInput): ResolveResult {
   const env = input.env ?? process.env;
-  const searchRoot = normalizePath(input.gitToplevel || input.cwd);
+  // Bindings are directory-scoped: match against cwd, not git toplevel.
+  // git toplevel is only for locating repo-local `.acct` (see resolveFromCwd).
+  // Using toplevel here breaks subfolder bindings inside a larger repo (and
+  // any cwd that lives under an unrelated parent git work tree).
+  const cwd = normalizePath(input.cwd);
   const defaultEnforce = input.config.defaultEnforce;
 
   const envName = env.ACCT_PROFILE?.trim();
@@ -46,7 +50,7 @@ export function resolveProfile(input: ResolveInput): ResolveResult {
   }
 
   const matches = input.config.bindings
-    .filter((b) => pathIsPrefix(b.path, searchRoot))
+    .filter((b) => pathIsPrefix(b.path, cwd))
     .sort(
       (a, b) => normalizePath(b.path).length - normalizePath(a.path).length,
     );

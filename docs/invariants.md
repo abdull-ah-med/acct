@@ -8,7 +8,7 @@
 
 1. `ACCT_PROFILE` environment variable (explicit)
 2. Repo-local `.acct` file (profile name only; never secrets)
-3. Longest matching directory binding for git toplevel (or cwd if not a repo)
+3. Longest matching directory binding for `cwd` (repo-local `.acct` is discovered via git toplevel)
 4. Unbound
 
 Local always wins over global bindings.
