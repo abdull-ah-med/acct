@@ -38,6 +38,12 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run pack:check
+      - run: npm run test:security
+        env:
+          ACCT_SECRET_BACKEND: file
+      - run: npm run test:e2e
+        env:
+          ACCT_SECRET_BACKEND: file
 
       - name: Resolve release tag
         id: tag
@@ -68,7 +74,16 @@ jobs:
           if npm view "acct-sh@$version" version >/dev/null 2>&1; then
             echo "acct-sh@$version already on npmjs.org — skipping"
           else
-            # Auth via npm Trusted Publishing (OIDC). Do not set NODE_AUTH_TOKEN.
+            # Auth via npm Trusted Publishing (OIDC).
+            # setup-node + registry-url injects NODE_AUTH_TOKEN from secrets.NPM_TOKEN
+            # when present; classic tokens override OIDC and fail with E403/E404
+            # (npm also restricts tokens that bypass 2FA for direct publish).
+            # https://docs.npmjs.com/trusted-publishers/
+            # https://github.com/actions/setup-node/issues/1551
+            unset NODE_AUTH_TOKEN
+            if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+              sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+            fi
             npm publish --access public
           fi
 
@@ -104,9 +119,13 @@ jobs:
           name: ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
           body: |
-            **Install (npmjs):** `npm install -g acct-sh`
+            ## acct-sh ${{ steps.tag.outputs.version }}
 
-            **Install (GitHub Packages):** `npm install -g @acct-sh/acct-sh`
+            **Install (npmjs):** `npm install -g acct-sh@${{ steps.tag.outputs.version }}`
+
+            **Install (GitHub Packages):** `npm install -g @acct-sh/acct-sh@${{ steps.tag.outputs.version }}`
+
+            See [CHANGELOG.md](https://github.com/acct-sh/acct/blob/v${{ steps.tag.outputs.version }}/CHANGELOG.md) for details.
 
             - npmjs: https://www.npmjs.com/package/acct-sh
             - GitHub Packages: https://github.com/acct-sh/acct/pkgs/npm/acct-sh

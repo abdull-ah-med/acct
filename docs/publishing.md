@@ -43,7 +43,7 @@ npm publish --access public
 
 ## Release checklist (after Trusted Publisher is configured)
 
-1. Ensure `main` is green on CI (lint, test matrix, package, e2e)
+1. Ensure `main` is green on CI (lint, test matrix, package, **security**, e2e)
 2. Bump `version` in `package.json` and update `CHANGELOG.md`
 3. Commit: `chore: release vX.Y.Z`
 4. Tag and push:
@@ -54,7 +54,7 @@ git push origin main --tags
 ```
 
 5. The [Release](../.github/workflows/release.yml) workflow:
-   - Runs lint, tests, build, and `pack:check`
+   - Runs lint, tests, build, `pack:check`, **security regression**, and e2e
    - Verifies the tag matches `package.json`
    - Publishes to npmjs.org via OIDC (`id-token: write`); provenance is automatic
    - Publishes to GitHub Packages as `@acct-sh/acct-sh` (`packages: write`)
