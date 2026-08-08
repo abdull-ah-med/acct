@@ -1,6 +1,6 @@
 # Publishing
 
-`acct` is published to npm as a public SemVer package. Releases are cut from git tags.
+`acct-sh` is published to npm as a public SemVer package (CLI bins remain `acct` and `git-credential-acct`). Releases are cut from git tags.
 
 ## Versioning
 
@@ -34,8 +34,6 @@ npm test
 npm run build
 npm run pack:check
 ```
-
-If the name `acct` is taken on npm, publish as `@acct-sh/cli` while keeping bins `acct` and `git-credential-acct`.
 
 ## Provenance
 

@@ -1,5 +1,5 @@
 {
-  "name": "acct",
+  "name": "acct-sh",
   "version": "0.1.0",
   "description": "Directory-scoped GitHub identity and auth — one account, one identity, one directory tree",
   "type": "module",
