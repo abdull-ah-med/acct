@@ -52,6 +52,9 @@ git push origin main --tags
    - Runs lint, tests, build, and `pack:check`
    - Verifies the tag matches `package.json`
    - Publishes via OIDC (`id-token: write`); provenance is automatic
+   - Creates a GitHub Release for the tag
+
+To cut a GitHub Release for an existing tag (e.g. after a local first publish), run **Actions → Release → Run workflow** and set `tag` to `v0.1.0`.
 
 ## Local dry run
 
