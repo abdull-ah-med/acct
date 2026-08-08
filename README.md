@@ -11,9 +11,10 @@ Official `gh` documents that automatic switching by directory is out of scope; `
 ## Install
 
 ```bash
-npm install -g acct
+npm install -g acct-sh
 # or
-npx acct status
+pnpm add -g acct-sh
+npx acct-sh status
 ```
 
 ## Quick start

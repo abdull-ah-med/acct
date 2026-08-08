@@ -1,5 +1,5 @@
 {
-  "name": "acct",
+  "name": "acct-sh",
   "version": "0.1.0",
   "description": "Directory-scoped GitHub identity and auth — one account, one identity, one directory tree",
   "type": "module",
@@ -50,13 +50,13 @@
     "access": "public",
     "provenance": true
   },
-  "homepage": "https://github.com/acct-sh/acct#readme",
+  "homepage": "https://github.com/abdull-ah-med/acct#readme",
   "bugs": {
-    "url": "https://github.com/acct-sh/acct/issues"
+    "url": "https://github.com/abdull-ah-med/acct/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/acct-sh/acct.git"
+    "url": "git+https://github.com/abdull-ah-med/acct.git"
   },
   "dependencies": {
     "@napi-rs/keyring": "^1.1.2",
