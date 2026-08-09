@@ -278,7 +278,7 @@ try {
       } else {
         if (!gotSec && (quit || !gotPri || gotPri)) {
           if (gotPri && (c.expect === "quit-or-no-token" || c.expect === "quit-or-safe")) {
-            note("warn`, `unexpected token for ${c.name}`, `may be ok if host normalized");
+            note("warn", `unexpected token for ${c.name}`, `may be ok if host normalized`);
             ok(`${c.name} recorded`);
           } else ok(`${c.name} fail-closed-ish`);
         } else fail(c.name, redact(out));
@@ -369,7 +369,7 @@ try {
       if (refused(r) && !dumped) {
         ok(`refused: ${label}`);
       } else if (dumped && isInterp) {
-        note("info`, `Non-goal interpreter dumped token: ${label}`, `");
+        note("info", `Non-goal interpreter dumped token: ${label}`, "");
         ok(`documented non-goal: ${label.slice(0, 40)}`);
       } else if (dumped) {
         note("error", `I18 BYPASS dumped token: ${label}`, redact(out).slice(0, 200));
@@ -470,23 +470,23 @@ try {
     fs.mkdirSync(nested, { recursive: true });
     fs.writeFileSync(path.join(nested, ".acct"), `${SECONDARY.id}\n`);
     let r = acct(["status"], env, nested);
-    if (/${SECONDARY.githubUser}|profile: ${SECONDARY.id}/.test(r.stdout)) ok("nested .acct overrides parent binding");
+    if (new RegExp(`${SECONDARY.githubUser}|profile: ${SECONDARY.id}`).test(r.stdout)) ok("nested .acct overrides parent binding");
     else fail("nested .acct", r.stdout);
 
     fs.writeFileSync(path.join(nested, ".acct"), "\n");
     r = acct(["status"], env, nested);
-    if (/unbound|no profile|reason:.*\.acct/i.test(r.stdout) && !/${PRIMARY.githubUser}/.test(r.stdout)) {
+    if (/unbound|no profile|reason:.*\.acct/i.test(r.stdout) && !new RegExp(PRIMARY.githubUser).test(r.stdout)) {
       ok("empty nested .acct unbound (no parent fallthrough)");
     } else {
       note("warn", "empty .acct status", r.stdout.slice(0, 250));
-      if (/${PRIMARY.githubUser}/.test(r.stdout)) fail("empty .acct fell through to parent", r.stdout);
+      if (new RegExp(PRIMARY.githubUser).test(r.stdout)) fail("empty .acct fell through to parent", r.stdout);
       else ok("empty .acct status recorded");
     }
 
     // BOM / whitespace .acct
     fs.writeFileSync(path.join(nested, ".acct"), `\ufeff${SECONDARY.id}\n`);
     r = acct(["status"], env, nested);
-    if (/${SECONDARY.id}/.test(r.stdout)) ok(`BOM-prefixed .acct resolves ${SECONDARY.id}`);
+    if (new RegExp(SECONDARY.id).test(r.stdout)) ok(`BOM-prefixed .acct resolves ${SECONDARY.id}`);
     else {
       note("warn", "BOM .acct may fail parse", r.stdout.slice(0, 200));
       ok("BOM .acct recorded");
@@ -494,12 +494,12 @@ try {
 
     fs.writeFileSync(path.join(nested, ".acct"), `${SECONDARY.id}\r\n`);
     r = acct(["status"], env, nested);
-    if (/${SECONDARY.id}/.test(r.stdout)) ok("CRLF .acct resolves");
+    if (new RegExp(SECONDARY.id).test(r.stdout)) ok("CRLF .acct resolves");
     else fail("CRLF .acct", r.stdout);
 
     fs.writeFileSync(path.join(nested, ".acct"), "SECONDARY\n");
     r = acct(["status"], env, nested);
-    if (/${SECONDARY.id}/.test(r.stdout)) ok("case-insensitive .acct id");
+    if (new RegExp(SECONDARY.id).test(r.stdout)) ok("case-insensitive .acct id");
     else {
       note("info", "case-sensitive .acct id", r.stdout.slice(0, 200));
       ok("case .acct recorded");
@@ -523,7 +523,7 @@ try {
     const evil = personalRoot + "-evil";
     fs.mkdirSync(evil, { recursive: true });
     r = acct(["status"], env, evil);
-    if (/${PRIMARY.githubUser}/.test(r.stdout) && /binding/.test(r.stdout)) {
+    if (new RegExp(PRIMARY.githubUser).test(r.stdout) && /binding/.test(r.stdout)) {
       note("error", "prefix collision: personalRoot-evil matched personal binding", r.stdout);
       fail("path prefix", r.stdout);
     } else ok("personalRoot-evil not matched as personal binding");
@@ -605,15 +605,15 @@ try {
 
     const priRepos = (listPri.stdout || "").split("\n").filter((x) => x.startsWith(`${PRIMARY.githubUser}/acct-e2e-`));
     const secRepos = (listSec.stdout || "").split("\n").filter((x) => x.startsWith(`${SECONDARY.githubUser}/acct-e2e-`));
-    note("info`, `leftover e2e repos primary=${priRepos.length} ${SECONDARY.id}=${secRepos.length}`, `");
+    note("info", `leftover e2e repos primary=${priRepos.length} ${SECONDARY.id}=${secRepos.length}`, "");
 
     if (priRepos[0]) {
-      const cross = acct(["exec", "gh", "api`, `repos/${priRepos[0]}`, `--jq", ".full_name"], env, workRoot);
+      const cross = acct(["exec", "gh", "api", `repos/${priRepos[0]}`, "--jq", ".full_name"], env, workRoot);
       if (cross.status !== 0) ok(`${SECONDARY.id} cannot API-read ${priRepos[0]}`);
       else fail(`${SECONDARY.id} saw primary private`, cross.stdout);
     }
     if (secRepos[0]) {
-      const cross = acct(["exec", "gh", "api`, `repos/${secRepos[0]}`, `--jq", ".full_name"], env, personalRoot);
+      const cross = acct(["exec", "gh", "api", `repos/${secRepos[0]}`, "--jq", ".full_name"], env, personalRoot);
       if (cross.status !== 0) ok(`primary cannot API-read ${secRepos[0]}`);
       else fail(`primary saw ${SECONDARY.id} private`, cross.stdout);
     }
@@ -648,7 +648,7 @@ try {
     const markers = (gc.match(/# >>> acct-managed/g) || []).length;
     if (markers <= 2) ok(`install idempotent markers=${markers}`);
     else {
-      note("warn`, `install duplicated managed blocks markers=${markers}`, `");
+      note("warn", `install duplicated managed blocks markers=${markers}`, "");
       ok("install churn noted");
     }
     if (/gho_|ghp_|github_pat_/.test(gc)) fail("gitconfig token leak", "token in gitconfig");

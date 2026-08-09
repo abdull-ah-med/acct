@@ -324,7 +324,7 @@ try {
     else fail("exec inject", redact(r.stdout));
 
     r = acct(
-      ["exec", "node", "-e", "process.stdout.write(process.env.GH_TOKEN||'`)"],
+      ["exec", "node", "-e", "process.stdout.write(process.env.GH_TOKEN||'')"],
       { ...env, GH_TOKEN: secTok },
       personalRoot,
     );
