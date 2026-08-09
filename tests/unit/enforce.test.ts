@@ -55,6 +55,8 @@ describe("enforcement", () => {
     );
     const msg = formatBlockMessage("commit", profile, result.messages);
     expect(msg).toContain("blocked commit");
+    expect(msg).toContain("client hooks");
+    expect(msg).not.toContain("escape hatch");
   });
 
   it("allows matching identity", async () => {

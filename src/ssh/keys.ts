@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { acctConfigDir } from "../config/store.js";
 import type { Profile } from "../types.js";
+import { posixShellSingleQuote } from "../util/paths.js";
 
 export function defaultKeyPath(
   profile: Profile,
@@ -21,9 +22,17 @@ export function assertSafeSshHost(host: string): string {
   return host;
 }
 
-function shellQuote(s: string): string {
-  if (/[\s"'$`\\]/.test(s)) return `"${s.replace(/"/g, '\\"')}"`;
-  return s;
+/**
+ * Build core.sshCommand when a key is attached.
+ * Independent of preferred clone protocol (HTTPS vs SSH) — I8b dual plane.
+ * Cite: IdentitiesOnly https://man.openbsd.org/ssh_config.5
+ *       core.sshCommand https://git-scm.com/docs/git-config
+ */
+export function sshCommandFor(profile: Profile): string | null {
+  if (!profile.sshKeyPath) return null;
+  const key = profile.sshKeyPath.replace(/\\/g, "/");
+  const host = assertSafeSshHost(profile.host);
+  return `ssh -i ${posixShellSingleQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`;
 }
 
 /**
@@ -59,19 +68,20 @@ export function readPublicKey(privateKeyPath: string): string {
   return fs.readFileSync(pub, "utf8").trim();
 }
 
-export function sshCommandFor(profile: Profile): string | null {
-  if (profile.protocol !== "ssh" || !profile.sshKeyPath) return null;
-  const key = profile.sshKeyPath.replace(/\\/g, "/");
-  const host = assertSafeSshHost(profile.host);
-  return `ssh -i ${shellQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`;
-}
-
+/**
+ * Probe SSH auth for an attached key.
+ * Requires sshKeyPath only — preferred protocol may remain https (I8b).
+ */
 export function testSshAuth(profile: Profile): {
   ok: boolean;
   output: string;
 } {
   if (!profile.sshKeyPath) {
-    return { ok: false, output: "No sshKeyPath on profile" };
+    return {
+      ok: false,
+      output:
+        "No sshKeyPath on profile — attach with: acct profile ssh-key <id> --path <key> or --generate",
+    };
   }
   try {
     assertSafeSshHost(profile.host);
@@ -81,8 +91,8 @@ export function testSshAuth(profile: Profile): {
       output: err instanceof Error ? err.message : String(err),
     };
   }
-  if (!sshCommandFor(profile)) {
-    return { ok: false, output: "Not an SSH profile" };
+  if (!fs.existsSync(profile.sshKeyPath)) {
+    return { ok: false, output: `SSH key file missing: ${profile.sshKeyPath}` };
   }
   try {
     const out = execFileSync(

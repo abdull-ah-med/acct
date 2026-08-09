@@ -115,20 +115,60 @@ export function removeBinding(config: AcctConfig, dirPath: string): AcctConfig {
   };
 }
 
-export function readLocalAcct(repoRoot: string): LocalAcctFile | null {
-  const file = path.join(repoRoot, ".acct");
+/**
+ * Read `.acct` in a single directory (no walk).
+ * - `null` — file absent
+ * - `{ profile: "" }` — file present but empty / blank / no profile (local unbound)
+ * - `{ profile: "id" }` — explicit profile (unknown id → unbound at resolve)
+ *
+ * Cite: docs/research/host-port-local-acct-cites-2026-08-08.md (I3 fail-closed)
+ */
+export function readLocalAcct(dir: string): LocalAcctFile | null {
+  const file = path.join(dir, ".acct");
   if (!fs.existsSync(file)) return null;
-  const raw = fs.readFileSync(file, "utf8").trim();
-  if (!raw) return null;
+  // Only regular files — ignore directories named `.acct`
   try {
-    const parsed = YAML.parse(raw) as LocalAcctFile | string;
-    if (typeof parsed === "string") return { profile: parsed };
-    if (parsed && typeof parsed.profile === "string") return parsed;
+    if (!fs.statSync(file).isFile()) return null;
+  } catch {
+    return null;
+  }
+  const raw = fs.readFileSync(file, "utf8");
+  const trimmed = raw.trim();
+  if (!trimmed) return { profile: "" };
+
+  try {
+    const parsed = YAML.parse(trimmed) as LocalAcctFile | string | null;
+    if (typeof parsed === "string") return { profile: parsed.trim() };
+    if (parsed && typeof parsed === "object" && "profile" in parsed) {
+      const p = (parsed as LocalAcctFile).profile;
+      if (typeof p === "string") return { profile: p.trim() };
+      // profile: null / non-string → explicit local unbound
+      return { profile: "" };
+    }
   } catch {
     // plain profile name
-    return { profile: raw };
+    return { profile: trimmed };
   }
-  return null;
+  // Content present but no usable profile key (comments-only, other keys)
+  return { profile: "" };
+}
+
+/**
+ * Nearest `.acct` walking from `startDir` up to the filesystem root.
+ * Same discovery model as direnv `find_up` for `.envrc` — nearest wins;
+ * does not require a git repository.
+ *
+ * Cite: docs/research/local-acct-exec-deny-cites-2026-08-08.md
+ */
+export function findLocalAcct(startDir: string): LocalAcctFile | null {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    const local = readLocalAcct(dir);
+    if (local != null) return local;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }
 
 export function assertNoSecretsInConfig(config: AcctConfig): void {

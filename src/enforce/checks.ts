@@ -114,7 +114,7 @@ export function formatBlockMessage(
     );
     lines.push(`  Or: acct enforce warn   (temporarily)`);
     lines.push(
-      `  Or: git commit --no-verify / git push --no-verify (escape hatch)`,
+      "  Note: git --no-verify / -c core.hooksPath=… bypass client hooks (githooks); use server-side rules for non-bypassable policy",
     );
   }
   return lines.join("\n");
