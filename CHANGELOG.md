@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-08
+
 ### Fixed
 
 - `acct exec` I18 **fail-closed for `xargs` → `gh` or a shell**: stdin append (`printf 'auth\ntoken\n' \| acct exec xargs gh`) and `-I{}` substitution (`xargs -I{} sh -c 'unset GH_TOKEN; gh auth {} …'`) can mutate global auth / dump tokens without those words appearing in argv — refuse those utilities under xargs; use `acct exec gh …` directly ([xargs(1)](https://man7.org/linux/man-pages/man1/xargs.1.html); [gh environment](https://cli.github.com/manual/gh_help_environment); [i18-xargs-stdin-bypass cites](docs/research/i18-xargs-stdin-bypass-cites-2026-08-08.md))
@@ -36,18 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- README links the marketing site ([acct-web.vercel.app](https://acct-web.vercel.app/)) with homepage screenshot
+- `package.json` `homepage` points at the site; `website.jpg` is included in the published tarball
 - `shell-env` output includes a T5 reminder to install the cd/prompt hook so `GH_TOKEN` rebinds on `cd`
 - Block messages no longer advertise `--no-verify` as an escape hatch; they note client hooks are bypassable and point to server-side policy
 - Invariants doc: I3 nearest `.acct` walk-up, I4 cross-profile guard + username override, I7 port allowlist, I8b ssh-test, I13 debug redaction, I15 hook bypass, I16 HTTPS-only get, I17 read-only store, I18 exec auth deny-list (fail-closed `xargs`→`gh`\|shell + shell obfuscation)
 - Threat model: T5 sticky token doctor; T7b/T7c; T13 xargs stdin/`-I{}` fail-closed; T14 post-uninstall residual; T15 profile id allowlist
 - Doctor: `default-enforce-off` / `unbound-enforce-off` warnings for OS-helper fallthrough
-
-## [0.1.4] - 2026-08-08
-
-### Changed
-
-- README links the marketing site ([acct-web.vercel.app](https://acct-web.vercel.app/)) with homepage screenshot
-- `package.json` `homepage` points at the site; `website.jpg` is included in the published tarball
 
 ## [0.1.3] - 2026-08-08
 
@@ -98,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI matrix (Ubuntu / macOS / Windows × Node 20 / 22) with lint, test, package, and e2e gates
 - Tagged npm publish with provenance
 
+[0.1.4]: https://github.com/acct-sh/acct/releases/tag/v0.1.4
 [0.1.3]: https://github.com/acct-sh/acct/releases/tag/v0.1.3
 [0.1.2]: https://github.com/acct-sh/acct/releases/tag/v0.1.2
 [0.1.1]: https://github.com/acct-sh/acct/releases/tag/v0.1.1
