@@ -12,9 +12,9 @@ function enforceFor(
 
 /**
  * Resolve which profile applies to a working directory.
- * Order: CLI --profile → repo .acct → longest binding → unbound.
+ * Order: CLI --profile → nearest .acct (cwd walk-up) → longest binding → unbound.
  * Ambient ACCT_PROFILE is ignored unless allowEnvProfile is set (I4).
- * Cite: docs/invariants.md; shell/env.ts strips sticky env for the same reason.
+ * Cite: docs/invariants.md; docs/research/local-acct-exec-deny-cites-2026-08-08.md
  */
 export function resolveProfile(input: ResolveInput): ResolveResult {
   const env = input.env ?? process.env;
@@ -59,8 +59,18 @@ export function resolveProfile(input: ResolveInput): ResolveResult {
     }
   }
 
-  if (input.localAcct?.profile) {
-    const profile = getProfile(input.config, input.localAcct.profile);
+  // `.acct` present (including empty profile) overrides bindings — never fall through.
+  // Cite: docs/research/host-port-local-acct-cites-2026-08-08.md
+  if (input.localAcct != null) {
+    const localId = input.localAcct.profile.trim();
+    if (!localId) {
+      return {
+        profile: null,
+        reason: "local",
+        enforce: defaultEnforce,
+      };
+    }
+    const profile = getProfile(input.config, localId);
     return {
       profile: profile ?? null,
       reason: "local",
