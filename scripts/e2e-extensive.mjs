@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Extensive E2E / adversarial harness for acct.
- * HARD RULE: never touch Mair / reachrazamair / Work-Mair.
- * Allowed: acct-sh, user-b (Secondary).
+ * Extensive E2E / adversarial harness for acct (synthetic identities).
+ * Uses syntheticPair() — no real people. HARD RULE: never touch Mair.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { syntheticPair, escapeRe } from "./e2e-identities.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ACCT = path.join(ROOT, "bin/acct.js");
@@ -21,18 +21,7 @@ const FORBIDDEN = [
   /mairahmed/i,
 ];
 
-const PRIMARY = {
-  id: "personal",
-  githubUser: "acct-sh",
-  name: "Primary User",
-  email: "dev@example.com",
-};
-const SECONDARY = {
-  id: "work",
-  githubUser: "user-b",
-  name: "Secondary User",
-  email: "user-b@example.com",
-};
+const { a: PRIMARY, b: SECONDARY } = syntheticPair();
 
 function assertSafe(label, text) {
   for (const re of FORBIDDEN) {
@@ -77,7 +66,7 @@ function acct(args, env, cwd) {
 }
 
 async function main() {
-  console.log("=== acct extensive harness (NO MAIR) ===\n");
+  console.log("=== acct extensive harness (synthetic, NO MAIR) ===\n");
 
   // Isolated dirs inside workspace
   const base = fs.mkdtempSync(path.join(ROOT, ".tmp-e2e-"));
@@ -114,7 +103,7 @@ async function main() {
   }
 
   // ---------- profile setup ----------
-  console.log("\n2) Profile create / bind (primary + work only)");
+  console.log("\n2) Profile create / bind (synthetic pair)");
   {
     let r = acct(
       [
@@ -136,7 +125,7 @@ async function main() {
       personalRoot,
     );
     assertSafe("init out", r.stdout + r.stderr);
-    if (r.status === 0) ok("init personal/primary");
+    if (r.status === 0) ok("init personal/user-a");
     else fail("init personal", r.stderr || r.stdout);
 
     r = acct(
@@ -167,8 +156,8 @@ async function main() {
     r = acct(["profile", "list"], env);
     assertSafe("profile list", r.stdout);
     if (
-      r.stdout.includes("acct-sh") &&
-      r.stdout.includes("user-b") &&
+      r.stdout.includes(PRIMARY.githubUser) &&
+      r.stdout.includes(SECONDARY.githubUser) &&
       !/mair/i.test(r.stdout)
     ) {
       ok("profile list shows only allowed users");
@@ -178,21 +167,21 @@ async function main() {
   // ---------- token store (synthetic — never mair) ----------
   console.log("\n3) Token store via stdin (synthetic tokens, not live gh)");
   {
-    const tokA = "gho_TEST_ONLY_PRIMARY_" + "x".repeat(20);
-    const tokB = "gho_TEST_ONLY_SECONDARY_" + "y".repeat(20);
+    const tokA = "gho_TEST_ONLY_USER_A_" + "x".repeat(20);
+    const tokB = "gho_TEST_ONLY_USER_B_" + "y".repeat(20);
     let r = run(process.execPath, [ACCT, "profile", "token", PRIMARY.id, "--stdin"], {
       env,
       input: tokA,
     });
-    if (r.status === 0) ok("store primary token");
-    else fail("store primary token", r.stderr || r.stdout);
+    if (r.status === 0) ok("store user-a token");
+    else fail("store user-a token", r.stderr || r.stdout);
 
     r = run(process.execPath, [ACCT, "profile", "token", SECONDARY.id, "--stdin"], {
       env,
       input: tokB,
     });
-    if (r.status === 0) ok("store work token");
-    else fail("store work token", r.stderr || r.stdout);
+    if (r.status === 0) ok("store user-b token");
+    else fail("store user-b token", r.stderr || r.stdout);
   }
 
   // ---------- resolution / status ----------
@@ -200,13 +189,13 @@ async function main() {
   {
     let r = acct(["status"], env, personalRoot);
     assertSafe("status personal", r.stdout + r.stderr);
-    if (r.stdout.includes("personal") && r.stdout.includes("acct-sh"))
-      ok("status in personal → primary");
+    if (r.stdout.includes("personal") && r.stdout.includes(PRIMARY.githubUser))
+      ok("status in personal → user-a");
     else fail("status personal", r.stdout);
 
     r = acct(["status"], env, workRoot);
     assertSafe("status work", r.stdout + r.stderr);
-    if (r.stdout.includes("work") && r.stdout.includes("user-b"))
+    if (r.stdout.includes(SECONDARY.id) && r.stdout.includes(SECONDARY.githubUser))
       ok("status in work → user-b");
     else fail("status work", r.stdout);
 
@@ -219,7 +208,7 @@ async function main() {
     fs.mkdirSync(nested, { recursive: true });
     acct(["bind", nested, SECONDARY.id], env);
     r = acct(["status"], env, nested);
-    if (r.stdout.includes("user-b")) ok("longest binding wins");
+    if (r.stdout.includes(SECONDARY.githubUser)) ok("longest binding wins");
     else fail("longest binding", r.stdout);
 
     // local .acct override
@@ -230,7 +219,7 @@ async function main() {
       path.join(repo, ".git", "config"),
       "[core]\n\trepositoryformatversion = 0\n",
     );
-    fs.writeFileSync(path.join(repo, ".acct"), "profile: work\n");
+    fs.writeFileSync(path.join(repo, ".acct"), `profile: ${SECONDARY.id}\n`);
     // git rev-parse needs a real repo — init with empty template
     const emptyTpl = path.join(base, "empty-tpl");
     fs.mkdirSync(emptyTpl, { recursive: true });
@@ -238,18 +227,18 @@ async function main() {
       cwd: repo,
       env: { ...env, GIT_TEMPLATE_DIR: emptyTpl },
     });
-    fs.writeFileSync(path.join(repo, ".acct"), "profile: work\n");
+    fs.writeFileSync(path.join(repo, ".acct"), `profile: ${SECONDARY.id}\n`);
     r = acct(["status"], env, repo);
-    if (r.stdout.includes("work") || r.stdout.includes("reason: local"))
+    if (r.stdout.includes(SECONDARY.id) || r.stdout.includes("reason: local"))
       ok("local .acct overrides binding");
     else fail("local .acct", r.stdout);
 
     // Non-git .acct under bound tree
     const nogit = path.join(personalRoot, "not-a-repo");
     fs.mkdirSync(nogit, { recursive: true });
-    fs.writeFileSync(path.join(nogit, ".acct"), "profile: work\n");
+    fs.writeFileSync(path.join(nogit, ".acct"), `profile: ${SECONDARY.id}\n`);
     r = acct(["status"], env, nogit);
-    if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout))
+    if (new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) && /reason: local/.test(r.stdout))
       ok("non-git .acct overrides binding");
     else fail("non-git .acct", r.stdout);
     fs.writeFileSync(path.join(nogit, ".acct"), "");
@@ -261,15 +250,15 @@ async function main() {
     // ACCT_PROFILE ambient must NOT override (I4) — warning may appear
     r = acct(["status"], { ...env, ACCT_PROFILE: PRIMARY.id }, workRoot);
     if (
-      r.stdout.includes("user-b") &&
+      r.stdout.includes(SECONDARY.githubUser) &&
       !r.stdout.includes("reason: env") &&
-      (r.stdout.includes("ignored") || r.stdout.includes("work"))
+      (r.stdout.includes("ignored") || r.stdout.includes(SECONDARY.id))
     )
       ok("ambient ACCT_PROFILE does not override binding (I4)");
     else fail("ACCT_PROFILE ignored", r.stdout);
 
     r = acct(["status", "--profile", PRIMARY.id], env, workRoot);
-    if (r.stdout.includes("acct-sh") && r.stdout.includes("reason: cli"))
+    if (r.stdout.includes(PRIMARY.githubUser) && r.stdout.includes("reason: cli"))
       ok("CLI --profile selects profile for status");
     else fail("CLI --profile", r.stdout);
   }
@@ -292,11 +281,11 @@ async function main() {
 
     // profile inc files
     const incPersonal = path.join(configDir, "git", "personal.inc");
-    const incSecondary = path.join(configDir, "git", "work.inc");
+    const incWork = path.join(configDir, "git", `${SECONDARY.id}.inc`);
     if (fs.existsSync(incPersonal) && fs.readFileSync(incPersonal, "utf8").includes(PRIMARY.email))
       ok("personal.inc identity");
     else fail("personal.inc", "missing");
-    if (fs.existsSync(incSecondary) && fs.readFileSync(incSecondary, "utf8").includes(SECONDARY.email))
+    if (fs.existsSync(incWork) && fs.readFileSync(incWork, "utf8").includes(SECONDARY.email))
       ok("work.inc identity");
     else fail("work.inc", "missing");
 
@@ -319,29 +308,29 @@ async function main() {
     }
 
     const getBody =
-      "protocol=https\nhost=github.com\npath=acct-sh/demo.git\n\n";
+      `protocol=https\nhost=github.com\npath=${PRIMARY.githubUser}/demo.git\n\n`;
 
     let r = helper("get", getBody, personalRoot);
     assertSafe("helper get personal", r.stdout);
     if (
-      r.stdout.includes("username=acct-sh") &&
-      r.stdout.includes("password=gho_TEST_ONLY_PRIMARY_") &&
+      r.stdout.includes(`username=${PRIMARY.githubUser}`) &&
+      r.stdout.includes("password=gho_TEST_ONLY_USER_A_") &&
       !/mair|user-b/i.test(r.stdout)
     ) {
-      ok("helper get personal → primary token only");
+      ok("helper get personal → user-a token only");
     } else fail("helper get personal", JSON.stringify(r.stdout));
 
     r = helper("get", getBody, workRoot);
     if (
-      r.stdout.includes("username=user-b") &&
-      r.stdout.includes("password=gho_TEST_ONLY_SECONDARY_") &&
-      !/primary|mair/i.test(r.stdout.split("password=")[0])
+      r.stdout.includes(`username=${SECONDARY.githubUser}`) &&
+      r.stdout.includes("password=gho_TEST_ONLY_USER_B_") &&
+      !/user-a|mair/i.test(r.stdout.split("password=")[0])
     ) {
-      ok("helper get work → work token only");
+      ok("helper get work → user-b token only");
     } else fail("helper get work", JSON.stringify(r.stdout));
 
     // Cross-dir leak: personal must NOT return work
-    if (!r.stdout.includes("PRIMARY")) ok("work response has no primary token");
+    if (!r.stdout.includes("USER_A")) ok("work response has no user-a token");
     else fail("cross token", r.stdout);
 
     // Wrong host → quit
@@ -382,10 +371,10 @@ async function main() {
     else fail("unbound leak", JSON.stringify(r.stdout));
 
     // erase only with matching password (I17)
-    const abdTokErase = "gho_TEST_ONLY_PRIMARY_" + "x".repeat(20);
+    const eraseTok = "gho_TEST_ONLY_USER_A_" + "x".repeat(20);
     r = helper(
       "erase",
-      `protocol=https\nhost=github.com\nusername=acct-sh\npassword=${abdTokErase}\n\n`,
+      `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=${eraseTok}\n\n`,
       personalRoot,
     );
     if (r.status === 0) ok("erase with matching password succeeds");
@@ -399,25 +388,25 @@ async function main() {
     // Foreign erase (wrong password) must not wipe — re-seed then prove
     r = run(process.execPath, [ACCT, "profile", "token", "personal", "--stdin"], {
       env,
-      input: "gho_TEST_ONLY_PRIMARY_restored\n",
+      input: "gho_TEST_ONLY_USER_A_restored\n",
     });
     if (r.status === 0) ok("restore token via profile token --stdin");
     else fail("profile token restore", r.stderr);
 
     r = helper(
       "erase",
-      "protocol=https\nhost=github.com\nusername=acct-sh\npassword=gho_WRONG_ERASE\n\n",
+      `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=gho_WRONG_ERASE\n\n`,
       personalRoot,
     );
     r = helper("get", getBody, personalRoot);
-    if (r.stdout.includes("gho_TEST_ONLY_PRIMARY_restored"))
+    if (r.stdout.includes("gho_TEST_ONLY_USER_A_restored"))
       ok("erase with wrong password ignored");
     else fail("foreign erase", JSON.stringify(r.stdout));
 
     // store poison ignored (I17 read-only)
     r = helper(
       "store",
-      "protocol=https\nhost=github.com\nusername=acct-sh\npassword=gho_POISON_SHOULD_NOT_STICK\n\n",
+      `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=gho_POISON_SHOULD_NOT_STICK\n\n`,
       personalRoot,
     );
     if (r.status === 0) ok("store op ignored (exit 0)");
@@ -425,7 +414,7 @@ async function main() {
 
     r = helper("get", getBody, personalRoot);
     if (
-      r.stdout.includes("gho_TEST_ONLY_PRIMARY_restored") &&
+      r.stdout.includes("gho_TEST_ONLY_USER_A_restored") &&
       !r.stdout.includes("POISON")
     )
       ok("store poison ignored; CLI token retained");
@@ -460,14 +449,14 @@ async function main() {
     if (r.stdout.includes("ACCT_PROFILE=") && r.stdout.includes("personal"))
       ok("shell-env sets ACCT_PROFILE");
     else fail("shell-env", r.stdout);
-    if (/export GH_TOKEN=.*TEST_ONLY_PRIMARY/.test(r.stdout))
-      ok("shell-env injects primary token");
+    if (/export GH_TOKEN=.*TEST_ONLY_USER_A/.test(r.stdout))
+      ok("shell-env injects user-a token");
     else fail("shell-env token", r.stdout);
     if (!/mair/i.test(r.stdout)) ok("shell-env has no mair");
 
     r = acct(["shell-env"], env, workRoot);
-    if (/SECONDARY/.test(r.stdout) && !/PRIMARY_restored|PRIMARY_x/.test(r.stdout))
-      ok("work shell-env uses work token not primary");
+    if (/USER_B/.test(r.stdout) && !/USER_A_restored|USER_A_x/.test(r.stdout))
+      ok("work shell-env uses user-b token not user-a");
     else fail("work shell-env isolation", r.stdout);
 
     // stale GH_TOKEN in parent must be overwritten for profile
@@ -477,7 +466,7 @@ async function main() {
       personalRoot,
     );
     if (
-      r.stdout.includes("TEST_ONLY_PRIMARY") &&
+      r.stdout.includes("TEST_ONLY_USER_A") &&
       !r.stdout.includes("STALE_SHOULD_BE_REPLACED")
     ) {
       ok("stale GH_TOKEN replaced by profile token");
@@ -604,7 +593,7 @@ async function main() {
       env,
       personalRoot,
     );
-    if (r.status === 0 && r.stdout.trim() === "work") ok("exec --allow-cross-profile works");
+    if (r.status === 0 && r.stdout.trim() === SECONDARY.id) ok("exec --allow-cross-profile works");
     else fail("exec allow-cross-profile", r.stderr + r.stdout);
   }
 
@@ -684,7 +673,7 @@ async function main() {
     assertSafe("ssh-key", r.stdout + r.stderr);
     if (r.status === 0 && /ssh-ed25519/.test(r.stdout)) ok("work ssh key generated");
     else fail("ssh generate", r.stderr + r.stdout);
-    const inc = fs.readFileSync(path.join(configDir, "git", "work.inc"), "utf8");
+    const inc = fs.readFileSync(path.join(configDir, "git", `${SECONDARY.id}.inc`), "utf8");
     if (inc.includes("IdentitiesOnly=yes")) ok("work.inc has IdentitiesOnly");
     else fail("IdentitiesOnly", inc);
     if (!/mair/i.test(inc)) ok("work ssh inc has no mair");

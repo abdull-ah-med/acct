@@ -12,10 +12,10 @@ import type { Profile } from "../../src/types.js";
 
 const profile: Profile = {
   id: "personal",
-  githubUser: "acct-sh",
+  githubUser: "user-a",
   host: "github.com",
-  name: "Primary User",
-  email: "dev@example.com",
+  name: "User A",
+  email: "user-a@example.com",
   protocol: "https",
 };
 
@@ -49,15 +49,15 @@ describe("file secret backend", () => {
 
   it("isolates accounts by host::user key", async () => {
     const store = new FileSecretStore(path.join(dir, "secrets.json"));
-    await store.set("github.com::acct-sh", "tok-a");
+    await store.set("github.com::user-a", "tok-a");
     await store.set("github.com::user-b", "tok-b");
-    expect(await store.get("github.com::acct-sh")).toBe("tok-a");
+    expect(await store.get("github.com::user-a")).toBe("tok-a");
     expect(await store.get("github.com::user-b")).toBe("tok-b");
   });
 
   it("getSecretStore respects ACCT_SECRET_BACKEND=file", async () => {
     const store = await getSecretStore(process.env);
-    await store.set("github.com::acct-sh", "tok");
-    expect(await store.get("github.com::acct-sh")).toBe("tok");
+    await store.set("github.com::user-a", "tok");
+    expect(await store.get("github.com::user-a")).toBe("tok");
   });
 });

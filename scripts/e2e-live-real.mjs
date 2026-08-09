@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * LIVE E2E with real GitHub credentials.
- * Allowed identities ONLY: acct-sh, user-b
+ * Identities from loadLivePair() only
  * HARD RULE: never touch Mair / reachrazamair / Work-Mair
  *
  * Default: read-only / local isolation checks (no create/commit/push of identity-bearing commits).
@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadLivePair, escapeRe } from "./e2e-identities.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ACCT = path.join(ROOT, "bin/acct.js");
@@ -29,25 +30,12 @@ function quotedHelperOverride() {
 
 const FORBIDDEN = [/mair/i, /reachrazamair/i, /Work-Mair/i, /mairahmed/i];
 
-const PRIMARY = {
-  id: "personal",
-  githubUser: "acct-sh",
-  name: "Primary User",
-  email: "dev@example.com",
-  sshKey: path.join(os.homedir(), ".ssh/abd_github"),
-};
-const SECONDARY = {
-  id: "work",
-  githubUser: "user-b",
-  name: "Secondary User",
-  email: "user-b@example.com",
-  sshKey: path.join(os.homedir(), ".ssh/work_github"),
-};
+const { a: PRIMARY, b: SECONDARY } = loadLivePair();
 
 const STAMP = `acct-e2e-${Date.now().toString(36)}`;
 const REPOS = {
-  primary: `${STAMP}-abd`,
-  work: `${STAMP}-work`,
+  primary: `${STAMP}-a`,
+  secondary: `${STAMP}-b`,
 };
 
 let passed = 0;
@@ -135,7 +123,7 @@ function git(args, cwd, env) {
 }
 
 async function main() {
-  console.log("=== acct LIVE real-cred E2E (acct-sh + user-b ONLY) ===\n");
+  console.log("=== acct LIVE real-cred E2E (configured live pair ONLY) ===\n");
 
   // Preflight
   console.log("0) Preflight identity checks");
@@ -145,7 +133,7 @@ async function main() {
       if (r.status === 0 && r.stdout.trim() === u) ok(`HTTPS API as ${u}`);
       else fail(`HTTPS API as ${u}`, redact(r.stderr || r.stdout));
     }
-    const sshAbd = run("ssh", [
+    const sshPrimary = run("ssh", [
       "-o",
       "IdentitiesOnly=yes",
       "-o",
@@ -155,8 +143,8 @@ async function main() {
       "-T",
       "git@github.com",
     ]);
-    if (/Hi acct-sh!/.test(sshAbd.stderr + sshAbd.stdout)) ok("SSH acct-sh");
-    else fail("SSH primary", sshAbd.stderr);
+    if (new RegExp(`Hi ${escapeRe(PRIMARY.githubUser)}!`).test(sshPrimary.stderr + sshPrimary.stdout)) ok(`SSH ${PRIMARY.githubUser}`);
+    else fail("SSH primary", sshPrimary.stderr);
 
     const sshSecondary = run("ssh", [
       "-o",
@@ -168,14 +156,14 @@ async function main() {
       "-T",
       "git@github.com",
     ]);
-    if (/Hi user-b!/.test(sshSecondary.stderr + sshSecondary.stdout)) ok("SSH user-b");
+    if (new RegExp(`Hi ${escapeRe(SECONDARY.githubUser)}!`).test(sshSecondary.stderr + sshSecondary.stdout)) ok(`SSH ${SECONDARY.githubUser}`);
     else {
       note(
         "warn",
-        "Secondary SSH key rejected by GitHub",
-        "Local ~/.ssh/work_github is not authorized for user-b. HTTPS plane will be fully tested; SSH plane only for primary.",
+        "secondary SSH key rejected by GitHub",
+        `Local ${SECONDARY.sshKey || "secondary SSH key"} is not authorized for ${SECONDARY.githubUser}. HTTPS plane will be fully tested; SSH plane only for primary.`,
       );
-      ok("SSH work gap recorded (HTTPS-only for work)");
+      ok(`SSH ${SECONDARY.id} gap recorded (HTTPS-only for ${SECONDARY.id})`);
     }
 
     // Confirm mair is not the active account (do not call gh auth token for mair)
@@ -264,12 +252,12 @@ async function main() {
         ],
         env,
       );
-      if (r.status === 0) ok("profile add work + import-gh");
-      else fail("profile add work", redact(r.stderr || r.stdout));
+      if (r.status === 0) ok(`profile add ${SECONDARY.id} + import-gh`);
+      else fail(`profile add ${SECONDARY.id}`, redact(r.stderr || r.stdout));
 
       r = acct(["bind", workRoot, SECONDARY.id], env);
-      if (r.status === 0) ok("bind work");
-      else fail("bind work", r.stderr);
+      if (r.status === 0) ok(`bind ${SECONDARY.id}`);
+      else fail(`bind ${SECONDARY.id}`, r.stderr);
 
       // secrets.json must exist with real tokens, config.yaml must not
       const secretsPath = path.join(configDir, "secrets.json");
@@ -297,32 +285,32 @@ async function main() {
       let r = acct(["status"], env, personalRoot);
       assertSafe("status personal", r.stdout);
       if (
-        r.stdout.includes("acct-sh") &&
-        r.stdout.includes("auth principal: acct-sh")
+        r.stdout.includes(`${PRIMARY.githubUser}`) &&
+        r.stdout.includes(`auth principal: ${PRIMARY.githubUser}`)
       ) {
-        ok("status personal → principal acct-sh");
+        ok(`status personal → principal ${PRIMARY.githubUser}`);
       } else fail("status personal live", r.stdout);
 
       r = acct(["status"], env, workRoot);
-      if (r.stdout.includes("user-b") && r.stdout.includes("auth principal: user-b"))
-        ok("status work → principal user-b");
-      else fail("status work live", r.stdout);
+      if (r.stdout.includes(`${SECONDARY.githubUser}`) && r.stdout.includes(`auth principal: ${SECONDARY.githubUser}`))
+        ok(`status ${SECONDARY.id} → principal ${SECONDARY.githubUser}`);
+      else fail(`status ${SECONDARY.id} live`, r.stdout);
 
       r = acct(["whoami"], env, personalRoot);
-      if (r.stdout.includes("expected=acct-sh") && r.stdout.includes("actual=acct-sh"))
+      if (r.stdout.includes(`expected=${PRIMARY.githubUser}`) && r.stdout.includes(`actual=${PRIMARY.githubUser}`))
         ok("whoami personal match");
       else fail("whoami personal", r.stdout);
 
       r = acct(["whoami"], env, workRoot);
-      if (r.stdout.includes("expected=user-b") && r.stdout.includes("actual=user-b"))
-        ok("whoami work match");
-      else fail("whoami work", r.stdout);
+      if (r.stdout.includes(`expected=${SECONDARY.githubUser}`) && r.stdout.includes(`actual=${SECONDARY.githubUser}`))
+        ok(`whoami ${SECONDARY.id} match`);
+      else fail(`whoami ${SECONDARY.id}`, r.stdout);
 
       // sticky ACCT_PROFILE vs shell-env rebind behavior
       r = acct(["shell-env"], { ...env, ACCT_PROFILE: PRIMARY.id }, workRoot);
-      // shell-env MUST ignore sticky ACCT_PROFILE and bind work
-      if (/export ACCT_PROFILE='work'/.test(r.stdout) || /ACCT_PROFILE=work/.test(r.stdout))
-        ok("shell-env ignores sticky ACCT_PROFILE (rebinds to work)");
+      // shell-env MUST ignore sticky ACCT_PROFILE and bind ${SECONDARY.id}
+      if (/export ACCT_PROFILE='${SECONDARY.id}'/.test(r.stdout) || /ACCT_PROFILE=${SECONDARY.id}/.test(r.stdout))
+        ok(`shell-env ignores sticky ACCT_PROFILE (rebinds to ${SECONDARY.id})`);
       else {
         note(
           "error",
@@ -335,7 +323,7 @@ async function main() {
       // Ambient ACCT_PROFILE must NOT override binding (I4) — same as synthetic harness
       r = acct(["status"], { ...env, ACCT_PROFILE: PRIMARY.id }, workRoot);
       if (
-        r.stdout.includes("user-b") &&
+        r.stdout.includes(`${SECONDARY.githubUser}`) &&
         !r.stdout.includes("reason: env") &&
         /ignored|warning: ambient ACCT_PROFILE/i.test(r.stdout + r.stderr)
       ) {
@@ -343,7 +331,7 @@ async function main() {
       } else fail("ACCT_PROFILE status", r.stdout + r.stderr);
 
       r = acct(["status", "--profile", PRIMARY.id], env, workRoot);
-      if (r.stdout.includes("acct-sh") && r.stdout.includes("reason: cli"))
+      if (r.stdout.includes(`${PRIMARY.githubUser}`) && r.stdout.includes("reason: cli"))
         ok("status --profile selects gh-plane profile");
       else fail("status --profile", r.stdout);
 
@@ -357,15 +345,15 @@ async function main() {
     console.log("\n3) Credential helper isolation (real tokens, no print)");
     {
       const getBody =
-        "protocol=https\nhost=github.com\npath=acct-sh/demo.git\n\n";
+        `protocol=https\nhost=github.com\npath=${PRIMARY.githubUser}/demo.git\n\n`;
 
       let r = helper("get", getBody, personalRoot, env);
-      const abdTok = ghToken(PRIMARY.githubUser);
-      const workTok = ghToken(SECONDARY.githubUser);
+      const priTok = ghToken(PRIMARY.githubUser);
+      const secTok = ghToken(SECONDARY.githubUser);
       if (
         r.stdout.includes(`username=${PRIMARY.githubUser}`) &&
-        r.stdout.includes(`password=${abdTok}`) &&
-        !r.stdout.includes(workTok)
+        r.stdout.includes(`password=${priTok}`) &&
+        !r.stdout.includes(secTok)
       ) {
         ok("helper personal returns ONLY primary token");
       } else fail("helper personal isolation", redact(r.stdout));
@@ -373,11 +361,11 @@ async function main() {
       r = helper("get", getBody, workRoot, env);
       if (
         r.stdout.includes(`username=${SECONDARY.githubUser}`) &&
-        r.stdout.includes(`password=${workTok}`) &&
-        !r.stdout.includes(abdTok)
+        r.stdout.includes(`password=${secTok}`) &&
+        !r.stdout.includes(priTok)
       ) {
-        ok("helper work returns ONLY work token");
-      } else fail("helper work isolation", redact(r.stdout));
+        ok(`helper ${SECONDARY.id} returns ONLY ${SECONDARY.id} token`);
+      } else fail(`helper ${SECONDARY.id} isolation`, redact(r.stdout));
 
       // Wrong host
       r = helper("get", "protocol=https\nhost=evil.example\n\n", personalRoot, env);
@@ -433,12 +421,12 @@ async function main() {
       // I17: store is read-only — matching username + foreign token must not stick
       r = helper(
         "store",
-        `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=${workTok}\n\n`,
+        `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=${secTok}\n\n`,
         personalRoot,
         env,
       );
       r = helper("get", getBody, personalRoot, env);
-      if (r.stdout.includes(abdTok) && !r.stdout.includes(workTok))
+      if (r.stdout.includes(priTok) && !r.stdout.includes(secTok))
         ok("store poison ignored (I17 read-only)");
       else fail("store poison", redact(r.stdout));
 
@@ -449,7 +437,7 @@ async function main() {
         env,
       );
       r = helper("get", getBody, personalRoot, env);
-      if (!r.stdout.includes("gho_SHOULD_NOT_STORE") && r.stdout.includes(abdTok))
+      if (!r.stdout.includes("gho_SHOULD_NOT_STORE") && r.stdout.includes(priTok))
         ok("store with mismatched username ignored");
       else fail("store username mismatch", redact(r.stdout));
 
@@ -464,8 +452,8 @@ async function main() {
     // ---------- cross-account helper + exec (no mutating pushes) ----------
     console.log("\n4) Cross-account helper + exec isolation (no GitHub mutations)");
     {
-      const abdTok = ghToken(PRIMARY.githubUser);
-      const workTok = ghToken(SECONDARY.githubUser);
+      const priTok = ghToken(PRIMARY.githubUser);
+      const secTok = ghToken(SECONDARY.githubUser);
 
       const r = helper(
         "get",
@@ -473,26 +461,26 @@ async function main() {
         workRoot,
         env,
       );
-      if (r.stdout.includes(workTok) && !r.stdout.includes(abdTok))
-        ok("path=primary repo still yields work token in work tree (cwd wins)");
+      if (r.stdout.includes(secTok) && !r.stdout.includes(priTok))
+        ok(`path=primary repo still yields ${SECONDARY.id} token in ${SECONDARY.id} tree (cwd wins)`);
       else fail("cwd vs path", redact(r.stdout));
 
       const exec = acct(
         ["exec", "gh", "api", "user", "--jq", ".login"],
-        { ...env, GH_TOKEN: workTok },
+        { ...env, GH_TOKEN: secTok },
         personalRoot,
       );
       if (exec.status === 0 && exec.stdout.trim() === PRIMARY.githubUser)
-        ok("stale GH_TOKEN=work overridden in personal tree");
+        ok(`stale GH_TOKEN=${SECONDARY.id} overridden in personal tree`);
       else fail("stale token override", redact(exec.stdout + exec.stderr));
 
       const exec2 = acct(
         ["exec", "gh", "api", "user", "--jq", ".login"],
-        { ...env, GH_TOKEN: abdTok },
+        { ...env, GH_TOKEN: priTok },
         workRoot,
       );
       if (exec2.status === 0 && exec2.stdout.trim() === SECONDARY.githubUser)
-        ok("stale GH_TOKEN=primary overridden in work tree");
+        ok(`stale GH_TOKEN=primary overridden in ${SECONDARY.id} tree`);
       else fail("stale token override 2", redact(exec2.stdout + exec2.stderr));
 
       const denied = acct(
@@ -576,7 +564,7 @@ async function main() {
       console.log("\n5) Create throwaway private repos (MUTATING — opt-in)");
       for (const [owner, name] of [
         [PRIMARY.githubUser, REPOS.primary],
-        [SECONDARY.githubUser, REPOS.work],
+        [SECONDARY.githubUser, REPOS.secondary],
       ]) {
         const r = ghApi(owner, [
           "api",
@@ -665,9 +653,9 @@ async function main() {
             dest,
           );
           const out = evil.stdout + evil.stderr;
-          if (/requires "dev@example.com"/.test(out))
+          if (/requires `${PRIMARY.email}`/.test(out))
             fail("pre-push ambient override regression", out);
-          else ok("pre-push ignores ambient ACCT_PROFILE (still work)");
+          else ok(`pre-push ignores ambient ACCT_PROFILE (still ${SECONDARY.id})`);
         }
         r = git(["push", "origin", "HEAD"], dest, env);
         if (r.status !== 0) {
@@ -689,9 +677,9 @@ async function main() {
         else fail(`push HTTPS ${owner}`, redact(r.stderr || r.stdout));
       }
       await exerciseTree(personalRoot, PRIMARY, PRIMARY.githubUser, REPOS.primary);
-      await exerciseTree(workRoot, SECONDARY, SECONDARY.githubUser, REPOS.work);
+      await exerciseTree(workRoot, SECONDARY, SECONDARY.githubUser, REPOS.secondary);
 
-      const workRepo = path.join(workRoot, REPOS.work);
+      const workRepo = path.join(workRoot, REPOS.secondary);
       if (fs.existsSync(workRepo)) {
         git(
           [
@@ -711,17 +699,17 @@ async function main() {
             `credential.helper=${quotedHelperOverride()}`,
             "push",
             "primary",
-            "HEAD:refs/heads/work-intrusion",
+            `HEAD:refs/heads/${SECONDARY.id}-intrusion`,
           ],
           workRepo,
           env,
         );
-        if (push.status !== 0) ok("work cannot push to primary private repo");
+        if (push.status !== 0) ok(`${SECONDARY.id} cannot push to primary private repo`);
         else fail("cross push should fail", "unexpected success");
       }
     }
 
-    console.log("\n7) SSH plane (primary key; work key invalid)");
+    console.log(`\n7) SSH plane (primary key; ${SECONDARY.id} key invalid)`);
     {
       let r = acct(["profile", "ssh-key", PRIMARY.id, "--path", PRIMARY.sshKey], env);
       if (r.status === 0) ok("attach primary ssh key");
@@ -729,7 +717,7 @@ async function main() {
       r = acct(["ssh-test", PRIMARY.id], env);
       if (
         r.status === 0 ||
-        /Hi acct-sh|successfully authenticated/i.test(r.stdout + r.stderr)
+        /Hi ${PRIMARY.githubUser}|successfully authenticated/i.test(r.stdout + r.stderr)
       ) {
         ok("ssh-test personal (https protocol + attached key)");
       } else {
@@ -737,31 +725,32 @@ async function main() {
         fail("ssh-test", redact(r.stdout + r.stderr));
       }
       const inc = fs.readFileSync(path.join(configDir, "git", "personal.inc"), "utf8");
-      if (inc.includes("IdentitiesOnly=yes") && inc.includes("abd_github"))
+      const primaryKeyHint = path.basename(PRIMARY.sshKey || "primary_github");
+      if (inc.includes("IdentitiesOnly=yes") && inc.includes(primaryKeyHint))
         ok("personal.inc sshCommand IdentitiesOnly");
       else fail("sshCommand inc", inc);
       acct(["profile", "ssh-key", SECONDARY.id, "--path", SECONDARY.sshKey], env);
       r = acct(["ssh-test", SECONDARY.id], env);
-      if (r.status !== 0 && !/Hi user-b/.test(r.stdout + r.stderr))
-        ok("ssh-test work fails as expected (key not on GitHub)");
-      else note("warn", "work ssh unexpectedly worked", "");
+      if (r.status !== 0 && !/Hi ${SECONDARY.githubUser}/.test(r.stdout + r.stderr))
+        ok(`ssh-test ${SECONDARY.id} fails as expected (key not on GitHub)`);
+      else note("warn", `${SECONDARY.id} ssh unexpectedly worked`, "");
     }
 
     console.log("\n8) Binding edge cases + doctor + uninstall");
     {
-      const nested = path.join(personalRoot, "nested-work");
+      const nested = path.join(personalRoot, `nested-${SECONDARY.id}`);
       fs.mkdirSync(nested, { recursive: true });
       acct(["bind", nested, SECONDARY.id], env);
       let r = acct(["status"], env, nested);
-      if (r.stdout.includes("user-b")) ok("longest binding wins");
+      if (r.stdout.includes(`${SECONDARY.githubUser}`)) ok("longest binding wins");
       else fail("longest", r.stdout);
 
       const repo = path.join(personalRoot, "local-acct-repo");
       fs.mkdirSync(repo, { recursive: true });
       git(["init"], repo, env);
-      fs.writeFileSync(path.join(repo, ".acct"), "profile: work\n");
+      fs.writeFileSync(path.join(repo, ".acct"), `profile: ${SECONDARY.id}\n`);
       r = acct(["status"], env, repo);
-      if (r.stdout.includes("work") && r.stdout.includes("reason: local"))
+      if (r.stdout.includes(`${SECONDARY.id}`) && r.stdout.includes("reason: local"))
         ok(".acct overrides parent binding");
       else fail(".acct", r.stdout);
 
@@ -777,9 +766,9 @@ async function main() {
 
       const nogit = path.join(personalRoot, "not-a-repo");
       fs.mkdirSync(nogit, { recursive: true });
-      fs.writeFileSync(path.join(nogit, ".acct"), "profile: work\n");
+      fs.writeFileSync(path.join(nogit, ".acct"), `profile: ${SECONDARY.id}\n`);
       r = acct(["status"], env, nogit);
-      if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout))
+      if (/profile: ${SECONDARY.id}/.test(r.stdout) && /reason: local/.test(r.stdout))
         ok("non-git .acct overrides parent binding");
       else fail("non-git .acct", r.stdout);
       fs.writeFileSync(path.join(nogit, ".acct"), "");
@@ -808,7 +797,7 @@ async function main() {
       git(["config", "user.email", "wrong@example.com"], repo, env);
       git(["config", "user.name", "Wrong"], repo, env);
       acct(["bind", personalRoot, PRIMARY.id, "--enforce", "warn"], env);
-      // repo under personal with .acct invalid → unbound-ish; use nested work for warn test
+      // repo under personal with .acct invalid → unbound-ish; use nested ${SECONDARY.id} for warn test
       const warnRepo = path.join(workRoot, "warn-repo");
       fs.mkdirSync(warnRepo, { recursive: true });
       git(["init"], warnRepo, env);
@@ -839,7 +828,7 @@ async function main() {
         // Cite: https://cli.github.com/manual/gh_repo_delete
         const del = run(
           "gh",
-          ["repo", "delete", `${owner}/${name}`, "--yes"],
+          ["repo", "delete`, `${owner}/${name}`, `--yes"],
           {
             env: {
               ...process.env,

@@ -1,16 +1,19 @@
 /**
  * Security regression harness (synthetic tokens + real resolution/helper).
  * Asserts I4 ambient env cannot cross accounts; I6 unbound quit; I8b dual plane;
- * I11b absolute hooks. Never touches Mair.
+ * I11b absolute hooks; I18 exec deny-list. Uses syntheticPair() only — no real people.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { syntheticPair, escapeRe } from "./e2e-identities.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ACCT = path.join(ROOT, "bin/acct.js");
 const HELPER = path.join(ROOT, "bin/git-credential-acct.js");
+
+const { a: PRIMARY, b: SECONDARY } = syntheticPair();
 
 let passed = 0;
 let failed = 0;
@@ -68,19 +71,22 @@ delete env.GH_TOKEN;
 delete env.GITHUB_TOKEN;
 delete env.ACCT_PROFILE;
 
+const TOK_A = "gho_TEST_ONLY_USER_A_" + "x".repeat(20);
+const TOK_B = "gho_TEST_ONLY_USER_B_" + "y".repeat(20);
+
 console.log("=== security regression ===\n");
 
 acct(
   [
     "init",
     "--id",
-    "personal",
+    PRIMARY.id,
     "--user",
-    "acct-sh",
+    PRIMARY.githubUser,
     "--email",
-    "dev@example.com",
+    PRIMARY.email,
     "--name",
-    "Primary User",
+    PRIMARY.name,
     "--bind",
     personal,
     "--protocol",
@@ -94,27 +100,27 @@ acct(
     "profile",
     "add",
     "--id",
-    "work",
+    SECONDARY.id,
     "--user",
-    "user-b",
+    SECONDARY.githubUser,
     "--email",
-    "user-b@example.com",
+    SECONDARY.email,
     "--name",
-    "Secondary User",
+    SECONDARY.name,
     "--protocol",
     "https",
   ],
   env,
 );
-acct(["bind", work, "work"], env);
+acct(["bind", work, SECONDARY.id], env);
 
-run(process.execPath, [ACCT, "profile", "token", "personal", "--stdin"], {
+run(process.execPath, [ACCT, "profile", "token", PRIMARY.id, "--stdin"], {
   env,
-  input: "gho_TEST_ONLY_PRIMARY_" + "x".repeat(20),
+  input: TOK_A,
 });
-run(process.execPath, [ACCT, "profile", "token", "work", "--stdin"], {
+run(process.execPath, [ACCT, "profile", "token", SECONDARY.id, "--stdin"], {
   env,
-  input: "gho_TEST_ONLY_SECONDARY_" + "y".repeat(20),
+  input: TOK_B,
 });
 acct(["install"], env);
 
@@ -123,12 +129,12 @@ acct(["install"], env);
     "get",
     "protocol=https\nhost=github.com\n\n",
     work,
-    { ...env, ACCT_PROFILE: "personal" },
+    { ...env, ACCT_PROFILE: PRIMARY.id },
   );
   if (
-    r.stdout.includes("username=user-b") &&
-    r.stdout.includes("gho_TEST_ONLY_SECONDARY_") &&
-    !r.stdout.includes("PRIMARY")
+    r.stdout.includes(`username=${SECONDARY.githubUser}`) &&
+    r.stdout.includes("gho_TEST_ONLY_USER_B_") &&
+    !r.stdout.includes("USER_A_")
   )
     ok("helper ignores ambient ACCT_PROFILE (I4)");
   else fail("I4 helper", JSON.stringify(r.stdout));
@@ -163,40 +169,38 @@ acct(["install"], env);
     [
       "profile",
       "ssh-key",
-      "work",
+      SECONDARY.id,
       "--path",
-      path.join(process.env.HOME || "/tmp", ".ssh/work_github"),
+      SECONDARY.sshKey || path.join(process.env.HOME || "/tmp", ".ssh/secondary_github"),
     ],
     env,
   );
-  const inc = fs.readFileSync(path.join(configDir, "git", "work.inc"), "utf8");
+  const inc = fs.readFileSync(path.join(configDir, "git", `${SECONDARY.id}.inc`), "utf8");
   if (inc.includes('helper = ""') && inc.includes("IdentitiesOnly=yes"))
     ok("ssh-key keeps HTTPS helper (I8b)");
   else fail("I8b dual", inc);
 }
 
 {
-  const r = acct(["hook-run", "pre-push"], { ...env, ACCT_PROFILE: "personal" }, work);
-  // Should evaluate work cwd profile, not personal — may fail identity or pass if no repo
-  // Create a fake repo under work with work identity
+  const r = acct(["hook-run", "pre-push"], { ...env, ACCT_PROFILE: PRIMARY.id }, work);
   const repo = path.join(work, "repo");
   fs.mkdirSync(repo, { recursive: true });
   run("git", ["init"], { cwd: repo, env });
-  run("git", ["config", "user.email", "user-b@example.com"], {
+  run("git", ["config", "user.email", SECONDARY.email], {
     cwd: repo,
     env,
   });
-  run("git", ["config", "user.name", "Secondary User"], { cwd: repo, env });
+  run("git", ["config", "user.name", SECONDARY.name], { cwd: repo, env });
   const r2 = acct(
     ["hook-run", "pre-push"],
-    { ...env, ACCT_PROFILE: "personal" },
+    { ...env, ACCT_PROFILE: PRIMARY.id },
     repo,
   );
-  // With ambient personal ignored, check uses work — principal check may fail without live token
-  // Identity check should be ok. If ambient were honored, identity would fail (primary email required).
-  // So status 0 or auth-missing for work is OK; identity mismatch for primary would mean regression.
+  // With ambient personal ignored, check uses work — principal check may fail without live token.
+  // Identity mismatch requiring PRIMARY email would mean ambient was honored (regression).
   const out = r2.stdout + r2.stderr;
-  if (!/requires "dev@example.com"/.test(out))
+  const primaryEmailRe = new RegExp(`requires "${escapeRe(PRIMARY.email)}"`);
+  if (!primaryEmailRe.test(out))
     ok("pre-push ignores ambient ACCT_PROFILE identity expectation");
   else fail("pre-push ambient", out);
   void r;
@@ -205,15 +209,12 @@ acct(["install"], env);
 {
   const r = helper(
     "store",
-    `protocol=https\nhost=github.com\nusername=acct-sh\npassword=gho_TEST_ONLY_SECONDARY_${"y".repeat(20)}\n\n`,
+    `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=${TOK_B}\n\n`,
     personal,
     env,
   );
   const g = helper("get", "protocol=https\nhost=github.com\n\n", personal, env);
-  if (
-    g.stdout.includes("gho_TEST_ONLY_PRIMARY_") &&
-    !g.stdout.includes("gho_TEST_ONLY_SECONDARY_")
-  )
+  if (g.stdout.includes(TOK_A) && !g.stdout.includes(TOK_B))
     ok("store poison ignored (I17)");
   else fail("I17 store poison", JSON.stringify(g.stdout));
   void r;
@@ -277,9 +278,12 @@ acct(["install"], env);
   // Non-git directory: .acct must still win (nearest walk-up)
   const dir = path.join(personal, "not-a-repo");
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, ".acct"), "profile: work\n");
+  fs.writeFileSync(path.join(dir, ".acct"), `profile: ${SECONDARY.id}\n`);
   let r = acct(["status"], env, dir);
-  if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout))
+  if (
+    new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) &&
+    /reason: local/.test(r.stdout)
+  )
     ok("I3 .acct honored without git repo");
   else fail("I3 non-git .acct", r.stdout);
 
@@ -298,10 +302,13 @@ acct(["install"], env);
   const pkg = path.join(repo, "pkg");
   fs.mkdirSync(pkg, { recursive: true });
   run("git", ["init"], { cwd: repo, env });
-  fs.writeFileSync(path.join(repo, ".acct"), "profile: personal\n");
-  fs.writeFileSync(path.join(pkg, ".acct"), "profile: work\n");
+  fs.writeFileSync(path.join(repo, ".acct"), `profile: ${PRIMARY.id}\n`);
+  fs.writeFileSync(path.join(pkg, ".acct"), `profile: ${SECONDARY.id}\n`);
   r = acct(["status"], env, pkg);
-  if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout))
+  if (
+    new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) &&
+    /reason: local/.test(r.stdout)
+  )
     ok("I3 nearest nested .acct wins over toplevel");
   else fail("I3 nested .acct", r.stdout);
 }
@@ -338,6 +345,13 @@ acct(["install"], env);
     ["bash", "-c", String.raw`printf 'auth\ntoken\n' | xargs -n2 gh`],
     ["bash", "-c", "echo Z2ggYXV0aCB0b2tlbg== | base64 -d | sh"],
     ["bash", "-c", "base64 -d <<<'Z2ggYXV0aCB0b2tlbg==' | bash"],
+    // Round-3 / re-added creative bypasses
+    ["bash", "-c", "a=g;b=h; $a$b auth token"],
+    ["bash", "-c", "x=g;y=h; $x$y auth token"],
+    ["bash", "-c", "x=gh; y=' auth token'; $x$y"],
+    ["awk", 'BEGIN{system("gh auth token")}'],
+    ["osascript", "-e", 'do shell script "gh auth token"'],
+    ["git", "-c", "alias.p=!gh auth token", "p"],
   ];
   let allOk = true;
   for (const cmd of cases) {
@@ -377,6 +391,33 @@ acct(["install"], env);
     }
   }
   if (allOk) ok("profile id allowlist rejects metacharacters/paths");
+}
+
+{
+  // Case-fold collision: work exists → reject WORK (I19)
+  const r = acct(
+    [
+      "profile",
+      "add",
+      "--id",
+      "WORK",
+      "--user",
+      "user-work-case",
+      "--email",
+      "user-work-case@example.com",
+      "--name",
+      "User Work Case",
+      "--protocol",
+      "https",
+    ],
+    env,
+  );
+  if (
+    r.status !== 0 &&
+    /collides with existing "work"|case.?fold|already exists/i.test(r.stderr + r.stdout)
+  )
+    ok("I19 rejects --id WORK when work exists");
+  else fail("I19 case-fold WORK", r.stderr + r.stdout);
 }
 
 fs.rmSync(base, { recursive: true, force: true });

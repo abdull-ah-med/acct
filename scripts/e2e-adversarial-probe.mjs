@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Adversarial live probes — try to break acct identity isolation.
- * Allowed: acct-sh, user-b ONLY. Never touch Mair.
+ * Allowed: configured live pair ONLY. Never touch Mair.
  * Does not commit/push to the acct product repo.
  */
 import { spawnSync } from "node:child_process";
@@ -9,25 +9,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadLivePair, escapeRe } from "./e2e-identities.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ACCT = path.join(ROOT, "bin/acct.js");
 const HELPER = path.join(ROOT, "bin/git-credential-acct.js");
 
-const PRIMARY = {
-  id: "personal",
-  githubUser: "acct-sh",
-  name: "Primary User",
-  email: "dev@example.com",
-  sshKey: path.join(os.homedir(), ".ssh/abd_github"),
-};
-const SECONDARY = {
-  id: "work",
-  githubUser: "user-b",
-  name: "Secondary User",
-  email: "user-b@example.com",
-  sshKey: path.join(os.homedir(), ".ssh/work_github"),
-};
+const { a: PRIMARY, b: SECONDARY } = loadLivePair();
 
 let passed = 0;
 let failed = 0;
@@ -78,7 +66,7 @@ function ghToken(user) {
   return r.stdout.trim();
 }
 
-console.log("=== ADVERSARIAL LIVE PROBES (primary + work) ===\n");
+console.log("=== ADVERSARIAL LIVE PROBES (PRIMARY + SECONDARY) ===\n");
 
 const base = fs.mkdtempSync(path.join(ROOT, ".tmp-adv-"));
 const configDir = path.join(base, "config");
@@ -146,11 +134,11 @@ try {
     ],
     env,
   );
-  if (r.status !== 0) throw new Error("add work failed: " + redact(r.stderr));
+  if (r.status !== 0) throw new Error(`add ${SECONDARY.id} failed: ` + redact(r.stderr));
   acct(["bind", workRoot, SECONDARY.id], env);
   acct(["install"], env);
-  const abdTok = ghToken(PRIMARY.githubUser);
-  const workTok = ghToken(SECONDARY.githubUser);
+  const priTok = ghToken(PRIMARY.githubUser);
+  const secTok = ghToken(SECONDARY.githubUser);
   ok("setup complete");
 
   // ---------- A: .acct outside git repo (no toplevel) ----------
@@ -158,9 +146,9 @@ try {
   {
     const dir = path.join(personalRoot, "not-a-repo");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, ".acct"), "profile: work\n");
+    fs.writeFileSync(path.join(dir, ".acct"), `profile: ${SECONDARY.id}\n`);
     r = acct(["status"], env, dir);
-    if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout)) {
+    if (new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) && /reason: local/.test(r.stdout)) {
       ok(".acct honored without git repo");
     } else if (/profile: personal/.test(r.stdout) && /reason: binding/.test(r.stdout)) {
       note(
@@ -191,15 +179,15 @@ try {
   // ---------- B: symlink / path traversal binding tricks ----------
   console.log("\nB) Symlink / path tricks");
   {
-    const realSecondary = path.join(base, "real-work-tree");
-    fs.mkdirSync(realSecondary, { recursive: true });
-    acct(["bind", realSecondary, SECONDARY.id], env);
+    const realWork = path.join(base, "real-work-tree");
+    fs.mkdirSync(realWork, { recursive: true });
+    acct(["bind", realWork, SECONDARY.id], env);
     const link = path.join(personalRoot, "via-symlink");
     try {
-      fs.symlinkSync(realSecondary, link);
+      fs.symlinkSync(realWork, link);
       r = acct(["status"], env, link);
       // Depending on normalizePath: may resolve to work (good) or personal (bad)
-      if (/user-b/.test(r.stdout)) ok("symlink into work tree resolves work");
+      if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(r.stdout)) ok(`symlink into ${SECONDARY.id} tree resolves ${SECONDARY.id}`);
       else {
         note(
           "warn",
@@ -262,11 +250,11 @@ try {
     for (const c of cases) {
       r = helper("get", c.body, personalRoot, env);
       const out = r.stdout;
-      const leaked = out.includes(abdTok) || out.includes(workTok);
+      const leaked = out.includes(priTok) || out.includes(secTok);
       // url= alone (incl. userinfo) is a valid git-credential form of host=github.com
       // Cite: https://git-scm.com/docs/git-credential
       if (c.name === "url= with userinfo") {
-        if (leaked && out.includes(abdTok) && !out.includes(workTok)) {
+        if (leaked && out.includes(priTok) && !out.includes(secTok)) {
           ok("url= userinfo → host github.com → primary token only (protocol OK)");
         } else if (!leaked) {
           ok("url= userinfo fail-closed");
@@ -278,11 +266,11 @@ try {
         fail(`smuggle ${c.name}`, redact(out));
       } else if (leaked && (c.name === "uppercase host" || /GitHub\.COM/.test(c.body))) {
         // Case folding — document if accepted
-        if (out.includes(`password=${abdTok}`)) {
+        if (out.includes(`password=${priTok}`)) {
           ok(`uppercase host accepted (case-insensitive) — token only primary`);
         } else fail(`uppercase host odd`, redact(out));
       } else if (leaked && c.name === "capability + get confusion") {
-        if (out.includes(abdTok) && !out.includes(workTok)) ok("capability attrs still return correct token");
+        if (out.includes(priTok) && !out.includes(secTok)) ok("capability attrs still return correct token");
         else fail("capability leak", redact(out));
       } else if (!leaked) {
         ok(`no leak: ${c.name}`);
@@ -301,7 +289,7 @@ try {
     });
     // Credential protocol stdout must include password= — that is not an I13 debug leak.
     // Cite: https://git-scm.com/docs/git-credential ; I13 applies to ACCT_DEBUG / logs.
-    if (r.stderr.includes(abdTok) || r.stderr.includes(workTok)) {
+    if (r.stderr.includes(priTok) || r.stderr.includes(secTok)) {
       note("error", "I13 VIOLATION: ACCT_DEBUG stderr leaked real token", redact(r.stderr).slice(0, 300));
       fail("ACCT_DEBUG redaction", "token present in stderr");
     } else if (
@@ -310,9 +298,9 @@ try {
     ) {
       note("error", "ACCT_DEBUG stderr may leak token-shaped material", redact(r.stderr).slice(0, 300));
       fail("ACCT_DEBUG shape", redact(r.stderr));
-    } else if (r.stdout.includes(abdTok) && /REDACTED/.test(r.stderr)) {
+    } else if (r.stdout.includes(priTok) && /REDACTED/.test(r.stderr)) {
       ok("ACCT_DEBUG stderr redacted; stdout password is credential protocol");
-    } else if (!r.stderr.includes(abdTok) && !r.stderr.includes(workTok)) {
+    } else if (!r.stderr.includes(priTok) && !r.stderr.includes(secTok)) {
       ok("ACCT_DEBUG does not emit real tokens on stderr");
     } else fail("ACCT_DEBUG unexpected", redact(r.stdout + r.stderr));
   }
@@ -321,7 +309,7 @@ try {
   console.log("\nE) Token exfil / env leakage");
   {
     r = acct(["shell-env"], env, personalRoot);
-    if (r.stdout.includes(abdTok)) {
+    if (r.stdout.includes(priTok)) {
       note(
         "warn",
         "shell-env exports raw GH_TOKEN in stdout (by design for eval)",
@@ -332,15 +320,15 @@ try {
 
     // exec env dump should contain token — but acct shouldn't log it
     r = acct(["exec", "node", "-e", "process.stdout.write(process.env.GH_TOKEN||'')"], env, personalRoot);
-    if (r.stdout === abdTok) ok("exec injects correct token to child");
+    if (r.stdout === priTok) ok("exec injects correct token to child");
     else fail("exec inject", redact(r.stdout));
 
     r = acct(
-      ["exec", "node", "-e", "process.stdout.write(process.env.GH_TOKEN||'')"],
-      { ...env, GH_TOKEN: workTok },
+      ["exec", "node", "-e", "process.stdout.write(process.env.GH_TOKEN||'`)"],
+      { ...env, GH_TOKEN: secTok },
       personalRoot,
     );
-    if (r.stdout === abdTok && r.stdout !== workTok) ok("exec overrides attacker GH_TOKEN");
+    if (r.stdout === priTok && r.stdout !== secTok) ok("exec overrides attacker GH_TOKEN");
     else fail("exec override fail", redact(r.stdout));
 
     // Can we trick exec deny-list?
@@ -353,11 +341,11 @@ try {
       ["exec", "/usr/bin/gh", "auth", "token"],
       ["exec", "env", "gh", "auth", "token"],
       ["exec", "bash", "-c", "gh auth token"],
-      ["exec", "sh", "-c", "gh auth token --user acct-sh"],
+      ["exec", "sh", "-c", `gh auth token --user ${PRIMARY.githubUser}`],
       ["exec", "bash", "-c", '"gh" "auth" "token"'],
       ["exec", "bash", "-c", "g=gh; $g auth token"],
-      ["exec", "bash", "-c", "x=auth; gh $x switch --user user-b"],
-      ["exec", "bash", "-c", "unset GH_TOKEN GITHUB_TOKEN; x=auth; gh $x switch --user user-b"],
+      ["exec", "bash", "-c", `x=auth; gh $x switch --user ${SECONDARY.githubUser}`],
+      ["exec", "bash", "-c", `unset GH_TOKEN GITHUB_TOKEN; x=auth; gh $x switch --user ${SECONDARY.githubUser}`],
       ["exec", "bash", "-c", "$(command -v gh) auth token"],
       ["exec", "bash", "-c", "echo auth token | xargs gh"],
       ["exec", "xargs", "gh"],
@@ -369,7 +357,7 @@ try {
     for (const args of bypasses) {
       r = acct(args, env, personalRoot);
       const out = r.stdout + r.stderr;
-      const dumped = out.includes(abdTok) || out.includes(workTok);
+      const dumped = out.includes(priTok) || out.includes(secTok);
       const refused = /Refusing to run/.test(out);
       if (dumped) {
         note(
@@ -439,8 +427,8 @@ try {
       workRoot,
       env,
     );
-    if (r.stdout.includes(workTok) && !r.stdout.includes(abdTok)) {
-      ok("cloning primary path from work tree still uses work creds (cwd wins)");
+    if (r.stdout.includes(secTok) && !r.stdout.includes(priTok)) {
+      ok(`cloning primary path from ${SECONDARY.id} tree still uses ${SECONDARY.id} creds (cwd wins)`);
       note(
         "info",
         "By design: path= does not select profile — wrong-account clone of public repos works; private cross-account push should fail at GitHub ACL",
@@ -456,7 +444,7 @@ try {
     const decoy = personalRoot + "-evil";
     fs.mkdirSync(decoy, { recursive: true });
     r = acct(["status"], env, decoy);
-    if (/unbound|profile: \(unbound\)/.test(r.stdout) || !/acct-sh/.test(r.stdout)) {
+    if (/unbound|profile: \(unbound\)/.test(r.stdout) || !new RegExp(`${escapeRe(PRIMARY.githubUser)}`).test(r.stdout)) {
       ok("path prefix does not match personalRoot-evil");
     } else {
       note("error", "PREFIX ATTACK: personalRoot-evil matched personal binding", r.stdout);
@@ -483,12 +471,12 @@ try {
     // erase with other account token should not clear
     r = helper(
       "erase",
-      `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=${workTok}\n\n`,
+      `protocol=https\nhost=github.com\nusername=${PRIMARY.githubUser}\npassword=${secTok}\n\n`,
       personalRoot,
       env,
     );
     const g = helper("get", "protocol=https\nhost=github.com\n\n", personalRoot, env);
-    if (g.stdout.includes(abdTok)) ok("erase with foreign token did not clear primary");
+    if (g.stdout.includes(priTok)) ok("erase with foreign token did not clear primary");
     else fail("erase foreign cleared token", redact(g.stdout));
   }
 
@@ -498,7 +486,7 @@ try {
     for (const cmd of [["status"], ["whoami"], ["doctor"], ["profile", "list"]]) {
       r = acct(cmd, env, personalRoot);
       const all = r.stdout + r.stderr;
-      if (all.includes(abdTok) || all.includes(workTok)) {
+      if (all.includes(priTok) || all.includes(secTok)) {
         fail(`${cmd.join(" ")} leaked token`, "found");
       } else ok(`${cmd.join(" ")} no raw token`);
     }
@@ -553,39 +541,32 @@ try {
     // restore real token
     run(process.execPath, [ACCT, "profile", "token", PRIMARY.id, "--stdin"], {
       env,
-      input: abdTok + "\n",
+      input: priTok + "\n",
     });
   }
 
   // ---------- M: Live API: can work read primary private e2e repo if leftover? ----------
   console.log("\nM) Cross-account API ACL (live)");
   {
-    for (const name of ["acct-e2e-msl0623l-abd", "acct-e2e-msl0623l-work"]) {
-      const abdSee = run("gh", ["api", `repos/${PRIMARY.githubUser}/${name}`, "--jq", ".full_name"], {
-        env: { ...env, GH_TOKEN: abdTok, GITHUB_TOKEN: undefined },
+    for (const name of [`acct-e2e-msl0623l-a`, `acct-e2e-msl0623l-${SECONDARY.id}`]) {
+      const owner = name.endsWith("-a") ? PRIMARY.githubUser : SECONDARY.githubUser;
+      const ownerTok = name.endsWith("-a") ? priTok : secTok;
+      const otherTok = name.endsWith("-a") ? secTok : priTok;
+      const ownerSee = run("gh", ["api", `repos/${owner}/${name}`, "--jq", ".full_name"], {
+        env: { ...env, GH_TOKEN: ownerTok, GITHUB_TOKEN: undefined },
       });
-      const workSeeAbd = run("gh", ["api", `repos/${PRIMARY.githubUser}/${name}`, "--jq", ".full_name"], {
-        env: { ...env, GH_TOKEN: workTok, GITHUB_TOKEN: undefined },
+      const otherSee = run("gh", ["api", `repos/${owner}/${name}`, "--jq", ".full_name"], {
+        env: { ...env, GH_TOKEN: otherTok, GITHUB_TOKEN: undefined },
       });
-      if (name.includes("-abd")) {
-        if (abdSee.status === 0) {
-          note("warn", `Leftover throwaway still exists: ${PRIMARY.githubUser}/${name}`, "delete manually — token lacks delete_repo");
-        }
-        if (workSeeAbd.status !== 0) ok(`work cannot see primary private ${name}`);
-        else fail("work saw primary private repo", workSeeAbd.stdout);
-      } else {
-        const workSee = run("gh", ["api", `repos/${SECONDARY.githubUser}/${name}`, "--jq", ".full_name"], {
-          env: { ...env, GH_TOKEN: workTok, GITHUB_TOKEN: undefined },
-        });
-        if (workSee.status === 0) {
-          note("warn", `Leftover throwaway still exists: ${SECONDARY.githubUser}/${name}`, "delete manually — token lacks delete_repo");
-        }
-        const abdSeeSecondary = run("gh", ["api", `repos/${SECONDARY.githubUser}/${name}`, "--jq", ".full_name"], {
-          env: { ...env, GH_TOKEN: abdTok, GITHUB_TOKEN: undefined },
-        });
-        if (abdSeeSecondary.status !== 0) ok(`primary cannot see work private ${name}`);
-        else fail("primary saw work private", abdSeeSecondary.stdout);
+      if (ownerSee.status === 0) {
+        note(
+          "warn",
+          `Leftover throwaway still exists: ${owner}/${name}`,
+          "delete manually — token lacks delete_repo",
+        );
       }
+      if (otherSee.status !== 0) ok(`cross-account cannot see private ${owner}/${name}`);
+      else fail(`cross-account saw private repo`, otherSee.stdout);
     }
   }
 
@@ -594,11 +575,12 @@ try {
   {
     acct(["profile", "ssh-key", PRIMARY.id, "--path", PRIMARY.sshKey], env);
     const inc = fs.readFileSync(path.join(configDir, "git", "personal.inc"), "utf8");
-    if (/IdentitiesOnly=yes/.test(inc) && /abd_github/.test(inc)) ok("sshCommand pins primary key");
+    const primaryKeyHint = path.basename(PRIMARY.sshKey || "primary_github");
+    if (/IdentitiesOnly=yes/.test(inc) && inc.includes(primaryKeyHint)) ok("sshCommand pins primary key");
     else fail("sshCommand", inc);
     // Without IdentitiesOnly, agent might offer wrong keys — we only verify config
-    if (/IdentityFile=.*work/.test(inc)) fail("personal.inc mentions work key", inc);
-    else ok("personal.inc does not reference work key");
+    if (new RegExp(`IdentityFile=.*${escapeRe(SECONDARY.id)}`).test(inc)) fail(`personal.inc mentions ${SECONDARY.id} key`, inc);
+    else ok(`personal.inc does not reference ${SECONDARY.id} key`);
   }
 
   // ---------- O: enforce off unbound helper fallthrough ----------

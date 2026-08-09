@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Delete leftover acct-e2e-* throwaway repos for acct-sh + user-b ONLY.
+ * Delete leftover acct-e2e-* throwaway repos for the configured live pair ONLY.
  * Requires delete_repo scope: gh auth refresh -h github.com -u <user> -s delete_repo
  * Cite: https://cli.github.com/manual/gh_repo_delete
  */
 import { spawnSync } from "node:child_process";
+import { loadLivePair } from "./e2e-identities.mjs";
 
-const ALLOWED = new Set(["acct-sh", "user-b"]);
+const { a: PRIMARY, b: SECONDARY } = loadLivePair();
+const ALLOWED = new Set([PRIMARY.githubUser, SECONDARY.githubUser]);
 const FORBIDDEN = /mair|reachrazamair|Work-Mair|mairahmed/i;
 
 function run(cmd, args, opts = {}) {
@@ -57,7 +59,7 @@ function deleteRepo(fullName, user) {
   return r;
 }
 
-console.log("=== cleanup acct-e2e-* (acct-sh + user-b ONLY) ===\n");
+console.log(`=== cleanup acct-e2e-* (${[...ALLOWED].join(" + ")} ONLY) ===\n`);
 
 let failed = 0;
 for (const user of ALLOWED) {
