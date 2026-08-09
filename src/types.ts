@@ -26,6 +26,11 @@ export interface AcctConfig {
   installed?: boolean;
 }
 
+/**
+ * Repo-local / directory-local `.acct` contents.
+ * Empty `profile` means the file is present but unbound (overrides parent bindings).
+ * Discovered by nearest walk-up from cwd (git optional).
+ */
 export interface LocalAcctFile {
   profile: string;
 }

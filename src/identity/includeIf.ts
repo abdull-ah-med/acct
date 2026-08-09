@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { AcctConfig, Profile } from "../types.js";
 import { gitIncDir, backupDir, acctConfigDir } from "../config/store.js";
 import { assertSafeSshHost } from "../ssh/keys.js";
-import { homeDir, normalizePath } from "../util/paths.js";
+import { homeDir, normalizePath, posixShellSingleQuote } from "../util/paths.js";
 
 const BEGIN = "# >>> acct managed begin >>>";
 const END = "# <<< acct managed end <<<";
@@ -46,7 +46,9 @@ export function renderProfileInclude(
     const host = assertSafeSshHost(profile.host);
     lines.push(
       "[core]",
-      `\tsshCommand = ssh -i ${shellQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`,
+      // IdentitiesOnly: https://man.openbsd.org/ssh_config.5
+      // core.sshCommand: https://git-scm.com/docs/git-config#Documentation/git-config.txt-coresshCommand
+      `\tsshCommand = ssh -i ${posixShellSingleQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`,
     );
   }
 
@@ -56,15 +58,9 @@ export function renderProfileInclude(
 /** Git runs helpers via the shell; paths with spaces need !'…' form. */
 function quoteHelper(cmd: string): string {
   // Verified: helper = !'/path with spaces/x' works; bare absolute paths do not.
-  // https://git-scm.com/docs/gitcredentials
+  // https://git-scm.com/docs/gitcredentials — "!" = shell snippet; empty helper resets list.
   if (cmd.startsWith("!")) return cmd;
-  const escaped = cmd.replace(/'/g, `'\"'\"'`);
-  return `!'${escaped}'`;
-}
-
-function shellQuote(s: string): string {
-  if (/[\s"'$`\\]/.test(s)) return `"${s.replace(/"/g, '\\"')}"`;
-  return s;
+  return `!${posixShellSingleQuote(cmd)}`;
 }
 
 export function writeProfileInclude(
@@ -122,7 +118,7 @@ export function ensureCredentialShim(
   }
 
   const script = `#!/bin/sh
-exec node ${shellQuote(target)} "$@"
+exec node ${posixShellSingleQuote(target)} "$@"
 `;
   fs.writeFileSync(shim, script, { mode: 0o755 });
   return shim.replace(/\\/g, "/");

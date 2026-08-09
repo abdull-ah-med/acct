@@ -18,6 +18,7 @@ describe("shell hooks", () => {
     });
     expect(sh).toContain("export ACCT_PROFILE=");
     expect(sh).toContain("unset GITHUB_TOKEN");
+    expect(sh).toContain("acct hook");
   });
 
   it("powershell hook preserves prior prompt when present", () => {

@@ -47,7 +47,7 @@ describe("identity includeIf", () => {
     expect(inc).toContain('helper = ""');
     expect(inc).toContain("helper = !'acct'");
     expect(inc).toContain("IdentitiesOnly=yes");
-    expect(inc).toContain("-i /tmp/id_work");
+    expect(inc).toContain("-i '/tmp/id_work'");
     expect(inc).toContain("HostName=github.com");
   });
 
@@ -69,7 +69,7 @@ describe("identity includeIf", () => {
       sshKeyPath: "/tmp/my keys/id_work",
     };
     const inc = renderProfileInclude(ssh, "acct");
-    expect(inc).toContain('-i "/tmp/my keys/id_work"');
+    expect(inc).toContain("-i '/tmp/my keys/id_work'");
   });
 
   it("rejects ssh hosts that could inject options", () => {

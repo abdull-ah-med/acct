@@ -26,7 +26,21 @@ describe("ssh host + command", () => {
       sshKeyPath: "/tmp/my keys/id",
     };
     expect(sshCommandFor(profile)).toBe(
-      'ssh -i "/tmp/my keys/id" -o IdentitiesOnly=yes -o HostName=github.com',
+      "ssh -i '/tmp/my keys/id' -o IdentitiesOnly=yes -o HostName=github.com",
     );
+  });
+
+  it("builds sshCommand for https profiles with attached keys (I8b)", () => {
+    const profile: Profile = {
+      id: "personal",
+      githubUser: "u",
+      host: "github.com",
+      name: "N",
+      email: "e@x.com",
+      protocol: "https",
+      sshKeyPath: "/tmp/id",
+    };
+    expect(sshCommandFor(profile)).toContain("IdentitiesOnly=yes");
+    expect(sshCommandFor(profile)).toContain("-i '/tmp/id'");
   });
 });
