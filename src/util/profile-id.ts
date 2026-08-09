@@ -13,11 +13,22 @@
  */
 const PROFILE_ID_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
+/** Windows reserved device names — cannot be used as filenames on NTFS. */
+const WINDOWS_RESERVED_RE =
+  /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/i;
+
 export function isValidProfileId(id: string): boolean {
-  return PROFILE_ID_RE.test(id);
+  if (!PROFILE_ID_RE.test(id)) return false;
+  if (WINDOWS_RESERVED_RE.test(id)) return false;
+  return true;
 }
 
 export function assertValidProfileId(id: string): void {
+  if (WINDOWS_RESERVED_RE.test(id)) {
+    throw new Error(
+      `Invalid profile id ${JSON.stringify(id)}: Windows reserved device name (CON/PRN/AUX/NUL/COM#/LPT#)`,
+    );
+  }
   if (!isValidProfileId(id)) {
     throw new Error(
       `Invalid profile id ${JSON.stringify(id)}: use 1–64 chars, start with a letter, then letters/digits/_/- only (no paths, spaces, or shell metacharacters)`,

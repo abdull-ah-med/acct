@@ -48,4 +48,20 @@ describe("enforce hooks (I11b)", () => {
       expect(fs.statSync(path.join(dir, "pre-commit")).mode & 0o111).toBeTruthy();
     }
   });
+
+  it("resolveAcctCliPaths prefers process.execPath over PATH node", () => {
+    const { node } = resolveAcctCliPaths({
+      ...process.env,
+      PATH: `/tmp/evil-bin:${process.env.PATH ?? ""}`,
+    });
+    expect(node).toBe(process.execPath);
+  });
+
+  it("ACCT_NODE_PATH overrides process.execPath", () => {
+    const { node } = resolveAcctCliPaths({
+      ...process.env,
+      ACCT_NODE_PATH: "/opt/custom/node",
+    });
+    expect(node).toBe("/opt/custom/node");
+  });
 });

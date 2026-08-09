@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
 import { hooksDir } from "../config/store.js";
+import { ensureAcctDir } from "../util/fs-safe.js";
+import { cmdEscapePath } from "../util/cmd-escape.js";
 
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
@@ -10,7 +11,9 @@ function shellQuote(s: string): string {
 
 /**
  * Resolve absolute paths to node + acct.js for hooks (I11b).
- * Bare `acct` on PATH is unreliable under core.hooksPath.
+ * Always prefer process.execPath — never trust `which node` from PATH
+ * (privilege escalation via rogue node earlier on PATH).
+ * Override only via explicit ACCT_NODE_PATH (cross-arch scenarios).
  * Cite: https://git-scm.com/docs/githooks — hooks are executables; PATH not guaranteed.
  */
 export function resolveAcctCliPaths(
@@ -18,23 +21,7 @@ export function resolveAcctCliPaths(
 ): { node: string; acctJs: string } {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const acctJs = path.resolve(here, "..", "..", "bin", "acct.js");
-  let node = process.execPath;
-  if (env.ACCT_NODE_PATH) {
-    node = env.ACCT_NODE_PATH;
-  } else {
-    try {
-      const which = process.platform === "win32" ? "where" : "which";
-      const found = execFileSync(which, ["node"], {
-        encoding: "utf8",
-        env,
-      })
-        .trim()
-        .split(/\r?\n/)[0];
-      if (found) node = found;
-    } catch {
-      // keep process.execPath
-    }
-  }
+  const node = env.ACCT_NODE_PATH?.trim() || process.execPath;
   return { node, acctJs };
 }
 
@@ -51,7 +38,7 @@ exec ${shellQuote(node)} ${shellQuote(acctJs)} hook-run ${hook}
 
 export function installHooks(env: NodeJS.ProcessEnv = process.env): string {
   const dir = hooksDir(env);
-  fs.mkdirSync(dir, { recursive: true });
+  ensureAcctDir(dir);
   const { node, acctJs } = resolveAcctCliPaths(env);
   const preCommit = path.join(dir, "pre-commit");
   const prePush = path.join(dir, "pre-push");
@@ -64,7 +51,7 @@ export function installHooks(env: NodeJS.ProcessEnv = process.env): string {
 
   if (process.platform === "win32") {
     const cmd = (hook: string) =>
-      `@echo off\r\n"${node}" "${acctJs}" hook-run ${hook}\r\n`;
+      `@echo off\r\n"${cmdEscapePath(node)}" "${cmdEscapePath(acctJs)}" hook-run ${hook}\r\n`;
     fs.writeFileSync(preCommit + ".cmd", cmd("pre-commit"));
     fs.writeFileSync(prePush + ".cmd", cmd("pre-push"));
   }

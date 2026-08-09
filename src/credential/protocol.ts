@@ -17,6 +17,23 @@ const SINGULAR_KEYS = new Set(["protocol", "host", "path", "username", "password
  * Split `host` / `host:port` / `[ipv6]:port` per git-credential host attribute.
  * Cite: https://git-scm.com/docs/git-credential — host includes port when specified.
  */
+/**
+ * Normalize host for conflict checks: strip default ports (:443 HTTPS, :80 HTTP).
+ * URL parsing often drops default ports while git may send host=github.com:443.
+ */
+export function normalizeCredentialHost(
+  host: string,
+  protocol?: string,
+): string {
+  const lower = host.trim().toLowerCase();
+  const proto = (protocol || "https").toLowerCase();
+  if (proto === "https" || proto === "http") {
+    const defaultPort = proto === "https" ? "443" : "80";
+    return lower.replace(new RegExp(`:${defaultPort}$`), "");
+  }
+  return lower.replace(/:(443|80)$/, "");
+}
+
 export function splitHostPort(host: string): {
   hostname: string;
   port?: string;
@@ -91,7 +108,8 @@ export function parseCredentialInput(text: string): CredentialAttrs {
       }
       if (
         attrs.host &&
-        attrs.host.toLowerCase() !== urlHost.toLowerCase()
+        normalizeCredentialHost(attrs.host, attrs.protocol || urlProtocol) !==
+          normalizeCredentialHost(urlHost, urlProtocol)
       ) {
         conflict = true;
       }

@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
 import type { AcctConfig, LocalAcctFile, Profile, Binding } from "../types.js";
-import { acctConfigDir, normalizePath } from "../util/paths.js";
+import { acctConfigDir, normalizePath, TOKEN_SHAPE } from "../util/paths.js";
+import { ensureAcctDir, atomicWriteFileSync } from "../util/fs-safe.js";
 
 export { acctConfigDir };
 
@@ -59,7 +60,7 @@ export function saveConfig(
 ): void {
   assertNoSecretsInConfig(config);
   const dir = acctConfigDir(env);
-  fs.mkdirSync(dir, { recursive: true });
+  ensureAcctDir(dir);
   const file = configPath(env);
   const toWrite: AcctConfig = {
     ...config,
@@ -68,16 +69,34 @@ export function saveConfig(
       path: normalizePath(b.path),
     })),
   };
-  fs.writeFileSync(file, YAML.stringify(toWrite), { mode: 0o600 });
+  atomicWriteFileSync(file, YAML.stringify(toWrite), 0o600);
 }
 
+/** Look up a profile by exact id only. */
+export function findProfileById(
+  config: AcctConfig,
+  id: string,
+): Profile | undefined {
+  return config.profiles.find((p) => p.id === id);
+}
+
+/** Look up a profile by githubUser. */
+export function findProfileByUser(
+  config: AcctConfig,
+  user: string,
+): Profile | undefined {
+  return config.profiles.find((p) => p.githubUser === user);
+}
+
+/**
+ * @deprecated Prefer findProfileById / findProfileByUser to avoid ambiguity.
+ * Matches by either id or githubUser (legacy CLI convenience).
+ */
 export function getProfile(
   config: AcctConfig,
   idOrUser: string,
 ): Profile | undefined {
-  return config.profiles.find(
-    (p) => p.id === idOrUser || p.githubUser === idOrUser,
-  );
+  return findProfileById(config, idOrUser) ?? findProfileByUser(config, idOrUser);
 }
 
 export function upsertProfile(config: AcctConfig, profile: Profile): AcctConfig {
@@ -173,7 +192,8 @@ export function findLocalAcct(startDir: string): LocalAcctFile | null {
 
 export function assertNoSecretsInConfig(config: AcctConfig): void {
   const blob = YAML.stringify(config);
-  if (/\b(gh[pousr]_|github_pat_)\w+/i.test(blob)) {
+  // Clone regex — global TOKEN_SHAPE retains lastIndex across .test() calls.
+  if (new RegExp(TOKEN_SHAPE.source, TOKEN_SHAPE.flags).test(blob)) {
     throw new Error("Refusing to save config that appears to contain a token");
   }
 }

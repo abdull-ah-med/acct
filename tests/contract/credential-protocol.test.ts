@@ -102,4 +102,26 @@ describe("credential protocol (git-scm.com/docs/git-credential)", () => {
     expect(attrs.host).toBe("github.com");
     expect(attrs.protocol).toBe("https");
   });
+
+  it("host=github.com:443 + url=https://github.com does not conflict", () => {
+    const attrs = parseCredentialInput(
+      "protocol=https\nhost=github.com:443\nurl=https://github.com/foo\n\n",
+    );
+    expect(attrs.host).not.toBe("");
+    expect(attrs.host.toLowerCase()).toMatch(/github\.com/);
+  });
+
+  it("host=github.com:8443 + matching url port does not conflict", () => {
+    const attrs = parseCredentialInput(
+      "protocol=https\nhost=github.com:8443\nurl=https://github.com:8443/foo\n\n",
+    );
+    expect(attrs.host).toBe("github.com:8443");
+  });
+
+  it("host=github.com:443 + different url host conflicts", () => {
+    const attrs = parseCredentialInput(
+      "protocol=https\nhost=github.com:443\nurl=https://example.com/foo\n\n",
+    );
+    expect(attrs.host).toBe("");
+  });
 });

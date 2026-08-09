@@ -31,9 +31,12 @@ export function pathIsPrefix(prefix: string, candidate: string): boolean {
   return b.startsWith(a + "/");
 }
 
-/** GitHub token shapes — never emit these in logs (security-secrets rule). */
-const TOKEN_SHAPE =
-  /\b(?:gho_|ghp_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_*]+/g;
+/**
+ * GitHub / common token shapes — shared by sanitizeDebugMessage and config guards.
+ * Cite: https://github.blog/changelog/2021-03-31-authentication-token-format-updates/
+ */
+export const TOKEN_SHAPE =
+  /\b(?:gh[pousrc]_|github_pat_)[A-Za-z0-9_]{16,}|\b[a-f0-9]{40}\b/gi;
 
 /**
  * Redact a secret for debug output. Never keep a token prefix — presence only.
@@ -48,7 +51,15 @@ export function sanitizeDebugMessage(message: string): string {
   return message
     .replace(TOKEN_SHAPE, "[REDACTED]")
     .replace(
-      /\b(password|token|secret|authorization)=([^\s]+)/gi,
+      /\b(Authorization|authorization)\s*:\s*Bearer\s+\S+/gi,
+      "$1: Bearer [REDACTED]",
+    )
+    .replace(
+      /\bx-access-token:[^@\s]+@/gi,
+      "x-access-token:[REDACTED]@",
+    )
+    .replace(
+      /\b(password|token|secret|authorization)\s*=\s*([^\s]+)/gi,
       "$1=[REDACTED]",
     );
 }

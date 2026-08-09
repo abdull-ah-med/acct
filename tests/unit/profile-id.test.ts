@@ -16,6 +16,14 @@ describe("profile id allowlist", () => {
     }
   });
 
+  it("rejects Windows reserved device names", () => {
+    for (const id of ["CON", "aux", "com1", "LPT9", "NUL", "Prn"]) {
+      expect(isValidProfileId(id), id).toBe(false);
+      expect(() => assertValidProfileId(id)).toThrow(/reserved|Invalid profile id/i);
+    }
+    expect(() => assertValidProfileId("work")).not.toThrow();
+  });
+
   it("rejects shell metacharacters, paths, and newlines", () => {
     const bad = [
       "evil$(whoami)",

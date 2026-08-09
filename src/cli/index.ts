@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import path from "node:path";
 import {
   loadConfig,
@@ -9,7 +10,7 @@ import {
   upsertBinding,
   removeBinding,
   assertNoSecretsInConfig,
-  getProfile,
+  findProfileById,
 } from "../config/store.js";
 import type { EnforceMode, Profile, Protocol } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
@@ -18,14 +19,16 @@ import {
   assertValidProfileId,
   assertNoProfileIdCaseCollision,
 } from "../util/profile-id.js";
+import { assertSafeProfileFields } from "../util/profile-fields.js";
 import {
   installIncludeIf,
   uninstallIncludeIf,
   restoreGitconfigBackup,
   writeProfileInclude,
+  removeProfileArtifacts,
 } from "../identity/includeIf.js";
 import { setProfileToken, getProfileToken, deleteProfileToken } from "../secrets/store.js";
-import { importAndStoreToken, envForProfile, isDangerousGhArgv, ghApiLogin } from "../gh/env.js";
+import { importAndStoreToken, envForProfile, isDangerousGhArgv, ghApiLogin, stripGitConfigEnvOverrides } from "../gh/env.js";
 import { generateSshKey, readPublicKey, testSshAuth } from "../ssh/keys.js";
 import {
   checkCommitIdentity,
@@ -37,11 +40,20 @@ import { hookScript, shellEnvExports, type ShellKind } from "../shell/hooks.js";
 import { buildShellEnvExports } from "../shell/env.js";
 import { installWrapShims, wrapPathExport } from "../shell/wrap.js";
 import { runDoctor } from "../doctor/run.js";
-import { execFileSync } from "node:child_process";
 
-function configureHooksPath(
+const require = createRequire(import.meta.url);
+const { version: CLI_VERSION } = require("../../package.json") as {
+  version: string;
+};
+
+export function configureHooksPath(
   hooks: string,
-  opts: { global?: boolean } = {},
+  opts: {
+    global?: boolean;
+    force?: boolean;
+    /** When set, run git -C against this directory instead of cwd. */
+    bindDir?: string;
+  } = {},
 ): void {
   if (opts.global) {
     execFileSync("git", ["config", "--global", "core.hooksPath", hooks]);
@@ -51,10 +63,18 @@ function configureHooksPath(
     );
     return;
   }
+
+  const gitArgsPrefix =
+    opts.bindDir != null ? (["-C", path.resolve(opts.bindDir)] as string[]) : [];
+
   try {
-    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    execFileSync(
+      "git",
+      [...gitArgsPrefix, "rev-parse", "--is-inside-work-tree"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
   } catch {
     console.log(`Hooks written to ${hooks}`);
     console.log(
@@ -62,8 +82,41 @@ function configureHooksPath(
     );
     return;
   }
-  execFileSync("git", ["config", "core.hooksPath", hooks]);
-  console.log(`core.hooksPath=${hooks} (local repo)`);
+
+  let existing = "";
+  try {
+    existing = execFileSync(
+      "git",
+      [...gitArgsPrefix, "config", "--local", "--get", "core.hooksPath"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim();
+  } catch {
+    existing = "";
+  }
+
+  const hooksResolved = path.resolve(hooks);
+  if (existing) {
+    const existingResolved = path.resolve(existing);
+    if (existingResolved === hooksResolved) {
+      console.log(`core.hooksPath already points to acct hooks (${hooks})`);
+      return;
+    }
+    if (!opts.force) {
+      throw new Error(
+        `Refusing to overwrite existing core.hooksPath=${existing}. ` +
+          `Pass --force to replace it with ${hooks}, or unset it first: ` +
+          `git ${opts.bindDir ? `-C ${opts.bindDir} ` : ""}config --unset core.hooksPath`,
+      );
+    }
+    console.warn(
+      `Overwriting existing core.hooksPath=${existing} with ${hooks} (--force)`,
+    );
+  }
+
+  execFileSync("git", [...gitArgsPrefix, "config", "core.hooksPath", hooks]);
+  console.log(
+    `core.hooksPath=${hooks} (local repo${opts.bindDir ? ` via -C ${opts.bindDir}` : ""})`,
+  );
 }
 
 export async function runCli(argv: string[]): Promise<void> {
@@ -73,7 +126,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .description(
       "Directory-scoped GitHub identity and auth — one account, one identity, one directory",
     )
-    .version("0.1.3");
+    .version(CLI_VERSION);
 
   program
     .command("init")
@@ -90,8 +143,18 @@ export async function runCli(argv: string[]): Promise<void> {
       "--global-hooks",
       "Set core.hooksPath globally (discouraged; replaces hooks in all repos)",
     )
+    .option(
+      "--force",
+      "Overwrite an existing non-acct core.hooksPath in the bind/target repo",
+    )
     .action(async (opts) => {
       assertValidProfileId(opts.id);
+      assertSafeProfileFields({
+        name: opts.name,
+        email: opts.email,
+        host: opts.host,
+        user: opts.user,
+      });
       let config = loadConfig();
       // Case-fold uniqueness: work vs WORK share git/work.inc on macOS/Windows.
       // Cite: https://git-scm.com/docs/git-config (gitdir/i, core.ignoreCase)
@@ -120,9 +183,14 @@ export async function runCli(argv: string[]): Promise<void> {
       installIncludeIf(config);
       const hooks = installHooks();
       try {
-        configureHooksPath(hooks, { global: !!opts.globalHooks });
+        configureHooksPath(hooks, {
+          global: !!opts.globalHooks,
+          force: !!opts.force,
+          bindDir: path.resolve(opts.bind),
+        });
       } catch (e) {
         console.warn(`Could not set core.hooksPath: ${e}`);
+        throw e;
       }
       config.installed = true;
       saveConfig(config);
@@ -143,6 +211,12 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--import-gh", "Import token via gh auth token --user")
     .action(async (opts) => {
       assertValidProfileId(opts.id);
+      assertSafeProfileFields({
+        name: opts.name,
+        email: opts.email,
+        host: opts.host || "github.com",
+        user: opts.user,
+      });
       let config = loadConfig();
       // Case-fold uniqueness: work vs WORK share git/work.inc on macOS/Windows.
       // Cite: https://git-scm.com/docs/git-config (gitdir/i, core.ignoreCase)
@@ -179,7 +253,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .argument("<id>")
     .action((id) => {
       const config = loadConfig();
-      const p = getProfile(config, id);
+      const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       console.log(JSON.stringify(p, null, 2));
     });
@@ -189,9 +263,10 @@ export async function runCli(argv: string[]): Promise<void> {
     .argument("<id>")
     .action(async (id) => {
       let config = loadConfig();
-      const p = getProfile(config, id);
+      const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       await deleteProfileToken(p);
+      removeProfileArtifacts(p);
       config = removeProfile(config, id);
       saveConfig(config);
       installIncludeIf(config);
@@ -205,7 +280,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--stdin", "Read token from stdin")
     .action(async (id, opts) => {
       const config = loadConfig();
-      const p = getProfile(config, id);
+      const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       if (opts.importGh) {
         await importAndStoreToken(p);
@@ -235,7 +310,7 @@ export async function runCli(argv: string[]): Promise<void> {
     )
     .action((id, opts) => {
       let config = loadConfig();
-      const p = getProfile(config, id);
+      const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       if (opts.generate) {
         const { privateKey, publicKey } = generateSshKey(p);
@@ -279,7 +354,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--enforce <mode>", "strict|warn|off")
     .action((dir, profileId, opts) => {
       let config = loadConfig();
-      if (!getProfile(config, profileId)) {
+      if (!findProfileById(config, profileId)) {
         throw new Error(`Unknown profile: ${profileId}`);
       }
       config = upsertBinding(config, {
@@ -371,8 +446,11 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("doctor")
-    .action(() => {
-      const findings = runDoctor();
+    .option("--online", "Allow network checks (gh api user)")
+    .action((opts) => {
+      const findings = runDoctor(process.cwd(), process.env, {
+        online: !!opts.online,
+      });
       for (const f of findings) {
         const tag = f.severity.toUpperCase();
         console.log(`[${tag}] ${f.code}: ${f.message}`);
@@ -424,9 +502,11 @@ export async function runCli(argv: string[]): Promise<void> {
             `Git HTTPS still follows the directory/.acct. Pass --allow-cross-profile to inject the other account's GH_TOKEN for gh only.`,
         );
       }
-      const env = resolved.profile
-        ? await envForProfile(resolved.profile)
-        : { ...process.env };
+      const env = stripGitConfigEnvOverrides(
+        resolved.profile
+          ? await envForProfile(resolved.profile)
+          : { ...process.env },
+      );
       if (
         opts.profile &&
         cwdResolved.profile &&
@@ -446,9 +526,10 @@ export async function runCli(argv: string[]): Promise<void> {
         const child = spawn(command[0]!, command.slice(1), {
           stdio: "inherit",
           env,
-          shell: process.platform === "win32",
+          shell: false,
         });
         child.on("exit", (c) => resolve(c ?? 1));
+        child.on("error", () => resolve(1));
       });
       process.exitCode = code;
     });
@@ -471,7 +552,13 @@ export async function runCli(argv: string[]): Promise<void> {
         : process.env;
       const args = ["clone", url];
       if (dir) args.push(dir);
-      execFileSync("git", args, { stdio: "inherit", env });
+      const result = spawnSync("git", args, { stdio: "inherit", env });
+      if (result.error) {
+        console.error(`acct clone failed: ${result.error.message}`);
+        process.exitCode = 1;
+        return;
+      }
+      if (result.status !== 0) process.exit(result.status ?? 1);
     });
 
   program
@@ -532,11 +619,15 @@ export async function runCli(argv: string[]): Promise<void> {
       "--global",
       "Set core.hooksPath globally (discouraged; replaces hooks in all repos)",
     )
+    .option(
+      "--force",
+      "Overwrite an existing non-acct core.hooksPath in the current repo",
+    )
     .action((opts) => {
       const config = loadConfig();
       installIncludeIf(config);
       const hooks = installHooks();
-      configureHooksPath(hooks, { global: !!opts.global });
+      configureHooksPath(hooks, { global: !!opts.global, force: !!opts.force });
       config.installed = true;
       saveConfig(config);
       console.log("Installed acct git includes and hooks");
@@ -608,7 +699,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .argument("<id>")
     .action((id) => {
       const config = loadConfig();
-      const p = getProfile(config, id);
+      const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       const r = testSshAuth(p);
       console.log(r.output);

@@ -1,4 +1,5 @@
 import { stdin as input, stdout as output } from "node:process";
+import { timingSafeEqual } from "node:crypto";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { getProfileToken, deleteProfileToken } from "../secrets/store.js";
 import {
@@ -8,6 +9,13 @@ import {
   hostAllowed,
 } from "./protocol.js";
 import { debugLog } from "../util/paths.js";
+
+function passwordsEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -136,7 +144,7 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
     if (!current) return;
     // Only erase when reject confirms our stored credential (password match).
     // Cite: git-credential reject feeds the failed credential description.
-    if (!attrs.password || attrs.password !== current) {
+    if (!attrs.password || !passwordsEqual(attrs.password, current)) {
       debugLog("credential erase: ignored (password does not match stored token)");
       return;
     }

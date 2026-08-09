@@ -7,6 +7,8 @@ export function hookScript(shell: ShellKind): string {
       return `# acct shell hook (${shell})
 # Add to ~/.${shell}rc: eval "$(acct hook ${shell})"
 acct_chpwd() {
+  [ "$PWD" = "\${_ACCT_LAST_PWD-}" ] && return
+  _ACCT_LAST_PWD=$PWD
   eval "$(acct shell-env)"
 }
 if [[ -n "$ZSH_VERSION" ]]; then
@@ -14,7 +16,10 @@ if [[ -n "$ZSH_VERSION" ]]; then
   add-zsh-hook chpwd acct_chpwd 2>/dev/null || true
 fi
 if [[ -n "$BASH_VERSION" ]]; then
-  PROMPT_COMMAND="acct_chpwd;\${PROMPT_COMMAND}"
+  case ":\${PROMPT_COMMAND-}:" in
+    *":acct_chpwd;"*) ;;
+    *) PROMPT_COMMAND="acct_chpwd;\${PROMPT_COMMAND-}" ;;
+  esac
 fi
 acct_chpwd
 `;
@@ -32,17 +37,20 @@ acct shell-env | source
 function acct_ApplyEnv {
   Invoke-Expression (acct shell-env --powershell | Out-String)
 }
-# Preserve an existing prompt if present; append acct env refresh
-if (Get-Command prompt -ErrorAction SilentlyContinue) {
-  $acct__prevPrompt = (Get-Item function:prompt).ScriptBlock
-  function prompt {
-    acct_ApplyEnv
-    & $acct__prevPrompt
+# Preserve an existing prompt if present; append acct env refresh once
+if (-not (Test-Path variable:acct__prevPrompt)) {
+  if (Get-Command prompt -ErrorAction SilentlyContinue) {
+    $acct__prevPrompt = (Get-Item function:prompt).ScriptBlock
+  } else {
+    $acct__prevPrompt = $null
   }
-} else {
   function prompt {
     acct_ApplyEnv
-    "PS $($executionContext.SessionState.Path.CurrentLocation)> "
+    if ($null -ne $acct__prevPrompt) {
+      & $acct__prevPrompt
+    } else {
+      "PS $($executionContext.SessionState.Path.CurrentLocation)> "
+    }
   }
 }
 acct_ApplyEnv
