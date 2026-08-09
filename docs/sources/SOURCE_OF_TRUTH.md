@@ -6,8 +6,8 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| gitcredentials | https://git-scm.com/docs/gitcredentials | 2026-08-08 (re-fetched for E2E security fix) |
-| git-credential protocol | https://git-scm.com/docs/git-credential | 2026-08-08 (re-fetched for E2E security fix) |
+| gitcredentials | https://git-scm.com/docs/gitcredentials | 2026-08-08 (re-fetched for uninstall residual / credential reject) |
+| git-credential protocol | https://git-scm.com/docs/git-credential | 2026-08-08 (re-fetched for nearest `.acct` walk) |
 | api-credentials (helpers) | https://git-scm.com/docs/api-credentials | 2026-08-08 |
 | GCM multiple users | https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/multiple-users.md | 2026-08-08 |
 | GCM credstores | https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/credstores.md | 2026-08-08 |
@@ -20,6 +20,7 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 |-------|-----|---------------|
 | git-config (includeIf) | https://git-scm.com/docs/git-config | 2026-08-08 |
 | Conditional includes (source) | https://github.com/git/git/blob/master/Documentation/config.adoc | 2026-08-08 |
+| direnv nearest-config walk (`find_up`) | https://github.com/direnv/direnv/blob/master/README.md | 2026-08-08 |
 
 ## SSH
 
@@ -33,11 +34,16 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| gh environment | https://cli.github.com/manual/gh_help_environment | 2026-08-08 |
-| gh auth login | https://cli.github.com/manual/gh_auth_login | 2026-08-08 |
-| gh auth switch | https://cli.github.com/manual/gh_auth_switch | 2026-08-08 |
-| gh auth token | https://cli.github.com/manual/gh_auth_token | 2026-08-08 |
+| gh environment | https://cli.github.com/manual/gh_help_environment | 2026-08-08 (re-fetched for I18 sticky-token unset / shell obfuscation round 2) |
+| gh auth login | https://cli.github.com/manual/gh_auth_login | 2026-08-08 (re-fetched for I18 shell obfuscation) |
+| gh auth logout | https://cli.github.com/manual/gh_auth_logout | 2026-08-08 |
+| gh auth refresh | https://cli.github.com/manual/gh_auth_refresh | 2026-08-08 (re-fetched: env token blocks refresh until cleared) |
+| gh auth switch | https://cli.github.com/manual/gh_auth_switch | 2026-08-08 (re-fetched for I18 shell obfuscation) |
+| gh auth token | https://cli.github.com/manual/gh_auth_token | 2026-08-08 (re-fetched for I18 shell obfuscation round 2) |
 | gh auth setup-git | https://cli.github.com/manual/gh_auth_setup-git | 2026-08-08 |
+| GH_TOKEN blocks auth mutation (cli#2922) | https://github.com/cli/cli/issues/2922 | 2026-08-08 |
+| Clear env token to mutate stored creds (discussion#9647) | https://github.com/cli/cli/discussions/9647 | 2026-08-08 |
+| gh repo delete | https://cli.github.com/manual/gh_repo_delete | 2026-08-08 (e2e cleanup / delete_repo scope) |
 | Multiple accounts (docs.github) | https://docs.github.com/en/github-cli/github-cli/using-multiple-accounts | 2026-08-08 |
 | Multiple accounts (gh source) | https://github.com/cli/cli/blob/trunk/docs/multiple-accounts.md | 2026-08-08 |
 | Creating a PAT | https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token | 2026-08-08 |
@@ -62,3 +68,12 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 | Topic | URL | last_verified |
 |-------|-----|---------------|
 | CVE-2020-11008 / GHSA | https://github.com/git/git/security/advisories/GHSA-hjc9-x69f-jqj7 | 2026-08-08 |
+
+## Process wrappers (exec deny)
+
+| Topic | URL | last_verified |
+|-------|-----|---------------|
+| xargs (Linux man) | https://man7.org/linux/man-pages/man1/xargs.1.html | 2026-08-08 (re-fetched: stdin append / `-I` replace → I18 fail-closed xargs→gh\|shell) |
+| xargs (macOS / SS64) | https://ss64.com/mac/xargs.html | 2026-08-08 (re-fetched: `-I`/`-J` replacement) |
+| POSIX printf (escapes / `\n`) | https://pubs.opengroup.org/onlinepubs/9699919799/utilities/printf.html | 2026-08-08 (I18 printf→xargs bypass) |
+| bash Word Splitting / IFS (local `man bash`) | local man page § Word Splitting | 2026-08-08 (empty IFS gluing) |
