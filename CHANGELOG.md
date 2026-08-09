@@ -5,6 +5,41 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-08-08
+
+### Security
+
+- **I18** closes remaining `acct exec` deny-list bypasses: positional `$1`/`$@`, PowerShell/`cmd`, ANSI-C `$'\xNN'`, variable reconstruction, `printf`/`echo -e`|shell, brace expansion, shell aliases, `GIT_CONFIG_*` stripping, `git -c` pager/editor/sshCommand/include.path, `find -exec`, ash/mksh/busybox (T13)
+- Hooks always bake `process.execPath` (never `which node`); override only via `ACCT_NODE_PATH`
+- Profile `--name`/`--email`/`--host`/`--user` reject CR/LF/NUL/`\`/`"` and validate host/user shapes (gitconfig injection)
+- Windows reserved device names rejected as profile ids (I20)
+- Windows `.cmd` shims escape `%` / `"` in paths
+- `acct exec` always uses `shell: false` (no cmd.exe metachar re-expansion)
+- Credential helper `erase` uses constant-time password compare
+
+### Fixed
+
+- `FileSecretStore` atomic writes + lockfile; corrupt JSON throws (no silent `{}`) (T16)
+- Windows `git.cmd` wrap shim skips its own directory (no infinite self-recursion)
+- `installIncludeIf` uses lockfile + atomic rename on `~/.gitconfig` (T16)
+- `configureHooksPath` refuses pre-existing non-acct `core.hooksPath` unless `--force`; honors `--bind` via `git -C`
+- Credential parser normalizes default ports (`github.com:443` vs URL without port)
+- CLI `--version` reads `package.json` (no hard-coded drift)
+- Config dirs get `chmod 0700` even when already existing (I21)
+- `profile remove` deletes `git/<id>.inc` and SSH key artifacts; uninstall cleans orphan `.inc` files
+- `clone` uses `spawnSync` (clean exit, no Node stack on failure)
+- Bash/PowerShell shell hooks are idempotent on re-source; bash `acct_chpwd` skips unchanged `$PWD`
+- `sanitizeDebugMessage` covers `ghc_`, Bearer, `x-access-token:…@`, 40-char hex, spaced `token =`
+- `ssh-test` uses bundled github.com `known_hosts` + `StrictHostKeyChecking=yes`
+- Doctor: `--show-origin` helper chain; network principal check gated behind `--online`; config perms / orphan `.inc` / pre-push / shim / stale node path checks
+- Repair `e2e-extra-break.mjs` / `e2e-adversarial-probe.mjs` template-literal bugs
+
+### Changed
+
+- Invariants: I18 expanded bypass classes; **I20** / **I21** added
+- Threat model: T13 expanded; **T16** concurrent process safety
+- Package includes `data/github_known_hosts` for ssh-test pinning
+
 ## [Unreleased]
 
 ### Fixed
