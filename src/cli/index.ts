@@ -14,7 +14,10 @@ import {
 import type { EnforceMode, Profile, Protocol } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { normalizePath } from "../util/paths.js";
-import { assertValidProfileId } from "../util/profile-id.js";
+import {
+  assertValidProfileId,
+  assertNoProfileIdCaseCollision,
+} from "../util/profile-id.js";
 import {
   installIncludeIf,
   uninstallIncludeIf,
@@ -90,6 +93,10 @@ export async function runCli(argv: string[]): Promise<void> {
     .action(async (opts) => {
       assertValidProfileId(opts.id);
       let config = loadConfig();
+      // Case-fold uniqueness: work vs WORK share git/work.inc on macOS/Windows.
+      // Cite: https://git-scm.com/docs/git-config (gitdir/i, core.ignoreCase)
+      // Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
+      assertNoProfileIdCaseCollision(config.profiles, opts.id);
       const profile: Profile = {
         id: opts.id,
         githubUser: opts.user,
@@ -137,6 +144,10 @@ export async function runCli(argv: string[]): Promise<void> {
     .action(async (opts) => {
       assertValidProfileId(opts.id);
       let config = loadConfig();
+      // Case-fold uniqueness: work vs WORK share git/work.inc on macOS/Windows.
+      // Cite: https://git-scm.com/docs/git-config (gitdir/i, core.ignoreCase)
+      // Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
+      assertNoProfileIdCaseCollision(config.profiles, opts.id);
       const profile: Profile = {
         id: opts.id,
         githubUser: opts.user,

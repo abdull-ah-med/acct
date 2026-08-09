@@ -156,6 +156,9 @@ describe("secrets + gh env", () => {
       `echo Z2ggYXV0aCB0b2tlbg== | base64 -d | sh`,
       `base64 -d <<<'Z2ggYXV0aCB0b2tlbg==' | bash`,
       `eval "$(base64 -d <<<'Z2ggYXV0aCB0b2tlbg==')"`,
+      // Round-3 live bypasses (2026-08-08): glued argv0 / sole-command reconstruction
+      `a=g;b=h; $a$b auth token`,
+      `x=gh; y=' auth token'; $x$y`,
     ];
     for (const script of denied) {
       expect(shellScriptHasDangerousGhAuth(script), script).toBe(true);
@@ -176,5 +179,45 @@ describe("secrets + gh env", () => {
       expect(shellScriptHasDangerousGhAuth(script), script).toBe(false);
       expect(isDangerousGhArgv(["bash", "-c", script]), script).toBe(false);
     }
+  });
+
+  it("I18: awk / osascript / git shell-alias carriers denied", () => {
+    expect(
+      isDangerousGhArgv(["awk", 'BEGIN{system("gh auth token")}']),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["gawk", "-F,", 'BEGIN{system("gh auth login")}']),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv([
+        "osascript",
+        "-e",
+        'do shell script "gh auth token"',
+      ]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["git", "-c", "alias.p=!gh auth token", "p"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv([
+        "git",
+        "-c",
+        "alias.x=!unset GH_TOKEN; gh auth switch --user other",
+        "x",
+      ]),
+    ).toBe(true);
+    // Non-dangerous git / awk stay allowed
+    expect(isDangerousGhArgv(["git", "status"])).toBe(false);
+    expect(isDangerousGhArgv(["git", "-c", "alias.p=!echo hi", "p"])).toBe(
+      false,
+    );
+    expect(isDangerousGhArgv(["awk", "BEGIN{print 1}"])).toBe(false);
+    expect(
+      isDangerousGhArgv(["osascript", "-e", 'return "hello"']),
+    ).toBe(false);
+    // Non-goal: env-echo interpreters still not sandbox-denied
+    expect(
+      isDangerousGhArgv(["node", "-e", "console.log(process.env.GH_TOKEN)"]),
+    ).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import { globalGitconfigPath } from "../identity/includeIf.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { secretsFilePath } from "../secrets/store.js";
 import { ghApiLogin } from "../gh/env.js";
+import { listProfileIdCaseCollisions } from "../util/profile-id.js";
 
 export interface DoctorFinding {
   severity: "error" | "warn" | "ok";
@@ -33,6 +34,7 @@ export function runDoctor(
 
   findings.push(...checkCredentialHelpers(env));
   findings.push(...checkManagedBlock(env));
+  findings.push(...checkProfileIdCaseCollisions(config));
   findings.push(...checkStaleGhToken(cwd, env, config));
   findings.push(...checkEnforceFallthrough(cwd, env, config));
   findings.push(...checkAmbientProfile(cwd, env));
@@ -223,6 +225,31 @@ function checkManagedBlock(env: NodeJS.ProcessEnv): DoctorFinding[] {
     });
   }
   return findings;
+}
+
+/**
+ * Case-fold duplicate profile ids overwrite the same `git/<id>.inc` on
+ * case-insensitive filesystems (APFS/NTFS).
+ * Cite: https://git-scm.com/docs/git-config (gitdir/i, core.ignoreCase)
+ * Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
+ */
+function checkProfileIdCaseCollisions(config: AcctConfig): DoctorFinding[] {
+  const pairs = listProfileIdCaseCollisions(config.profiles);
+  if (!pairs.length) {
+    return [
+      {
+        severity: "ok",
+        code: "profile-id-case",
+        message: "Profile ids are unique under case-folding",
+      },
+    ];
+  }
+  return pairs.map(([a, b]) => ({
+    severity: "error" as const,
+    code: "profile-id-case-collision",
+    message: `Profile ids ${JSON.stringify(a)} and ${JSON.stringify(b)} collide under case-insensitive filesystems — include files overwrite each other`,
+    fix: `acct profile remove ${b}   # keep one spelling; then acct install`,
+  }));
 }
 
 function checkAmbientProfile(

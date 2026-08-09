@@ -14,4 +14,5 @@ Primary-source research captured during product design. Prefer [../sources/SOURC
 | [i18-shell-obfuscation-cites-2026-08-08.md](i18-shell-obfuscation-cites-2026-08-08.md) | I18 shell `-c` obfuscation + sticky-token unset bypass |
 | [i18-shell-bypass-round2-cites-2026-08-08.md](i18-shell-bypass-round2-cites-2026-08-08.md) | I18 round-2: `$a$b`, `$IFS`, printf escapes, decoder\|shell; profile id allowlist |
 | [i18-xargs-stdin-bypass-cites-2026-08-08.md](i18-xargs-stdin-bypass-cites-2026-08-08.md) | I18 fail-closed: `xargs` stdin append / `-I{}` → `gh`\|shell |
+| [i18-profile-case-round3-cites-2026-08-08.md](i18-profile-case-round3-cites-2026-08-08.md) | Profile id case-fold + I18 `$a$b` / awk / osascript / git alias |
 | [e2e-security-fix-cites-2026-08-08.md](e2e-security-fix-cites-2026-08-08.md) | E2E security regression cites |

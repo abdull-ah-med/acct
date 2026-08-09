@@ -18,7 +18,7 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| git-config (includeIf) | https://git-scm.com/docs/git-config | 2026-08-08 |
+| git-config (includeIf) | https://git-scm.com/docs/git-config | 2026-08-08 (re-fetched: gitdir/i + core.ignoreCase for profile-id case fold) |
 | Conditional includes (source) | https://github.com/git/git/blob/master/Documentation/config.adoc | 2026-08-08 |
 | direnv nearest-config walk (`find_up`) | https://github.com/direnv/direnv/blob/master/README.md | 2026-08-08 |
 
@@ -75,5 +75,8 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 |-------|-----|---------------|
 | xargs (Linux man) | https://man7.org/linux/man-pages/man1/xargs.1.html | 2026-08-08 (re-fetched: stdin append / `-I` replace → I18 fail-closed xargs→gh\|shell) |
 | xargs (macOS / SS64) | https://ss64.com/mac/xargs.html | 2026-08-08 (re-fetched: `-I`/`-J` replacement) |
-| POSIX printf (escapes / `\n`) | https://pubs.opengroup.org/onlinepubs/9699919799/utilities/printf.html | 2026-08-08 (I18 printf→xargs bypass) |
-| bash Word Splitting / IFS (local `man bash`) | local man page § Word Splitting | 2026-08-08 (empty IFS gluing) |
+| POSIX printf (escapes / `\n`) | https://pubs.opengroup.org/onlinepubs/9699919799/utilities/printf.html | 2026-08-08 (I18 printf→xargs; re-fetched round 3) |
+| bash Word Splitting / IFS (local `man bash`) | local man page § Word Splitting | 2026-08-08 (empty IFS; `$a$b` concat argv0 round 3) |
+| git-config `alias.*` (`!` = shell) | https://git-scm.com/docs/git-config | 2026-08-08 (I18 git shell-alias carrier) |
+| awk `system(cmd)` (local `man awk`) | local man page | 2026-08-08 (I18 awk carrier) |
+| osascript `-e` (local `man osascript`) | local man page | 2026-08-08 (I18 osascript carrier) |

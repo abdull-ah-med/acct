@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Profile ids are **unique under ASCII case-folding** — `work` + `WORK` rejected (would overwrite the same `git/<id>.inc` on macOS/Windows); doctor errors on existing collisions ([git-config](https://git-scm.com/docs/git-config) `gitdir/i` / `core.ignoreCase`; [round-3 cites](docs/research/i18-profile-case-round3-cites-2026-08-08.md))
+- `acct exec` I18 shell deny closes glued argv0 (`$a$b auth token`) and sole-command glued reconstruction (`x=gh; y=' auth token'; $x$y`) ([bash Word Splitting](https://www.gnu.org/software/bash/manual/html_node/Word-Splitting.html); [round-3 cites](docs/research/i18-profile-case-round3-cites-2026-08-08.md))
+- `acct exec` I18 denies script hosts that run `gh auth`: `awk`/`gawk`/`mawk` program text, `osascript -e`, and `git -c alias.*=!…` shell aliases ([git-config alias](https://git-scm.com/docs/git-config); `man awk`; `man osascript`)
+
 ## [0.1.4] - 2026-08-08
 
 ### Fixed

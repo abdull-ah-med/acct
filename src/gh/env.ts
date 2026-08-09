@@ -455,9 +455,11 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
       `${boundary}${GH_LIT}${sep}${AUTH_LIT}${sep}${dangerLit}`,
       "i",
     ),
-    // Expansion as argv0: $g auth token ; $(which gh) auth login
+    // Expansion(s) as argv0: $g auth token ; $a$b auth token ; $(which gh) auth login
+    // Cite: man bash — adjacent expansions concatenate before word splitting
+    // Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
     new RegExp(
-      `${boundary}${SHELL_EXP}${sep}${AUTH_LIT}${sep}${dangerLit}`,
+      `${boundary}${SHELL_EXP_GLUE}${sep}${AUTH_LIT}${sep}${dangerLit}`,
       "i",
     ),
     // Expansion as auth: gh $x switch
@@ -492,6 +494,17 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
     return true;
   }
 
+  // Sole-command glued expansions: `x=gh; y=' auth token'; $x$y`
+  // The dangerous argv never appears as separate words in the -c string.
+  // Cite: man bash § Word Splitting; docs/research/i18-profile-case-round3-cites-2026-08-08.md
+  if (hasDangerWord && hasAuthWord && hasGhWord) {
+    const gluedSoleCmd = new RegExp(
+      String.raw`(^|[;|&{}\n])\s*${SHELL_EXP_GLUE}\s*([;|&{}\n]|$)`,
+      "i",
+    );
+    if (gluedSoleCmd.test(s)) return true;
+  }
+
   return false;
 }
 
@@ -504,23 +517,86 @@ function shellFlagTakesScript(flag: string): boolean {
 }
 
 /**
+ * True when a git `-c`/`--config` value defines a shell alias (`alias.*=!…`)
+ * whose body matches denied `gh auth`.
+ * Cite: https://git-scm.com/docs/git-config (`alias.*` — `!` = shell command)
+ * Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
+ */
+function gitConfigValueHasDangerousShellAlias(value: string): boolean {
+  const m = /^alias\.[^=]+=!(.*)$/is.exec(value.trim());
+  if (!m) return false;
+  return shellScriptHasDangerousGhAuth(m[1] ?? "");
+}
+
+/**
+ * Scan git argv for `-c alias.p=!gh auth token` style shell-alias footguns.
+ */
+function gitArgvHasDangerousGhAuth(argv: string[]): boolean {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "-c" || a === "--config") {
+      const val = argv[i + 1];
+      if (val && gitConfigValueHasDangerousShellAlias(val)) return true;
+      continue;
+    }
+    // Rare: -calias.p=!gh auth token (no separate argv)
+    if (
+      (a.startsWith("-c") && a.length > 2 && !a.startsWith("--")) ||
+      a.startsWith("--config=")
+    ) {
+      const val = a.startsWith("--config=")
+        ? a.slice("--config=".length)
+        : a.slice(2);
+      if (gitConfigValueHasDangerousShellAlias(val)) return true;
+    }
+  }
+  return false;
+}
+
+/** awk / gawk / mawk — any arg may hold program text with system("gh auth …"). */
+const AWK_BASENAMES = new Set(["awk", "gawk", "mawk"]);
+
+/**
+ * Collect inline script snippets from script-host argv (osascript -e, …).
+ */
+function inlineScriptSnippets(base: string, argv: string[]): string[] {
+  const out: string[] = [];
+  if (AWK_BASENAMES.has(base)) {
+    // Fail-closed: any argv token may be the program (options intermixed).
+    out.push(...argv.slice(1));
+    return out;
+  }
+  if (base === "osascript") {
+    for (let i = 1; i < argv.length; i++) {
+      if (argv[i] === "-e" && argv[i + 1]) {
+        out.push(argv[i + 1]!);
+        i++;
+      }
+    }
+    return out;
+  }
+  return out;
+}
+
+/**
  * True when argv would run a denied `gh auth` subcommand — including absolute
- * paths, `env`/`xargs`/… wrappers, and shell `-c` scripts.
+ * paths, `env`/`xargs`/… wrappers, shell `-c` scripts, and script hosts that
+ * invoke shell/`gh` (`awk`/`osascript`/`git` shell aliases).
  *
  * `xargs` is fail-closed when its effective utility is `gh` or a shell: stdin /
  * `-I{}` can supply dangerous words that never appear in the parent argv
  * (docs/research/i18-xargs-stdin-bypass-cites-2026-08-08.md).
  *
- * Non-goal: arbitrary interpreters (`node -e`, …). `acct exec` already injects
- * GH_TOKEN; I18 closes gh/global-auth footguns, not a sandbox. Sticky GH_TOKEN
- * complements the deny-list but children can unset it — shell obfuscation must
- * still match (docs/research/i18-shell-obfuscation-cites-2026-08-08.md;
- * docs/research/i18-shell-bypass-round2-cites-2026-08-08.md).
+ * Non-goal: arbitrary interpreters (`node -e`, …) that only echo injected
+ * GH_TOKEN. `acct exec` already injects GH_TOKEN; I18 closes gh/global-auth
+ * footguns, not a sandbox. Sticky GH_TOKEN complements the deny-list but
+ * children can unset it — shell obfuscation must still match.
  *
  * Cite: docs/research/xargs-sticky-uninstall-delete-cites-2026-08-08.md
  * Cite: docs/research/i18-shell-obfuscation-cites-2026-08-08.md
  * Cite: docs/research/i18-shell-bypass-round2-cites-2026-08-08.md
  * Cite: docs/research/i18-xargs-stdin-bypass-cites-2026-08-08.md
+ * Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
  */
 export function isDangerousGhArgv(argv: string[]): boolean {
   if (!argv.length) return false;
@@ -547,6 +623,14 @@ export function isDangerousGhArgv(argv: string[]): boolean {
         const script = rest[i + 1];
         if (script && shellScriptHasDangerousGhAuth(script)) return true;
       }
+    }
+  }
+
+  if (base === "git" && gitArgvHasDangerousGhAuth(rest)) return true;
+
+  if (AWK_BASENAMES.has(base) || base === "osascript") {
+    for (const snippet of inlineScriptSnippets(base, rest)) {
+      if (shellScriptHasDangerousGhAuth(snippet)) return true;
     }
   }
 
