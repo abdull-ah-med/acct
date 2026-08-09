@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { acctConfigDir } from "../config/store.js";
 import type { Profile } from "../types.js";
 import { posixShellSingleQuote } from "../util/paths.js";
+import { ensureAcctDir } from "../util/fs-safe.js";
 
 export function defaultKeyPath(
   profile: Profile,
@@ -45,7 +47,7 @@ export function generateSshKey(
   env: NodeJS.ProcessEnv = process.env,
 ): { privateKey: string; publicKey: string } {
   const privateKey = defaultKeyPath(profile, env);
-  fs.mkdirSync(path.dirname(privateKey), { recursive: true, mode: 0o700 });
+  ensureAcctDir(path.dirname(privateKey));
   if (fs.existsSync(privateKey)) {
     throw new Error(`SSH key already exists: ${privateKey}`);
   }
@@ -69,8 +71,19 @@ export function readPublicKey(privateKeyPath: string): string {
 }
 
 /**
+ * Bundled github.com known_hosts for StrictHostKeyChecking=yes.
+ * Cite: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+ */
+export function githubKnownHostsPath(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, "..", "..", "data", "github_known_hosts");
+}
+
+/**
  * Probe SSH auth for an attached key.
  * Requires sshKeyPath only — preferred protocol may remain https (I8b).
+ * For github.com uses StrictHostKeyChecking=yes + bundled known_hosts.
+ * Other hosts keep accept-new with a warning.
  */
 export function testSshAuth(profile: Profile): {
   ok: boolean;
@@ -94,6 +107,27 @@ export function testSshAuth(profile: Profile): {
   if (!fs.existsSync(profile.sshKeyPath)) {
     return { ok: false, output: `SSH key file missing: ${profile.sshKeyPath}` };
   }
+
+  const isGithub = profile.host.toLowerCase() === "github.com";
+  const knownHosts = githubKnownHostsPath();
+  const hostKeyArgs =
+    isGithub && fs.existsSync(knownHosts)
+      ? [
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          `UserKnownHostsFile=${knownHosts}`,
+          "-o",
+          "GlobalKnownHostsFile=/dev/null",
+        ]
+      : ["-o", "StrictHostKeyChecking=accept-new"];
+
+  let warning = "";
+  if (!isGithub) {
+    warning =
+      "warning: non-github.com host — using StrictHostKeyChecking=accept-new (TOFU)\n";
+  }
+
   try {
     const out = execFileSync(
       "ssh",
@@ -104,19 +138,18 @@ export function testSshAuth(profile: Profile): {
         "IdentitiesOnly=yes",
         "-o",
         "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
+        ...hostKeyArgs,
         "-T",
         `git@${profile.host}`,
       ],
       { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     );
-    return { ok: true, output: out };
+    return { ok: true, output: warning + out };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
     const output = `${e.stdout ?? ""}${e.stderr ?? ""}`;
     // GitHub returns exit 1 even on success: "Hi user! You've successfully authenticated"
     const ok = /successfully authenticated/i.test(output);
-    return { ok, output };
+    return { ok, output: warning + output };
   }
 }

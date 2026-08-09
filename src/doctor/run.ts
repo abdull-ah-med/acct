@@ -2,12 +2,13 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { AcctConfig } from "../types.js";
-import { loadConfig, hooksDir, acctConfigDir } from "../config/store.js";
+import { loadConfig, hooksDir, acctConfigDir, gitIncDir } from "../config/store.js";
 import { globalGitconfigPath } from "../identity/includeIf.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { secretsFilePath } from "../secrets/store.js";
 import { ghApiLogin } from "../gh/env.js";
 import { listProfileIdCaseCollisions } from "../util/profile-id.js";
+import { resolveAcctCliPaths } from "../enforce/hooks.js";
 
 export interface DoctorFinding {
   severity: "error" | "warn" | "ok";
@@ -16,9 +17,15 @@ export interface DoctorFinding {
   fix?: string;
 }
 
+export interface DoctorOptions {
+  /** When true, allow network (gh api user) for principal checks. Default: false. */
+  online?: boolean;
+}
+
 export function runDoctor(
   cwd: string = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
+  opts: DoctorOptions = {},
 ): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
   const config = loadConfig(env);
@@ -35,7 +42,7 @@ export function runDoctor(
   findings.push(...checkCredentialHelpers(env));
   findings.push(...checkManagedBlock(env));
   findings.push(...checkProfileIdCaseCollisions(config));
-  findings.push(...checkStaleGhToken(cwd, env, config));
+  findings.push(...checkStaleGhToken(cwd, env, config, opts));
   findings.push(...checkEnforceFallthrough(cwd, env, config));
   findings.push(...checkAmbientProfile(cwd, env));
   findings.push(...checkHooksAbsolute(env));
@@ -44,6 +51,11 @@ export function runDoctor(
   findings.push(...checkBindings(config));
   findings.push(...checkSecretBackend(env));
   findings.push(...checkGlobalHooksPath(env));
+  findings.push(...checkConfigDirPerms(env));
+  findings.push(...checkOrphanIncFiles(config, env));
+  findings.push(...checkPrePushHook(env));
+  findings.push(...checkCredentialShim(env));
+  findings.push(...checkStaleHookNodePath(env));
 
   if (findings.every((f) => f.severity === "ok") || findings.length === 0) {
     findings.push({
@@ -80,13 +92,13 @@ function checkCredentialHelpers(env: NodeJS.ProcessEnv): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
   let helpers: string[] = [];
   try {
-    // Prefer effective config (includes includes + system) when possible.
-    // Fall back to --global for sandboxed / minimal environments.
+    // Prefer --show-origin so includeIf / system / global chain is visible.
+    // Cite: https://git-scm.com/docs/git-config#Documentation/git-config.txt---show-origin
     let out = "";
     try {
       out = execFileSync(
         "git",
-        ["config", "--get-all", "credential.helper"],
+        ["config", "--show-origin", "--get-all", "credential.helper"],
         {
           encoding: "utf8",
           env,
@@ -104,9 +116,15 @@ function checkCredentialHelpers(env: NodeJS.ProcessEnv): DoctorFinding[] {
         },
       ).trim();
     }
-    helpers = out.replace(/\r/g, "").split("\n");
-    // Drop the single trailing empty entry from a final newline only.
-    if (helpers.length && helpers[helpers.length - 1] === "") helpers.pop();
+    // --show-origin lines look like: file:/path/to/.gitconfig\thelpervalue
+    helpers = out
+      .replace(/\r/g, "")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const tab = line.indexOf("\t");
+        return tab >= 0 ? line.slice(tab + 1) : line;
+      });
   } catch {
     findings.push({
       severity: "ok",
@@ -315,6 +333,7 @@ function checkStaleGhToken(
   cwd: string,
   env: NodeJS.ProcessEnv,
   _config: AcctConfig,
+  opts: DoctorOptions = {},
 ): DoctorFinding[] {
   const resolved = resolveFromCwd(cwd, env, { allowEnvProfile: false });
   const hasToken = !!(env.GH_TOKEN || env.GITHUB_TOKEN);
@@ -337,10 +356,21 @@ function checkStaleGhToken(
 
   if (!hasToken) return [];
 
+  // Network principal check is opt-in (--online) to avoid captive-portal hangs.
+  if (!opts.online) {
+    return [
+      {
+        severity: "ok",
+        code: "env-token-present",
+        message:
+          "Ambient GH_TOKEN set for cwd profile (skipped live principal check; pass --online to verify)",
+      },
+    ];
+  }
+
   // Compare ambient token principal to cwd profile (gh environment: GH_TOKEN wins).
   // Cite: https://cli.github.com/manual/gh_help_environment
-  // Cite: docs/research/xargs-sticky-uninstall-delete-cites-2026-08-08.md
-  const login = ghApiLogin(env);
+  const login = ghApiLogin(env, { timeoutMs: 3000 });
   if (login && login !== resolved.profile.githubUser) {
     return [
       {
@@ -503,4 +533,141 @@ function checkGlobalHooksPath(env: NodeJS.ProcessEnv): DoctorFinding[] {
   } catch {
     return [];
   }
+}
+
+function checkConfigDirPerms(env: NodeJS.ProcessEnv): DoctorFinding[] {
+  if (process.platform === "win32") return [];
+  const dir = acctConfigDir(env);
+  if (!fs.existsSync(dir)) return [];
+  const mode = fs.statSync(dir).mode & 0o777;
+  if (mode !== 0o700) {
+    return [
+      {
+        severity: "warn",
+        code: "config-dir-perms",
+        message: `Config dir ${dir} mode is ${mode.toString(8)} (expected 700)`,
+        fix: `chmod 700 ${dir}`,
+      },
+    ];
+  }
+  return [
+    {
+      severity: "ok",
+      code: "config-dir-perms",
+      message: "Config directory mode is 0700",
+    },
+  ];
+}
+
+function checkOrphanIncFiles(
+  config: AcctConfig,
+  env: NodeJS.ProcessEnv,
+): DoctorFinding[] {
+  const gdir = gitIncDir(env);
+  if (!fs.existsSync(gdir)) return [];
+  const known = new Set(config.profiles.map((p) => `${p.id}.inc`));
+  const orphans: string[] = [];
+  for (const name of fs.readdirSync(gdir)) {
+    if (name.endsWith(".inc") && !known.has(name)) orphans.push(name);
+  }
+  if (!orphans.length) return [];
+  return [
+    {
+      severity: "warn",
+      code: "orphan-inc",
+      message: `Orphan profile include files: ${orphans.join(", ")}`,
+      fix: "Remove stale files under the acct git/ directory or re-run acct install after profile remove",
+    },
+  ];
+}
+
+function checkPrePushHook(env: NodeJS.ProcessEnv): DoctorFinding[] {
+  const prePush = path.join(hooksDir(env), "pre-push");
+  const preCommit = path.join(hooksDir(env), "pre-commit");
+  if (!fs.existsSync(preCommit)) return [];
+  if (!fs.existsSync(prePush)) {
+    return [
+      {
+        severity: "warn",
+        code: "hooks-pre-push-missing",
+        message: "pre-commit present but pre-push hook missing",
+        fix: "acct install",
+      },
+    ];
+  }
+  return [
+    {
+      severity: "ok",
+      code: "hooks-pre-push",
+      message: "pre-push hook present",
+    },
+  ];
+}
+
+function checkCredentialShim(env: NodeJS.ProcessEnv): DoctorFinding[] {
+  const dir = path.join(acctConfigDir(env), "bin");
+  const shim =
+    process.platform === "win32"
+      ? path.join(dir, "git-credential-acct.cmd")
+      : path.join(dir, "git-credential-acct");
+  if (!fs.existsSync(shim)) return [];
+  try {
+    const st = fs.lstatSync(shim);
+    if (st.isSymbolicLink()) {
+      return [
+        {
+          severity: "warn",
+          code: "credential-shim-symlink",
+          message: `Credential shim is a symlink: ${shim}`,
+          fix: "acct install  # rewrite shim as a regular script",
+        },
+      ];
+    }
+    if (process.platform !== "win32") {
+      const mode = st.mode & 0o777;
+      if ((mode & 0o111) === 0) {
+        return [
+          {
+            severity: "error",
+            code: "credential-shim-perms",
+            message: `Credential shim is not executable: ${shim}`,
+            fix: `chmod 755 ${shim}`,
+          },
+        ];
+      }
+    }
+  } catch {
+    return [];
+  }
+  return [
+    {
+      severity: "ok",
+      code: "credential-shim",
+      message: "Credential shim is a regular executable (not a symlink)",
+    },
+  ];
+}
+
+function checkStaleHookNodePath(env: NodeJS.ProcessEnv): DoctorFinding[] {
+  const preCommit = path.join(hooksDir(env), "pre-commit");
+  if (!fs.existsSync(preCommit)) return [];
+  const body = fs.readFileSync(preCommit, "utf8");
+  const { node } = resolveAcctCliPaths(env);
+  if (!body.includes(node)) {
+    return [
+      {
+        severity: "warn",
+        code: "hooks-stale-node",
+        message: `Hooks bake a different node path than current process.execPath (${node})`,
+        fix: "acct install  # rewrite hooks with current node",
+      },
+    ];
+  }
+  return [
+    {
+      severity: "ok",
+      code: "hooks-node-path",
+      message: "Hook node path matches current process.execPath",
+    },
+  ];
 }

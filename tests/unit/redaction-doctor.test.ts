@@ -28,6 +28,42 @@ describe("debug redaction (I13)", () => {
       "password=[REDACTED]",
     );
   });
+
+  it("redacts ghc_ and github_pat_ tokens", () => {
+    expect(sanitizeDebugMessage("tok=ghc_ABCDEFGHIJKLMNOPQRST")).toContain(
+      "[REDACTED]",
+    );
+    expect(
+      sanitizeDebugMessage("tok=github_pat_11AAAA_BBBBBBBBBBBBBBBB"),
+    ).toContain("[REDACTED]");
+  });
+
+  it("redacts Authorization Bearer headers", () => {
+    const line = sanitizeDebugMessage(
+      "Authorization: Bearer ghp_ABCDEFGHIJKLMNOPQRST",
+    );
+    expect(line).toContain("Bearer [REDACTED]");
+    expect(line).not.toMatch(/ghp_/);
+  });
+
+  it("redacts x-access-token URL embeds", () => {
+    const line = sanitizeDebugMessage(
+      "https://x-access-token:ghp_ABCDEFGHIJKLMNOPQRST@github.com/org/repo",
+    );
+    expect(line).toContain("x-access-token:[REDACTED]@");
+    expect(line).not.toMatch(/ghp_/);
+  });
+
+  it("redacts 40-char hex strings", () => {
+    const hex = "a".repeat(40);
+    expect(sanitizeDebugMessage(`sha=${hex}`)).toContain("[REDACTED]");
+  });
+
+  it("redacts token = with spaces", () => {
+    expect(
+      sanitizeDebugMessage("token = ghp_ABCDEFGHIJKLMNOPQRST"),
+    ).toMatch(/token\s*=\s*\[REDACTED\]/i);
+  });
 });
 
 describe("posixShellSingleQuote", () => {
