@@ -31,12 +31,40 @@ export function pathIsPrefix(prefix: string, candidate: string): boolean {
   return b.startsWith(a + "/");
 }
 
-export function redactSecret(value: string): string {
-  if (value.length <= 8) return "***";
-  return `${value.slice(0, 4)}${"*".repeat(Math.min(20, value.length - 4))}`;
+/** GitHub token shapes — never emit these in logs (security-secrets rule). */
+const TOKEN_SHAPE =
+  /\b(?:gho_|ghp_|ghu_|ghs_|ghr_|github_pat_)[A-Za-z0-9_*]+/g;
+
+/**
+ * Redact a secret for debug output. Never keep a token prefix — presence only.
+ * Cite: workspace security-secrets rule; ACCT_DEBUG must not leak credentials.
+ */
+export function redactSecret(_value: string): string {
+  return "[REDACTED]";
 }
 
-export function debugLog(message: string, env: NodeJS.ProcessEnv = process.env): void {
+/** Sanitize an entire debug line (defense in depth if callers forget redactSecret). */
+export function sanitizeDebugMessage(message: string): string {
+  return message
+    .replace(TOKEN_SHAPE, "[REDACTED]")
+    .replace(
+      /\b(password|token|secret|authorization)=([^\s]+)/gi,
+      "$1=[REDACTED]",
+    );
+}
+
+export function debugLog(
+  message: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   if (!env.ACCT_DEBUG) return;
-  console.error(`[acct] ${message}`);
+  console.error(`[acct] ${sanitizeDebugMessage(message)}`);
+}
+
+/**
+ * POSIX single-quote for shell snippets (credential helper `!…`, ssh -i, hooks).
+ * Cite: https://git-scm.com/docs/gitcredentials — helper values are executed by the shell.
+ */
+export function posixShellSingleQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
