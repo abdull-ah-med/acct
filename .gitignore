@@ -6,8 +6,8 @@ coverage/
 .env
 .env.*
 *.log
-.tmp-acct-*/
-.tmp-e2e-*/
+.tmp*/
 .cursor/
 .agents/
 *.mdc
+skills-lock.json
