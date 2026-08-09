@@ -11,3 +11,4 @@ coverage/
 .agents/
 *.mdc
 skills-lock.json
+scripts/e2e-identities.local.json

@@ -1,0 +1,16 @@
+{
+  "a": {
+    "id": "personal",
+    "githubUser": "YOUR_PRIMARY_GITHUB_USER",
+    "name": "Primary Display Name",
+    "email": "primary@users.noreply.github.com",
+    "sshKey": "~/.ssh/primary_github"
+  },
+  "b": {
+    "id": "work",
+    "githubUser": "YOUR_SECONDARY_GITHUB_USER",
+    "name": "Secondary Display Name",
+    "email": "secondary@users.noreply.github.com",
+    "sshKey": "~/.ssh/secondary_github"
+  }
+}
