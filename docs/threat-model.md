@@ -14,12 +14,19 @@
 | T2 | `gh` global active account used in wrong dir | Wrong API / PR actor | `GH_TOKEN` injection (hook / exec) — [gh environment](https://cli.github.com/manual/gh_help_environment) |
 | T3 | SSH agent offers all keys; GitHub accepts first | Wrong-account SSH auth | `core.sshCommand` + `IdentitiesOnly=yes` |
 | T4 | Global `user.email` used in work repo | Misattributed commits | includeIf identity |
-| T5 | Stale `GH_TOKEN` / sticky `ACCT_PROFILE` in parent shell | Overrides intended profile | Shell hook rebinds from cwd (ignores sticky env); clears tokens when unbound. Ambient `ACCT_PROFILE` is **not** trusted by credential helper or hooks |
+| T5 | Stale `GH_TOKEN` / sticky `ACCT_PROFILE` in parent shell | Overrides intended profile for raw `gh` | Shell hook rebinds from cwd (ignores sticky env); clears tokens when unbound. Doctor warns when ambient token principal ≠ cwd profile. Ambient `ACCT_PROFILE` is **not** trusted by credential helper or hooks |
 | T6 | Multiple credential helpers; later helper wins wrongly | Wrong or leaked creds | Reset helper list; `quit=true` on strict failure |
-| T7 | Blank/malicious host to helper (CVE-2020-11008 class) | Token exfil | Host allowlist; reject empty host |
+| T7 | Blank/malicious host to helper (CVE-2020-11008 class) | Token exfil | Host allowlist; reject empty/unsafe host; reject conflicting duplicate `host`/`url` |
+| T7b | Non-default port on allowlisted hostname (`github.com:8443`) | Token exfil to attacker listener | Hostname-only profiles: bare host or `:443` only; pinned `profile.host` port requires exact match |
+| T7c | Empty/blank `.acct` under a bound tree | Silent parent-binding inheritance | Present `.acct` with empty profile → local unbound (I3); nearest `.acct` discovered by cwd walk-up (git optional) |
 | T8 | Token written to plaintext config / committed `.envrc` | Secret leak | Keychain only; doctor warnings |
 | T9 | User forgets to switch; commits as wrong identity | Silent wrong author | pre-commit strict (absolute hook path) |
 | T10 | Auth succeeds as A, commits authored as B | Attribution mismatch | pre-push checks against **cwd** profile (not ambient env) |
+| T11 | `git credential approve` overwrites profile token with another account’s token | Cross-account HTTPS identity swap | Helper `store` ignored (read-only); tokens via `acct profile token` only ([gitcredentials](https://git-scm.com/docs/gitcredentials)) |
+| T12 | Helper returns HTTPS token for `protocol=http` | Cleartext / wrong-context credential use | HTTPS-only `get` → `quit=1` |
+| T13 | `acct exec gh auth token\|login\|…` dumps or mutates global auth | Token leak / global gh state change | Deny-list for mutating/dumping `gh auth` subcommands (basename + wrappers; **`xargs` → `gh`\|shell fail-closed** because stdin/`-I{}` are invisible at deny time; shell `-c` including quoted/expansion/`$IFS`/printf-escape/`xargs` stdin/decoder\|shell obfuscation). Sticky `GH_TOKEN` complements but does not replace the deny-list ([gh environment](https://cli.github.com/manual/gh_help_environment); [xargs(1)](https://man7.org/linux/man-pages/man1/xargs.1.html)) |
+| T14 | After `acct uninstall`, OS helpers still answer for github.com | Wrong-account HTTPS without acct mediation | Uninstall warns + `git credential reject` guidance; doctor `not-installed` / `acct-helper-missing` ([gitcredentials](https://git-scm.com/docs/gitcredentials)) |
+| T15 | Profile id with shell metacharacters / path segments | Unsafe include/SSH filenames; YAML/shell injection footguns | Allowlist `^[a-zA-Z][a-zA-Z0-9_-]{0,63}$` on `init` / `profile add` |
 
 ## Non-goals (out of scope for threat model v1)
 
