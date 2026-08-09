@@ -5,7 +5,12 @@ import {
   setProfileToken,
   getProfileToken,
 } from "../../src/secrets/store.js";
-import { envForProfile, isDangerousGhArgv, shellScriptHasDangerousGhAuth } from "../../src/gh/env.js";
+import {
+  envForProfile,
+  isDangerousGhArgv,
+  shellScriptHasDangerousGhAuth,
+  stripGitConfigEnvOverrides,
+} from "../../src/gh/env.js";
 import type { Profile } from "../../src/types.js";
 
 const profile: Profile = {
@@ -219,5 +224,169 @@ describe("secrets + gh env", () => {
     expect(
       isDangerousGhArgv(["node", "-e", "console.log(process.env.GH_TOKEN)"]),
     ).toBe(false);
+  });
+
+  it("I18 P1.1: shell -c positional args reconstructing gh auth are denied", () => {
+    expect(
+      isDangerousGhArgv(["sh", "-c", "gh $1 $2", "_", "auth", "token"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["bash", "-c", 'gh "$@"', "_", "auth", "token"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["bash", "-c", "$1 $2 $3", "_", "gh", "auth", "token"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["sh", "-c", "exec gh $@", "sh", "auth", "token"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["bash", "-c", "echo $1", "_", "hello"]),
+    ).toBe(false);
+  });
+
+  it("I18 P1.2: pwsh / powershell / cmd script flags are scanned", () => {
+    expect(isDangerousGhArgv(["pwsh", "-c", "gh auth token"])).toBe(true);
+    expect(
+      isDangerousGhArgv(["powershell", "-Command", "gh auth token"]),
+    ).toBe(true);
+    expect(isDangerousGhArgv(["cmd", "/c", "gh auth token"])).toBe(true);
+    expect(isDangerousGhArgv(["cmd.exe", "/C", "gh auth token"])).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-c", "gh pr list"])).toBe(false);
+  });
+
+  it("I18 P1.3: ANSI-C $'\\xNN' / octal escapes decode before deny match", () => {
+    expect(
+      shellScriptHasDangerousGhAuth("$'\\x67h' auth $'\\x74oken'"),
+    ).toBe(true);
+    expect(
+      shellScriptHasDangerousGhAuth("$'\\147\\150' auth token"),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["bash", "-c", "$'\\x67h auth \\x74oken'"]),
+    ).toBe(true);
+  });
+
+  it("I18 P1.4: variable reconstruction with literal auth between expansions", () => {
+    expect(
+      shellScriptHasDangerousGhAuth("x=gh; y=token; $x auth $y"),
+    ).toBe(true);
+    expect(
+      shellScriptHasDangerousGhAuth("a=$(printf gh); $a auth token"),
+    ).toBe(true);
+    expect(
+      shellScriptHasDangerousGhAuth("gh_cmd=gh; $gh_cmd auth token"),
+    ).toBe(true);
+  });
+
+  it("I18 P1.5: printf / echo -e piped to shell are treated as decoders", () => {
+    expect(
+      shellScriptHasDangerousGhAuth('printf "\\x67h auth token\\n" | sh'),
+    ).toBe(true);
+    expect(
+      shellScriptHasDangerousGhAuth('echo -e "\\x67h auth \\x74oken" | bash'),
+    ).toBe(true);
+  });
+
+  it("I18 P1.6: brace expansion {gh,auth,token} denied; benign braces allowed", () => {
+    expect(shellScriptHasDangerousGhAuth("{gh,auth,token}")).toBe(true);
+    expect(shellScriptHasDangerousGhAuth("{gh,auth,login}")).toBe(true);
+    expect(shellScriptHasDangerousGhAuth("echo {a,b,c}")).toBe(false);
+  });
+
+  it("I18 P1.7: shell alias reconstructing gh is denied", () => {
+    expect(
+      shellScriptHasDangerousGhAuth("alias g=gh; g auth token"),
+    ).toBe(true);
+    expect(
+      shellScriptHasDangerousGhAuth("alias mygh='gh'; mygh auth login"),
+    ).toBe(true);
+  });
+
+  it("I18 P1.8: GIT_CONFIG_COUNT/KEY/VALUE env overrides are stripped", () => {
+    const cleaned = stripGitConfigEnvOverrides({
+      PATH: "/usr/bin",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "alias.p",
+      GIT_CONFIG_VALUE_0: "!gh auth token",
+      GIT_CONFIG_GLOBAL: "/tmp/gitconfig",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GH_TOKEN: "gho_keep",
+    });
+    expect(cleaned.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(cleaned.GIT_CONFIG_KEY_0).toBeUndefined();
+    expect(cleaned.GIT_CONFIG_VALUE_0).toBeUndefined();
+    expect(cleaned.GIT_CONFIG_GLOBAL).toBe("/tmp/gitconfig");
+    expect(cleaned.GIT_CONFIG_NOSYSTEM).toBe("1");
+    expect(cleaned.GH_TOKEN).toBe("gho_keep");
+    expect(cleaned.PATH).toBe("/usr/bin");
+  });
+
+  it("I18 P1.9: git -c pager/editor/sshCommand/include.path carriers denied", () => {
+    expect(
+      isDangerousGhArgv(["git", "-c", "core.pager=gh auth token", "log"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv([
+        "git",
+        "-c",
+        "core.editor=sh -c 'gh auth token'",
+        "commit",
+      ]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv([
+        "git",
+        "-c",
+        "include.path=/tmp/evil.inc",
+        "status",
+      ]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv([
+        "git",
+        "-c",
+        "core.sshCommand=gh auth token",
+        "fetch",
+      ]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["git", "-c", "user.email=ok@example.com", "status"]),
+    ).toBe(false);
+  });
+
+  it("I18 P1.10: find -exec and argv-wide gh auth subsequence denied", () => {
+    expect(
+      isDangerousGhArgv([
+        "find",
+        ".",
+        "-exec",
+        "gh",
+        "auth",
+        "token",
+        ";",
+      ]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["xargs", "-I{}", "gh", "auth", "token"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv([
+        "find",
+        ".",
+        "-exec",
+        "sh",
+        "-c",
+        "gh auth token",
+        ";",
+      ]),
+    ).toBe(true);
+  });
+
+  it("I18 P1.11: ash / mksh / busybox shells are scanned", () => {
+    expect(isDangerousGhArgv(["ash", "-c", "gh auth token"])).toBe(true);
+    expect(isDangerousGhArgv(["mksh", "-c", "gh auth token"])).toBe(true);
+    expect(
+      isDangerousGhArgv(["busybox", "sh", "-c", "gh auth token"]),
+    ).toBe(true);
   });
 });

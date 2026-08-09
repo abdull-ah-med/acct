@@ -352,6 +352,24 @@ acct(["install"], env);
     ["awk", 'BEGIN{system("gh auth token")}'],
     ["osascript", "-e", 'do shell script "gh auth token"'],
     ["git", "-c", "alias.p=!gh auth token", "p"],
+    // Priority-1 I18 deny-list bypasses (REMEDIATION_PLAN / security review)
+    ["sh", "-c", "gh $1 $2", "_", "auth", "token"],
+    ["bash", "-c", 'gh "$@"', "_", "auth", "token"],
+    ["bash", "-c", "$1 $2 $3", "_", "gh", "auth", "token"],
+    ["pwsh", "-c", "gh auth token"],
+    ["cmd", "/c", "gh auth token"],
+    ["bash", "-c", "$'\\x67h auth \\x74oken'"],
+    ["bash", "-c", "x=gh; y=token; $x auth $y"],
+    ["bash", "-c", 'printf "\\x67h auth token\\n" | sh'],
+    ["bash", "-c", "{gh,auth,token}"],
+    ["bash", "-c", "alias g=gh; g auth token"],
+    ["bash", "-c", "unset GH_TOKEN GITHUB_TOKEN; alias g=gh; g auth token"],
+    ["git", "-c", "core.pager=gh auth token", "log"],
+    ["git", "-c", "include.path=/tmp/evil.inc", "status"],
+    ["git", "-c", "core.sshCommand=gh auth token", "fetch"],
+    ["find", ".", "-exec", "gh", "auth", "token", ";"],
+    ["ash", "-c", "gh auth token"],
+    ["busybox", "sh", "-c", "gh auth token"],
   ];
   let allOk = true;
   for (const cmd of cases) {

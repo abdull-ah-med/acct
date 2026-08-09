@@ -74,12 +74,16 @@ export async function envForUnbound(
   return env;
 }
 
-export function ghApiLogin(env: NodeJS.ProcessEnv): string | null {
+export function ghApiLogin(
+  env: NodeJS.ProcessEnv,
+  opts: { timeoutMs?: number } = {},
+): string | null {
   try {
     const out = execFileSync("gh", ["api", "user", "--jq", ".login"], {
       encoding: "utf8",
       env,
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: opts.timeoutMs ?? 3000,
     });
     return out.trim() || null;
   } catch {
@@ -119,6 +123,11 @@ const WRAPPER_BASENAMES = new Set([
   "xargs",
 ]);
 
+/**
+ * Shells whose `-c` / `-Command` / `/c` scripts are scanned for denied gh auth.
+ * Cite: Bash manual; about_Pwsh (-Command/-c); cmd /c.
+ * Cite: REMEDIATION_PLAN.md P1.2 / P1.11 (pwsh, ash, mksh, busybox).
+ */
 const SHELL_BASENAMES = new Set([
   "bash",
   "sh",
@@ -128,6 +137,41 @@ const SHELL_BASENAMES = new Set([
   "fish",
   "csh",
   "tcsh",
+  "ash",
+  "mksh",
+  "busybox",
+  "pwsh",
+  "powershell",
+  "cmd",
+]);
+
+/** Words that are dangerous as shell -c positional parameters reconstructing gh auth. */
+const DANGEROUS_POSITIONAL_WORDS = new Set([
+  "auth",
+  "token",
+  "login",
+  "logout",
+  "refresh",
+  "switch",
+  "setup-git",
+  "gh",
+]);
+
+/**
+ * Git config keys whose values are executed as shell / external commands, plus
+ * include.path / includeIf.* which can pull in attacker-controlled config.
+ * Cite: https://git-scm.com/docs/git-config (core.pager, core.editor, …)
+ * Cite: REMEDIATION_PLAN.md P1.9
+ */
+const GIT_SHELL_CONFIG_KEYS = new Set([
+  "core.pager",
+  "core.editor",
+  "core.askpass",
+  "core.sshcommand",
+  "credential.helper",
+  "diff.external",
+  "merge.tool",
+  "sequence.editor",
 ]);
 
 /** Basename of argv[0], lowercased, with Windows executable suffixes stripped. */
@@ -378,18 +422,20 @@ function xargsArgvHasDangerousGh(argv: string[]): boolean {
 /**
  * Strip obfuscation so deny matching sees reconstructed `gh auth <dangerous>`.
  *
+ * - ANSI-C quoting `$'\x67h'` / `$'\147'` (bash §3.1.2.4) decoded first
  * - Empty quote concatenations: `refres""h` / `tok''en`
  * - POSIX/C escapes that printf/echo turn into whitespace for xargs:
  *   `\n` `\t` `\r` `\v` `\f` `\0` and octal `\ddd`
- *   (https://pubs.opengroup.org/onlinepubs/9699919799/utilities/printf.html)
  * - Empty-IFS gluing: `gh$IFS auth$IFS token` → `gh auth token`
- *   (bash Word Splitting: null IFS → unquoted empty expansions removed)
+ * - Brace expansion `{gh,auth,token}` expanded when it names gh + danger
  *
+ * Cite: https://www.gnu.org/software/bash/manual/bash.html#ANSI-C-Quoting
+ * Cite: https://www.gnu.org/software/bash/manual/bash.html#Brace-Expansion
  * Cite: docs/research/i18-shell-obfuscation-cites-2026-08-08.md
- * Cite: docs/research/i18-shell-bypass-round2-cites-2026-08-08.md
+ * Cite: REMEDIATION_PLAN.md P1.3 / P1.6
  */
 export function normalizeShellScriptForAuthDeny(script: string): string {
-  let out = script;
+  let out = decodeAnsiCQuotedSegments(script);
   let prev = "";
   while (out !== prev) {
     prev = out;
@@ -401,7 +447,98 @@ export function normalizeShellScriptForAuthDeny(script: string): string {
     .replace(/\\[0-7]{1,3}/g, " ");
   // Strip IFS expansions used as empty glue (quoted or bare).
   out = out.replace(/\$\{IFS\}|\$IFS|"\$\{IFS\}"|'\$\{IFS\}'|"\$IFS"|'\$IFS'/g, "");
+  out = expandDangerousBraceGroups(out);
   return out;
+}
+
+/**
+ * Decode bash ANSI-C `$('…')` segments so hex/octal escapes become matchable text.
+ * Cite: https://www.gnu.org/software/bash/manual/bash.html#ANSI-C-Quoting
+ */
+function decodeAnsiCQuotedSegments(script: string): string {
+  return script.replace(/\$'((?:\\.|[^'\\])*)'/g, (_m, body: string) =>
+    decodeAnsiCBody(body),
+  );
+}
+
+function decodeAnsiCBody(body: string): string {
+  let out = "";
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== "\\") {
+      out += body[i];
+      continue;
+    }
+    i++;
+    if (i >= body.length) {
+      out += "\\";
+      break;
+    }
+    const c = body[i]!;
+    if (c === "x") {
+      const hex = body.slice(i + 1).match(/^[0-9a-fA-F]{1,2}/)?.[0];
+      if (hex) {
+        out += String.fromCharCode(parseInt(hex, 16));
+        i += hex.length;
+        continue;
+      }
+    }
+    if (c === "u") {
+      const hex = body.slice(i + 1).match(/^[0-9a-fA-F]{4}/)?.[0];
+      if (hex) {
+        out += String.fromCharCode(parseInt(hex, 16));
+        i += 4;
+        continue;
+      }
+    }
+    if (c === "U") {
+      const hex = body.slice(i + 1).match(/^[0-9a-fA-F]{8}/)?.[0];
+      if (hex) {
+        const cp = parseInt(hex, 16);
+        out += cp <= 0x10ffff ? String.fromCodePoint(cp) : " ";
+        i += 8;
+        continue;
+      }
+    }
+    if (/[0-7]/.test(c)) {
+      const oct = body.slice(i).match(/^[0-7]{1,3}/)?.[0] ?? c;
+      out += String.fromCharCode(parseInt(oct, 8));
+      i += oct.length - 1;
+      continue;
+    }
+    const std: Record<string, string> = {
+      a: "\x07",
+      b: "\b",
+      e: "\x1b",
+      E: "\x1b",
+      f: "\f",
+      n: "\n",
+      r: "\r",
+      t: "\t",
+      v: "\v",
+      "\\": "\\",
+      "'": "'",
+      '"': '"',
+      "?": "?",
+    };
+    out += std[c] ?? c;
+  }
+  return out;
+}
+
+/**
+ * Fail-closed brace expansion: `{gh,auth,token}` → `gh auth token` when the
+ * group contains both a gh word and a dangerous auth subcommand.
+ * Cite: https://www.gnu.org/software/bash/manual/bash.html#Brace-Expansion
+ */
+function expandDangerousBraceGroups(script: string): string {
+  return script.replace(/\{([^{}]+)\}/g, (full, inner: string) => {
+    const parts = inner.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""));
+    if (parts.length < 2) return full;
+    const hasGh = parts.some((p) => /(?:^|\/)gh(?:\.exe)?$/i.test(p));
+    const hasDanger = parts.some((p) => DANGEROUS_GH_AUTH.has(p.toLowerCase()));
+    if (hasGh && hasDanger) return parts.join(" ");
+    return full;
+  });
 }
 
 /** Path-tolerant `gh` / `"gh"` / `'gh'` literal (not expansions). */
@@ -414,8 +551,9 @@ const SHELL_EXP = String.raw`(?:["']${SHELL_EXP_INNER}["']|${SHELL_EXP_INNER})`;
 /** One or more glued expansions: `$a$b`, `"$(echo token)"`. */
 const SHELL_EXP_GLUE = String.raw`(?:${SHELL_EXP})+`;
 
+/** Decoders / reconstructors that can pipe arbitrary text into a nested shell. */
 const DECODER_RE =
-  /\b(?:base64|base32|xxd|uudecode|openssl)\b/i;
+  /\b(?:base64|base32|xxd|uudecode|openssl|printf|echo\s+-e)\b/i;
 
 /**
  * Detect denied `gh auth <dangerous>` inside a shell `-c` script string.
@@ -423,13 +561,11 @@ const DECODER_RE =
  * Covers literal `/usr/bin/gh auth token`, quoted `"gh" "auth" "token"`,
  * expansions (`$g auth token`, `gh $x switch`, `gh auth $a$b`, `$(…)` as
  * subcommand), empty-quote / `$IFS` gluing, printf `\n` → xargs reconstruction,
- * and decoder|shell nested execution (`base64 -d | sh`).
+ * decoder|shell nested execution (`base64 -d | sh`, `printf … | sh`),
+ * brace expansion, alias-to-gh, and assignment reconstruction (`$x auth $y`).
  *
  * Cite: https://cli.github.com/manual/gh_auth_token (and login/switch/…)
- * Cite: https://man7.org/linux/man-pages/man1/xargs.1.html
- * Cite: https://pubs.opengroup.org/onlinepubs/9699919799/utilities/printf.html
- * Cite: docs/research/i18-shell-obfuscation-cites-2026-08-08.md
- * Cite: docs/research/i18-shell-bypass-round2-cites-2026-08-08.md
+ * Cite: REMEDIATION_PLAN.md P1.3–P1.7
  */
 export function shellScriptHasDangerousGhAuth(script: string): boolean {
   const s = normalizeShellScriptForAuthDeny(script);
@@ -437,14 +573,26 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
   const dangerLit = String.raw`(?:["'](?:${subs})["']|(?:${subs})\b)`;
   const sep = String.raw`(?:\s+)+`;
   const boundary = String.raw`(^|[^A-Za-z0-9_])`;
-  const shellAlts = [...SHELL_BASENAMES].join("|");
+  // Pipe targets: real shells only (exclude cmd/pwsh noise in | pipelines for POSIX)
+  const pipeShellAlts = [
+    "bash",
+    "sh",
+    "zsh",
+    "dash",
+    "ksh",
+    "fish",
+    "csh",
+    "tcsh",
+    "ash",
+    "mksh",
+  ].join("|");
   const pipeToShell = new RegExp(
-    String.raw`\|\s*(?:\S*/)?(?:${shellAlts})\b`,
+    String.raw`\|\s*(?:\S*/)?(?:${pipeShellAlts})\b`,
     "i",
   );
 
   // Nested shell via decoder pipeline / eval — reconstructs arbitrary argv.
-  // Cite: live bypass `echo … | base64 -d | sh` (2026-08-08)
+  // Cite: live bypass `echo … | base64 -d | sh` (2026-08-08); P1.5 printf/echo -e
   if (DECODER_RE.test(s) && (pipeToShell.test(s) || /\beval\b/i.test(s))) {
     return true;
   }
@@ -456,8 +604,6 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
       "i",
     ),
     // Expansion(s) as argv0: $g auth token ; $a$b auth token ; $(which gh) auth login
-    // Cite: man bash — adjacent expansions concatenate before word splitting
-    // Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
     new RegExp(
       `${boundary}${SHELL_EXP_GLUE}${sep}${AUTH_LIT}${sep}${dangerLit}`,
       "i",
@@ -472,12 +618,14 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
       `${boundary}${GH_LIT}${sep}${AUTH_LIT}${sep}${SHELL_EXP_GLUE}`,
       "i",
     ),
+    // P1.4: $x auth $y — expansion, literal auth, expansion
+    new RegExp(
+      `${boundary}${SHELL_EXP_GLUE}${sep}${AUTH_LIT}${sep}${SHELL_EXP_GLUE}`,
+      "i",
+    ),
   ];
   if (triplePatterns.some((re) => re.test(s))) return true;
 
-  // xargs stdin reconstruction (any order of auth+danger with xargs+gh).
-  // Fail-closed: secondary order regexes previously missed `printf 'auth\ntoken\n' | xargs -n2 gh`
-  // when escapes were still literal. Cite: https://man7.org/linux/man-pages/man1/xargs.1.html
   const hasDangerWord = new RegExp(`\\b(?:${subs})\\b`, "i").test(s);
   const hasAuthWord = /\bauth\b/i.test(s);
   const hasGhWord = new RegExp(
@@ -488,15 +636,11 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
     return true;
   }
 
-  // Pipe to a nested shell while gh/auth/danger words are present (belt + suspenders
-  // for reconstructions that avoid named decoders).
   if (hasDangerWord && hasAuthWord && hasGhWord && pipeToShell.test(s)) {
     return true;
   }
 
   // Sole-command glued expansions: `x=gh; y=' auth token'; $x$y`
-  // The dangerous argv never appears as separate words in the -c string.
-  // Cite: man bash § Word Splitting; docs/research/i18-profile-case-round3-cites-2026-08-08.md
   if (hasDangerWord && hasAuthWord && hasGhWord) {
     const gluedSoleCmd = new RegExp(
       String.raw`(^|[;|&{}\n])\s*${SHELL_EXP_GLUE}\s*([;|&{}\n]|$)`,
@@ -505,41 +649,189 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
     if (gluedSoleCmd.test(s)) return true;
   }
 
+  // P1.4: assignment reconstruction (`x=gh` / `y=token` / `a=$(printf gh)`)
+  if (hasDangerWord && hasAuthWord && hasGhWord) {
+    const assignRe =
+      /=\s*['"]?(?:gh|token|login|logout|refresh|switch|setup-git)\b|=\$\([^)]*\b(?:gh|token)\b/i;
+    if (assignRe.test(s)) return true;
+  }
+
+  // P1.7: alias g=gh; g auth token
+  if (hasAuthWord && hasDangerWord) {
+    for (const m of s.matchAll(
+      /\balias\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*['"]?(?:\S*\/)?gh(?:\.exe)?['"]?/gi,
+    )) {
+      const name = m[1]!;
+      const useRe = new RegExp(
+        String.raw`(^|[^A-Za-z0-9_])${name}${sep}${AUTH_LIT}${sep}${dangerLit}`,
+        "i",
+      );
+      if (useRe.test(s)) return true;
+    }
+    // Conservative: alias + auth + danger present
+    if (/\balias\b/i.test(s) && hasGhWord) return true;
+  }
+
   return false;
 }
 
+/**
+ * True when a flag introduces an inline script body for a known shell.
+ * Cite: about_Pwsh (-Command / -c); cmd /c; bash -c / -lc.
+ */
 function shellFlagTakesScript(flag: string): boolean {
-  // -c, -lc, -ic, -plc, … — any short-option cluster containing c (not long opts)
   if (flag === "-c") return true;
+  const lower = flag.toLowerCase();
+  if (lower === "-command" || lower === "/c") return true;
   if (flag.startsWith("--")) return false;
-  if (!flag.startsWith("-") || flag.length < 2) return false;
-  return flag.includes("c");
+  // Avoid treating find -printf / similar as shell -c (must be pure letter cluster)
+  if (/^-[a-zA-Z]+$/.test(flag) && flag.includes("c") && !flag.includes("printf")) {
+    // Still exclude long utility flags that happen to contain "c"
+    if (flag.length > 4 && !/^-[a-z]*c[a-z]*$/i.test(flag)) return false;
+    // Shell option clusters are short: -c, -lc, -ic, -plc, -norc, …
+    if (flag.length <= 6) return true;
+  }
+  return false;
+}
+
+/**
+ * After `shell -c SCRIPT`, remaining argv are `$0` then `$1…`. Deny when
+ * positionals can complete a dangerous gh auth invocation.
+ * Cite: Bash §3.7.1 Positional Parameters; REMEDIATION_PLAN.md P1.1
+ */
+function shellCPositionalsDangerous(
+  script: string,
+  argsAfterScript: string[],
+): boolean {
+  if (!argsAfterScript.length) return false;
+  const positionals = argsAfterScript.slice(1); // skip $0
+  const joined = [...argsAfterScript, ...positionals].join(" ");
+  const usesPositional =
+    /\$@|\$\*|\$\{[@*]\}|\$[1-9]|\$\{[1-9][0-9]*\}/.test(script);
+  const scriptHasGh = /\bgh(?:\.exe)?\b/i.test(script);
+  const hasDangerPos = positionals.some((p) =>
+    DANGEROUS_POSITIONAL_WORDS.has(p.toLowerCase()),
+  );
+
+  // `gh $1 $2` _ auth token — gh in script + dangerous positional words
+  if (scriptHasGh && hasDangerPos) return true;
+  // `$1 $2 $3` _ gh auth token — positionals carry the full command
+  if (usesPositional && hasDangerPos) return true;
+  if (usesPositional && argvHasGhAuthDangerSubsequence(argsAfterScript)) {
+    return true;
+  }
+  if (usesPositional && argvHasGhAuthDangerSubsequence(positionals)) {
+    return true;
+  }
+  // Belt: combined script + positionals look like denied script
+  if (
+    (usesPositional || scriptHasGh) &&
+    shellScriptHasDangerousGhAuth(`${script} ${joined}`)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Literal `gh auth <dangerous>` subsequence anywhere in argv. */
+function argvHasGhAuthDangerSubsequence(argv: string[]): boolean {
+  for (let j = 0; j < argv.length - 2; j++) {
+    if (commandBasename(argv[j]!) !== "gh") continue;
+    if (argv[j + 1]?.toLowerCase() !== "auth") continue;
+    if (DANGEROUS_GH_AUTH.has(argv[j + 2]!.toLowerCase())) return true;
+  }
+  return false;
+}
+
+/**
+ * `find -exec … \;` / `-execdir`: scan the utility argv with the same deny rules.
+ * Cite: REMEDIATION_PLAN.md P1.10
+ */
+function findExecArgvDangerous(argv: string[]): boolean {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!.toLowerCase();
+    if (a !== "-exec" && a !== "-execdir") continue;
+    let end = argv.length;
+    for (let j = i + 1; j < argv.length; j++) {
+      if (argv[j] === ";" || argv[j] === "\\;" || argv[j] === "+") {
+        end = j;
+        break;
+      }
+    }
+    const execArgv = argv.slice(i + 1, end);
+    if (execArgv.length && isDangerousGhArgv(execArgv)) return true;
+  }
+  return false;
+}
+
+/**
+ * Strip env-injected git config overrides that can define shell aliases.
+ * Keeps GIT_CONFIG_GLOBAL / SYSTEM / NOSYSTEM (isolation helpers).
+ * Cite: https://git-scm.com/docs/git-config#_environment
+ * Cite: REMEDIATION_PLAN.md P1.8
+ */
+export function stripGitConfigEnvOverrides(
+  env: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env };
+  for (const key of Object.keys(out)) {
+    if (
+      key === "GIT_CONFIG_COUNT" ||
+      key.startsWith("GIT_CONFIG_KEY_") ||
+      key.startsWith("GIT_CONFIG_VALUE_")
+    ) {
+      delete out[key];
+    }
+  }
+  return out;
+}
+
+function parseGitConfigAssignment(value: string): { key: string; val: string } | null {
+  const eq = value.indexOf("=");
+  if (eq <= 0) return null;
+  return {
+    key: value.slice(0, eq).trim().toLowerCase(),
+    val: value.slice(eq + 1),
+  };
 }
 
 /**
  * True when a git `-c`/`--config` value defines a shell alias (`alias.*=!…`)
- * whose body matches denied `gh auth`.
- * Cite: https://git-scm.com/docs/git-config (`alias.*` — `!` = shell command)
- * Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
+ * or another shell-executing config key with denied `gh auth`.
+ * Cite: https://git-scm.com/docs/git-config
+ * Cite: REMEDIATION_PLAN.md P1.9
  */
-function gitConfigValueHasDangerousShellAlias(value: string): boolean {
-  const m = /^alias\.[^=]+=!(.*)$/is.exec(value.trim());
-  if (!m) return false;
-  return shellScriptHasDangerousGhAuth(m[1] ?? "");
+function gitConfigAssignmentDangerous(value: string): boolean {
+  const parsed = parseGitConfigAssignment(value.trim());
+  if (!parsed) return false;
+  const { key, val } = parsed;
+
+  if (key === "include.path" || key.startsWith("includeif.")) return true;
+
+  if (key.startsWith("alias.") && val.startsWith("!")) {
+    return shellScriptHasDangerousGhAuth(val.slice(1));
+  }
+
+  if (GIT_SHELL_CONFIG_KEYS.has(key)) {
+    // Values may be `gh auth token` or `!gh …` or `sh -c '…'`
+    const body = val.startsWith("!") ? val.slice(1) : val;
+    if (shellScriptHasDangerousGhAuth(body)) return true;
+    if (argvHasGhAuthDangerSubsequence(body.split(/\s+/))) return true;
+  }
+  return false;
 }
 
 /**
- * Scan git argv for `-c alias.p=!gh auth token` style shell-alias footguns.
+ * Scan git argv for `-c alias.p=!…` / `-c core.pager=…` / `-c include.path=…`.
  */
 function gitArgvHasDangerousGhAuth(argv: string[]): boolean {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "-c" || a === "--config") {
       const val = argv[i + 1];
-      if (val && gitConfigValueHasDangerousShellAlias(val)) return true;
+      if (val && gitConfigAssignmentDangerous(val)) return true;
       continue;
     }
-    // Rare: -calias.p=!gh auth token (no separate argv)
     if (
       (a.startsWith("-c") && a.length > 2 && !a.startsWith("--")) ||
       a.startsWith("--config=")
@@ -547,7 +839,7 @@ function gitArgvHasDangerousGhAuth(argv: string[]): boolean {
       const val = a.startsWith("--config=")
         ? a.slice("--config=".length)
         : a.slice(2);
-      if (gitConfigValueHasDangerousShellAlias(val)) return true;
+      if (gitConfigAssignmentDangerous(val)) return true;
     }
   }
   return false;
@@ -562,7 +854,6 @@ const AWK_BASENAMES = new Set(["awk", "gawk", "mawk"]);
 function inlineScriptSnippets(base: string, argv: string[]): string[] {
   const out: string[] = [];
   if (AWK_BASENAMES.has(base)) {
-    // Fail-closed: any argv token may be the program (options intermixed).
     out.push(...argv.slice(1));
     return out;
   }
@@ -579,30 +870,60 @@ function inlineScriptSnippets(base: string, argv: string[]): string[] {
 }
 
 /**
+ * Scan shell argv for `-c`/`-Command`/`/c` scripts and their positional params.
+ */
+function shellArgvHasDangerousGhAuth(argv: string[]): boolean {
+  const base = commandBasename(argv[0] ?? "");
+  let start = 1;
+  // busybox sh -c … — applet name precedes flags
+  if (
+    base === "busybox" &&
+    argv.length > 1 &&
+    SHELL_BASENAMES.has(commandBasename(argv[1]!))
+  ) {
+    start = 2;
+  }
+
+  for (let i = start; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (!shellFlagTakesScript(a)) continue;
+
+    // cmd /c joins the rest of argv as the command line
+    if (base === "cmd" && a.toLowerCase() === "/c") {
+      const cmdLine = argv.slice(i + 1).join(" ");
+      if (cmdLine && shellScriptHasDangerousGhAuth(cmdLine)) return true;
+      if (argvHasGhAuthDangerSubsequence(argv.slice(i + 1))) return true;
+      continue;
+    }
+
+    const script = argv[i + 1];
+    if (!script) continue;
+    if (shellScriptHasDangerousGhAuth(script)) return true;
+    if (shellCPositionalsDangerous(script, argv.slice(i + 2))) return true;
+  }
+  return false;
+}
+
+/**
  * True when argv would run a denied `gh auth` subcommand — including absolute
- * paths, `env`/`xargs`/… wrappers, shell `-c` scripts, and script hosts that
- * invoke shell/`gh` (`awk`/`osascript`/`git` shell aliases).
+ * paths, `env`/`xargs`/… wrappers, shell `-c` scripts, find -exec carriers,
+ * and script hosts that invoke shell/`gh` (`awk`/`osascript`/`git` config).
  *
- * `xargs` is fail-closed when its effective utility is `gh` or a shell: stdin /
- * `-I{}` can supply dangerous words that never appear in the parent argv
- * (docs/research/i18-xargs-stdin-bypass-cites-2026-08-08.md).
- *
- * Non-goal: arbitrary interpreters (`node -e`, …) that only echo injected
- * GH_TOKEN. `acct exec` already injects GH_TOKEN; I18 closes gh/global-auth
- * footguns, not a sandbox. Sticky GH_TOKEN complements the deny-list but
- * children can unset it — shell obfuscation must still match.
- *
+ * Cite: REMEDIATION_PLAN.md Priority 1
  * Cite: docs/research/xargs-sticky-uninstall-delete-cites-2026-08-08.md
  * Cite: docs/research/i18-shell-obfuscation-cites-2026-08-08.md
- * Cite: docs/research/i18-shell-bypass-round2-cites-2026-08-08.md
- * Cite: docs/research/i18-xargs-stdin-bypass-cites-2026-08-08.md
- * Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
  */
 export function isDangerousGhArgv(argv: string[]): boolean {
   if (!argv.length) return false;
 
+  // Anywhere: literal gh auth <dangerous> (find -exec, watch, …)
+  if (argvHasGhAuthDangerSubsequence(argv)) return true;
+
   // Fail-closed for xargs: utility gh|shell (stdin / -I{} invisible at deny time).
   if (xargsArgvHasDangerousGh(argv)) return true;
+
+  // find -exec / -execdir utility argv
+  if (findExecArgvDangerous(argv)) return true;
 
   const rest = stripWrapperArgv(argv);
   if (!rest.length) return false;
@@ -617,13 +938,7 @@ export function isDangerousGhArgv(argv: string[]): boolean {
   }
 
   if (SHELL_BASENAMES.has(base)) {
-    for (let i = 1; i < rest.length; i++) {
-      const a = rest[i]!;
-      if (shellFlagTakesScript(a)) {
-        const script = rest[i + 1];
-        if (script && shellScriptHasDangerousGhAuth(script)) return true;
-      }
-    }
+    if (shellArgvHasDangerousGhAuth(rest)) return true;
   }
 
   if (base === "git" && gitArgvHasDangerousGhAuth(rest)) return true;
