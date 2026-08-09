@@ -26,4 +26,20 @@ describe("shell hooks", () => {
     expect(script).toContain("acct_ApplyEnv");
     expect(script).toContain("acct__prevPrompt");
   });
+
+  it("bash hook PROMPT_COMMAND prepend is idempotent", () => {
+    const script = hookScript("bash");
+    expect(script).toContain('case ":${PROMPT_COMMAND-}:" in');
+    expect(script).toContain('*":acct_chpwd;"*)');
+    // cwd-change gate
+    expect(script).toContain('[ "$PWD" = "${_ACCT_LAST_PWD-}" ] && return');
+  });
+
+  it("powershell hook guards against re-wrapping prompt", () => {
+    const script = hookScript("powershell");
+    expect(script).toContain("Test-Path variable:acct__prevPrompt");
+    // Only one function prompt definition after the sentinel
+    const wraps = script.match(/function prompt/g) ?? [];
+    expect(wraps.length).toBe(1);
+  });
 });

@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Profile } from "../types.js";
 import { acctConfigDir, redactSecret, debugLog } from "../util/paths.js";
+import {
+  atomicWriteFileSync,
+  ensureAcctDir,
+  withFileLock,
+} from "../util/fs-safe.js";
 
 const SERVICE = "acct-github";
 
@@ -33,39 +38,82 @@ export class MemorySecretStore implements SecretStore {
  * File-backed store under ACCT_CONFIG_DIR/secrets.json (mode 0600).
  * Only used when ACCT_SECRET_BACKEND=file (explicit opt-in).
  * Never writes tokens into config.yaml (I13).
+ *
+ * Concurrent writers serialize via secrets.json.lock; writes are atomic
+ * (tmp → fsync → rename). Corrupt JSON throws (does not return {}).
  */
 export class FileSecretStore implements SecretStore {
   constructor(private readonly filePath: string) {}
 
-  private read(): Record<string, string> {
+  private lockPath(): string {
+    return `${this.filePath}.lock`;
+  }
+
+  private backupPath(): string {
+    return `${this.filePath}.bak`;
+  }
+
+  private readUnlocked(): Record<string, string> {
     if (!fs.existsSync(this.filePath)) return {};
+    const raw = fs.readFileSync(this.filePath, "utf8");
     try {
-      return JSON.parse(fs.readFileSync(this.filePath, "utf8")) as Record<
-        string,
-        string
-      >;
-    } catch {
-      return {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
+        throw new Error("not an object");
+      }
+      return parsed as Record<string, string>;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Corrupt secrets.json at ${this.filePath} (${detail}). ` +
+          `Check ${this.backupPath()} for a prior good copy before rewriting.`,
+      );
     }
   }
 
-  private write(data: Record<string, string>): void {
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(this.filePath, JSON.stringify(data), { mode: 0o600 });
+  private writeUnlocked(data: Record<string, string>): void {
+    ensureAcctDir(path.dirname(this.filePath));
+    if (fs.existsSync(this.filePath)) {
+      try {
+        fs.copyFileSync(this.filePath, this.backupPath());
+        try {
+          fs.chmodSync(this.backupPath(), 0o600);
+        } catch {
+          // best effort
+        }
+      } catch {
+        // backup best-effort
+      }
+    }
+    atomicWriteFileSync(this.filePath, JSON.stringify(data), 0o600);
+  }
+
+  private withLock<T>(fn: () => T): T {
+    return withFileLock(this.lockPath(), fn);
   }
 
   async get(account: string): Promise<string | null> {
-    return this.read()[account] ?? null;
+    return this.withLock(() => this.readUnlocked()[account] ?? null);
   }
+
   async set(account: string, secret: string): Promise<void> {
-    const data = this.read();
-    data[account] = secret;
-    this.write(data);
+    this.withLock(() => {
+      const data = this.readUnlocked();
+      data[account] = secret;
+      this.writeUnlocked(data);
+    });
   }
+
   async delete(account: string): Promise<void> {
-    const data = this.read();
-    delete data[account];
-    this.write(data);
+    this.withLock(() => {
+      const data = this.readUnlocked();
+      delete data[account];
+      this.writeUnlocked(data);
+    });
   }
 }
 

@@ -6,6 +6,12 @@ import type { AcctConfig, Profile } from "../types.js";
 import { gitIncDir, backupDir, acctConfigDir } from "../config/store.js";
 import { assertSafeSshHost } from "../ssh/keys.js";
 import { homeDir, normalizePath, posixShellSingleQuote } from "../util/paths.js";
+import {
+  atomicWriteFileSync,
+  ensureAcctDir,
+  withFileLock,
+} from "../util/fs-safe.js";
+import { cmdEscapePath } from "../util/cmd-escape.js";
 
 const BEGIN = "# >>> acct managed begin >>>";
 const END = "# <<< acct managed end <<<";
@@ -68,12 +74,52 @@ export function writeProfileInclude(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const dir = gitIncDir(env);
-  fs.mkdirSync(dir, { recursive: true });
+  ensureAcctDir(dir);
   const helperCmd = resolveHelperConfigValue(env);
   const content = renderProfileInclude(profile, helperCmd);
   const file = profileIncPath(profile, env);
-  fs.writeFileSync(file, content, "utf8");
+  atomicWriteFileSync(file, content, 0o600);
   return file;
+}
+
+/** Remove profile include + optional SSH key material after profile delete. */
+export function removeProfileArtifacts(
+  profile: Profile,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const inc = profileIncPath(profile, env);
+  try {
+    if (fs.existsSync(inc)) fs.unlinkSync(inc);
+  } catch {
+    // best effort
+  }
+  const sshDir = path.join(acctConfigDir(env), "ssh");
+  for (const name of [profile.id, `${profile.id}.pub`]) {
+    const p = path.join(sshDir, name);
+    try {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch {
+      // best effort
+    }
+  }
+  // Also remove if profile.sshKeyPath points inside acct ssh dir under another name
+  if (profile.sshKeyPath) {
+    const key = path.resolve(profile.sshKeyPath);
+    const under = path.resolve(sshDir);
+    if (key === under || key.startsWith(under + path.sep)) {
+      try {
+        if (fs.existsSync(key)) fs.unlinkSync(key);
+      } catch {
+        // ignore
+      }
+      const pub = key + ".pub";
+      try {
+        if (fs.existsSync(pub)) fs.unlinkSync(pub);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 function resolveHelperConfigValue(env: NodeJS.ProcessEnv): string {
@@ -87,7 +133,7 @@ export function ensureCredentialShim(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const dir = path.join(acctConfigDir(env), "bin");
-  fs.mkdirSync(dir, { recursive: true });
+  ensureAcctDir(dir);
   const shim = path.join(dir, "git-credential-acct");
 
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -110,9 +156,10 @@ export function ensureCredentialShim(
 
   if (process.platform === "win32") {
     const cmdPath = shim + ".cmd";
+    const escaped = cmdEscapePath(target);
     fs.writeFileSync(
       cmdPath,
-      `@echo off\r\nnode "${target.replace(/"/g, "")}" %*\r\n`,
+      `@echo off\r\nnode "${escaped}" %*\r\n`,
     );
     return cmdPath.replace(/\\/g, "/");
   }
@@ -171,39 +218,77 @@ export function globalGitconfigPath(
   return path.join(homeDir(env), ".gitconfig");
 }
 
+function gitconfigLockPath(env: NodeJS.ProcessEnv): string {
+  return path.join(acctConfigDir(env), "gitconfig.lock");
+}
+
 export function installIncludeIf(
   config: AcctConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  for (const profile of config.profiles) {
-    writeProfileInclude(profile, env);
-  }
-  const block = buildIncludeIfBlock(config, env);
-  const gitconfig = globalGitconfigPath(env);
-  let existing = fs.existsSync(gitconfig)
-    ? fs.readFileSync(gitconfig, "utf8")
-    : "";
+  withFileLock(gitconfigLockPath(env), () => {
+    for (const profile of config.profiles) {
+      writeProfileInclude(profile, env);
+    }
+    const block = buildIncludeIfBlock(config, env);
+    const gitconfig = globalGitconfigPath(env);
+    let existing = fs.existsSync(gitconfig)
+      ? fs.readFileSync(gitconfig, "utf8")
+      : "";
 
-  // backup once
-  const bdir = backupDir(env);
-  fs.mkdirSync(bdir, { recursive: true });
-  const backupFile = path.join(bdir, "gitconfig.pre-acct");
-  if (!fs.existsSync(backupFile) && existing) {
-    fs.writeFileSync(backupFile, existing);
-  }
+    // backup once
+    const bdir = backupDir(env);
+    ensureAcctDir(bdir);
+    const backupFile = path.join(bdir, "gitconfig.pre-acct");
+    if (!fs.existsSync(backupFile) && existing) {
+      atomicWriteFileSync(backupFile, existing, 0o600);
+    }
 
-  existing = stripManagedBlock(existing);
-  const next = existing.trimEnd() + "\n\n" + block;
-  fs.writeFileSync(gitconfig, next.startsWith("\n") ? next.slice(1) : next);
+    existing = stripManagedBlock(existing);
+    const next = existing.trimEnd() + "\n\n" + block;
+    const final = next.startsWith("\n") ? next.slice(1) : next;
+    // Write via tmp in same dir as gitconfig for atomic rename
+    const tmp = `${gitconfig}.acct.tmp.${process.pid}`;
+    fs.writeFileSync(tmp, final, "utf8");
+    try {
+      const fd = fs.openSync(tmp, "r+");
+      try {
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      // fsync best-effort
+    }
+    fs.renameSync(tmp, gitconfig);
+  });
 }
 
 export function uninstallIncludeIf(env: NodeJS.ProcessEnv = process.env): void {
-  const gitconfig = globalGitconfigPath(env);
-  if (!fs.existsSync(gitconfig)) return;
-  const existing = fs.readFileSync(gitconfig, "utf8");
-  const next = stripManagedBlock(existing);
-  fs.writeFileSync(gitconfig, next);
-  fs.mkdirSync(acctConfigDir(env), { recursive: true });
+  withFileLock(gitconfigLockPath(env), () => {
+    const gitconfig = globalGitconfigPath(env);
+    if (fs.existsSync(gitconfig)) {
+      const existing = fs.readFileSync(gitconfig, "utf8");
+      const next = stripManagedBlock(existing);
+      const tmp = `${gitconfig}.acct.tmp.${process.pid}`;
+      fs.writeFileSync(tmp, next, "utf8");
+      fs.renameSync(tmp, gitconfig);
+    }
+    ensureAcctDir(acctConfigDir(env));
+    // Clean orphan .inc files under git/
+    const gdir = gitIncDir(env);
+    if (fs.existsSync(gdir)) {
+      for (const name of fs.readdirSync(gdir)) {
+        if (name.endsWith(".inc")) {
+          try {
+            fs.unlinkSync(path.join(gdir, name));
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  });
 }
 
 export function restoreGitconfigBackup(
@@ -212,8 +297,10 @@ export function restoreGitconfigBackup(
   const backupFile = path.join(backupDir(env), "gitconfig.pre-acct");
   const gitconfig = globalGitconfigPath(env);
   if (!fs.existsSync(backupFile)) return false;
-  fs.copyFileSync(backupFile, gitconfig);
-  return true;
+  return withFileLock(gitconfigLockPath(env), () => {
+    fs.copyFileSync(backupFile, gitconfig);
+    return true;
+  });
 }
 
 export function stripManagedBlock(text: string): string {

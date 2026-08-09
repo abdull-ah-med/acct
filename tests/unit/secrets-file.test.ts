@@ -8,6 +8,7 @@ import {
   getProfileToken,
   setSecretStoreForTests,
 } from "../../src/secrets/store.js";
+import { ensureAcctDir } from "../../src/util/fs-safe.js";
 import type { Profile } from "../../src/types.js";
 
 const profile: Profile = {
@@ -59,5 +60,46 @@ describe("file secret backend", () => {
     const store = await getSecretStore(process.env);
     await store.set("github.com::user-a", "tok");
     expect(await store.get("github.com::user-a")).toBe("tok");
+  });
+
+  it("corrupt JSON throws instead of silently returning {}", async () => {
+    const secrets = path.join(dir, "secrets.json");
+    fs.writeFileSync(secrets, "{not-json", { mode: 0o600 });
+    const store = new FileSecretStore(secrets);
+    await expect(store.get("x")).rejects.toThrow(/corrupt secrets\.json/i);
+  });
+
+  it("concurrent writes do not lose data", async () => {
+    const secrets = path.join(dir, "secrets.json");
+    const store = new FileSecretStore(secrets);
+    const n = 20;
+    await Promise.all(
+      Array.from({ length: n }, (_, i) =>
+        store.set(`github.com::user-${i}`, `tok-${i}`),
+      ),
+    );
+    for (let i = 0; i < n; i++) {
+      expect(await store.get(`github.com::user-${i}`)).toBe(`tok-${i}`);
+    }
+  });
+
+  it("writes directory mode 0700 and file mode 0600", async () => {
+    if (process.platform === "win32") return;
+    const secrets = path.join(dir, "secrets.json");
+    const store = new FileSecretStore(secrets);
+    await store.set("github.com::user-a", "tok");
+    const dirMode = fs.statSync(dir).mode & 0o777;
+    const fileMode = fs.statSync(secrets).mode & 0o777;
+    expect(dirMode).toBe(0o700);
+    expect(fileMode).toBe(0o600);
+  });
+
+  it("ensureAcctDir tightens existing 0755 directory to 0700", () => {
+    if (process.platform === "win32") return;
+    const loose = path.join(dir, "loose");
+    fs.mkdirSync(loose, { mode: 0o755 });
+    fs.chmodSync(loose, 0o755);
+    ensureAcctDir(loose);
+    expect(fs.statSync(loose).mode & 0o777).toBe(0o700);
   });
 });
