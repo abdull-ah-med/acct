@@ -56,11 +56,11 @@
   },
   "homepage": "https://acct-web.vercel.app/",
   "bugs": {
-    "url": "https://github.com/acct-sh/acct/issues"
+    "url": "https://github.com/abdull-ah-med/acct/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/acct-sh/acct.git"
+    "url": "git+https://github.com/abdull-ah-med/acct.git"
   },
   "dependencies": {
     "@napi-rs/keyring": "^1.1.2",

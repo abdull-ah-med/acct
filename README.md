@@ -59,7 +59,7 @@ pnpm add -g acct-sh
 acct --help
 ```
 
-Also on [GitHub Packages](https://github.com/acct-sh/acct/pkgs/npm/acct-sh) as `@acct-sh/acct-sh` (same bins).
+Also on [GitHub Packages](https://github.com/abdull-ah-med/acct/pkgs/npm/acct-sh) as `@abdull-ah-med/acct-sh` (same bins).
 
 ## Quick start
 

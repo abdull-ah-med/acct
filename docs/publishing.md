@@ -3,7 +3,7 @@
 `acct-sh` is published to:
 
 - **npmjs.org** as `acct-sh` (primary install path)
-- **GitHub Packages** as `@acct-sh/acct-sh` (scoped; GitHub requires `@owner/...`)
+- **GitHub Packages** as `@abdull-ah-med/acct-sh` (scoped; GitHub requires `@owner/...`)
 
 CLI bins remain `acct` and `git-credential-acct` on both. Releases are cut from git tags.
 
@@ -33,7 +33,7 @@ npm publish --access public
 
    | Field | Value |
    | --- | --- |
-   | Organization or user | `acct-sh` |
+   | Organization or user | `abdull-ah-med` |
    | Repository | `acct` |
    | Workflow filename | `release.yml` |
    | Environment name | *(leave empty)* |
@@ -57,7 +57,7 @@ git push origin main --tags
    - Runs lint, tests, build, `pack:check`, **security regression**, and e2e
    - Verifies the tag matches `package.json`
    - Publishes to npmjs.org via OIDC (`id-token: write`); provenance is automatic
-   - Publishes to GitHub Packages as `@acct-sh/acct-sh` (`packages: write`)
+   - Publishes to GitHub Packages as `@abdull-ah-med/acct-sh` (`packages: write`)
    - Creates a GitHub Release for the tag
 
 To publish GitHub Packages / cut a Release for an existing tag (e.g. after a local first npmjs publish), run **Actions → Release → Run workflow** and set `tag` to `v0.1.0`.

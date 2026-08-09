@@ -123,11 +123,11 @@ jobs:
 
             **Install (npmjs):** `npm install -g acct-sh@${{ steps.tag.outputs.version }}`
 
-            **Install (GitHub Packages):** `npm install -g @acct-sh/acct-sh@${{ steps.tag.outputs.version }}`
+            **Install (GitHub Packages):** `npm install -g @${{ github.repository_owner }}/acct-sh@${{ steps.tag.outputs.version }}`
 
-            See [CHANGELOG.md](https://github.com/acct-sh/acct/blob/v${{ steps.tag.outputs.version }}/CHANGELOG.md) for details.
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/v${{ steps.tag.outputs.version }}/CHANGELOG.md) for details.
 
             - npmjs: https://www.npmjs.com/package/acct-sh
-            - GitHub Packages: https://github.com/acct-sh/acct/pkgs/npm/acct-sh
+            - GitHub Packages: https://github.com/${{ github.repository }}/pkgs/npm/acct-sh
 
             CLI bins: `acct`, `git-credential-acct`
