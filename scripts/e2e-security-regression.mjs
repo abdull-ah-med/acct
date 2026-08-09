@@ -202,6 +202,183 @@ acct(["install"], env);
   void r;
 }
 
+{
+  const r = helper(
+    "store",
+    `protocol=https\nhost=github.com\nusername=acct-sh\npassword=gho_TEST_ONLY_SECONDARY_${"y".repeat(20)}\n\n`,
+    personal,
+    env,
+  );
+  const g = helper("get", "protocol=https\nhost=github.com\n\n", personal, env);
+  if (
+    g.stdout.includes("gho_TEST_ONLY_PRIMARY_") &&
+    !g.stdout.includes("gho_TEST_ONLY_SECONDARY_")
+  )
+    ok("store poison ignored (I17)");
+  else fail("I17 store poison", JSON.stringify(g.stdout));
+  void r;
+}
+
+{
+  const r = helper("get", "protocol=http\nhost=github.com\n\n", personal, env);
+  if (r.stdout.includes("quit=1") && !r.stdout.includes("password="))
+    ok("http protocol quit=1 (I16)");
+  else fail("I16 http", JSON.stringify(r.stdout));
+}
+
+{
+  const bad = helper(
+    "get",
+    "protocol=https\nhost=github.com:8443\n\n",
+    personal,
+    env,
+  );
+  const ok443 = helper(
+    "get",
+    "protocol=https\nhost=github.com:443\n\n",
+    personal,
+    env,
+  );
+  const dup = helper(
+    "get",
+    "protocol=https\nhost=evil.com\nhost=github.com\n\n",
+    personal,
+    env,
+  );
+  if (
+    bad.stdout.includes("quit=1") &&
+    !bad.stdout.includes("password=") &&
+    ok443.stdout.includes("password=") &&
+    dup.stdout.includes("quit=1") &&
+    !dup.stdout.includes("password=")
+  ) {
+    ok("I7 port allowlist + duplicate host fail-closed");
+  } else {
+    fail("I7 port/dup", JSON.stringify({ bad: bad.stdout, ok443: ok443.stdout, dup: dup.stdout }));
+  }
+}
+
+{
+  const repo = path.join(personal, "empty-acct-repo");
+  fs.mkdirSync(repo, { recursive: true });
+  run("git", ["init"], { cwd: repo, env });
+  fs.writeFileSync(path.join(repo, ".acct"), "");
+  const r = acct(["status"], env, repo);
+  if (
+    /profile: \(unbound\)/.test(r.stdout) &&
+    /reason: local/.test(r.stdout) &&
+    !/profile: personal/.test(r.stdout)
+  ) {
+    ok("I3 empty .acct is local unbound (no parent fallthrough)");
+  } else fail("I3 empty .acct", r.stdout);
+}
+
+{
+  // Non-git directory: .acct must still win (nearest walk-up)
+  const dir = path.join(personal, "not-a-repo");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, ".acct"), "profile: work\n");
+  let r = acct(["status"], env, dir);
+  if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout))
+    ok("I3 .acct honored without git repo");
+  else fail("I3 non-git .acct", r.stdout);
+
+  fs.writeFileSync(path.join(dir, ".acct"), "");
+  r = acct(["status"], env, dir);
+  if (
+    /profile: \(unbound\)/.test(r.stdout) &&
+    /reason: local/.test(r.stdout) &&
+    !/profile: personal/.test(r.stdout)
+  ) {
+    ok("I3 empty .acct unbound without git repo");
+  } else fail("I3 empty non-git .acct", r.stdout);
+
+  // Nested pkg/.acct inside a git repo
+  const repo = path.join(personal, "nested-acct-repo");
+  const pkg = path.join(repo, "pkg");
+  fs.mkdirSync(pkg, { recursive: true });
+  run("git", ["init"], { cwd: repo, env });
+  fs.writeFileSync(path.join(repo, ".acct"), "profile: personal\n");
+  fs.writeFileSync(path.join(pkg, ".acct"), "profile: work\n");
+  r = acct(["status"], env, pkg);
+  if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout))
+    ok("I3 nearest nested .acct wins over toplevel");
+  else fail("I3 nested .acct", r.stdout);
+}
+
+{
+  const r = acct(["exec", "gh", "auth", "token"], env, personal);
+  if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+    ok("exec blocks gh auth token (I18)");
+  else fail("I18 exec token", r.stderr + r.stdout);
+}
+
+{
+  const cases = [
+    ["env", "gh", "auth", "token"],
+    ["bash", "-c", "gh auth token"],
+    ["/usr/bin/gh", "auth", "token"],
+    ["xargs", "-I{}", "gh", "auth", "token"],
+    ["xargs", "gh", "auth", "token"],
+    ["xargs", "gh"],
+    ["xargs", "-n2", "gh"],
+    ["env", "xargs", "-n2", "gh"],
+    ["xargs", "-I{}", "sh", "-c", "unset GH_TOKEN; gh auth {} --user other"],
+    ["bash", "-c", '"gh" "auth" "token"'],
+    ["bash", "-c", "g=gh; $g auth token"],
+    ["bash", "-c", "x=auth; gh $x switch"],
+    ["bash", "-c", "unset GH_TOKEN GITHUB_TOKEN; x=auth; gh $x switch"],
+    ["bash", "-c", "$(command -v gh) auth token"],
+    ["bash", "-c", "echo auth token | xargs gh"],
+    ["zsh", "-c", "g=gh; $g auth token"],
+    // Round-2 live bypasses
+    ["bash", "-c", "a=to; b=ken; gh auth $a$b"],
+    ["bash", "-c", 'gh auth "$(echo token)"'],
+    ["bash", "-c", "IFS=; gh$IFS auth$IFS token"],
+    ["bash", "-c", String.raw`printf 'auth\ntoken\n' | xargs -n2 gh`],
+    ["bash", "-c", "echo Z2ggYXV0aCB0b2tlbg== | base64 -d | sh"],
+    ["bash", "-c", "base64 -d <<<'Z2ggYXV0aCB0b2tlbg==' | bash"],
+  ];
+  let allOk = true;
+  for (const cmd of cases) {
+    const r = acct(["exec", ...cmd], env, personal);
+    if (!(r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))) {
+      allOk = false;
+      fail(`I18 wrapper ${cmd.join(" ")}`, r.stderr + r.stdout);
+    }
+  }
+  if (allOk) ok("I18 blocks env/bash/-c/absolute/xargs + shell obfuscation");
+}
+
+{
+  const badIds = ["evil$(whoami)", "evil`id`", "../personal", "has space"];
+  let allOk = true;
+  for (const id of badIds) {
+    const r = acct(
+      [
+        "profile",
+        "add",
+        "--id",
+        id,
+        "--user",
+        "x",
+        "--email",
+        "x@y.z",
+        "--name",
+        "X",
+        "--protocol",
+        "https",
+      ],
+      env,
+    );
+    if (!(r.status !== 0 && /Invalid profile id/i.test(r.stderr + r.stdout))) {
+      allOk = false;
+      fail(`profile id reject ${JSON.stringify(id)}`, r.stderr + r.stdout);
+    }
+  }
+  if (allOk) ok("profile id allowlist rejects metacharacters/paths");
+}
+
 fs.rmSync(base, { recursive: true, force: true });
 console.log(`\npassed=${passed} failed=${failed}`);
 process.exit(failed ? 1 : 0);

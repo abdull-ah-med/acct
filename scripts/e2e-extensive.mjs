@@ -56,6 +56,12 @@ function fail(name, err) {
   console.log(`  FAIL  ${name}`);
   console.log(`        ${err}`);
 }
+function redact(s) {
+  return String(s)
+    .replace(/gho_[A-Za-z0-9_]+/g, "gho_***")
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "github_pat_***")
+    .replace(/ghp_[A-Za-z0-9_]+/g, "ghp_***");
+}
 
 function run(cmd, args, opts = {}) {
   const res = spawnSync(cmd, args, {
@@ -238,6 +244,20 @@ async function main() {
       ok("local .acct overrides binding");
     else fail("local .acct", r.stdout);
 
+    // Non-git .acct under bound tree
+    const nogit = path.join(personalRoot, "not-a-repo");
+    fs.mkdirSync(nogit, { recursive: true });
+    fs.writeFileSync(path.join(nogit, ".acct"), "profile: work\n");
+    r = acct(["status"], env, nogit);
+    if (/profile: work/.test(r.stdout) && /reason: local/.test(r.stdout))
+      ok("non-git .acct overrides binding");
+    else fail("non-git .acct", r.stdout);
+    fs.writeFileSync(path.join(nogit, ".acct"), "");
+    r = acct(["status"], env, nogit);
+    if (/profile: \(unbound\)/.test(r.stdout) && /reason: local/.test(r.stdout))
+      ok("non-git empty .acct is local unbound");
+    else fail("non-git empty .acct", r.stdout);
+
     // ACCT_PROFILE ambient must NOT override (I4) — warning may appear
     r = acct(["status"], { ...env, ACCT_PROFILE: PRIMARY.id }, workRoot);
     if (
@@ -361,27 +381,65 @@ async function main() {
       ok("unbound strict → quit=1 fail-closed");
     else fail("unbound leak", JSON.stringify(r.stdout));
 
-    // erase
+    // erase only with matching password (I17)
+    const abdTokErase = "gho_TEST_ONLY_PRIMARY_" + "x".repeat(20);
     r = helper(
       "erase",
-      "protocol=https\nhost=github.com\n\n",
+      `protocol=https\nhost=github.com\nusername=acct-sh\npassword=${abdTokErase}\n\n`,
       personalRoot,
     );
-    if (r.status === 0) ok("erase succeeds");
+    if (r.status === 0) ok("erase with matching password succeeds");
     else fail("erase", r.stderr);
 
-    // re-store via store op
+    r = helper("get", getBody, personalRoot);
+    if (r.stdout.includes("quit=1") && !r.stdout.includes("password="))
+      ok("erase cleared token (get quit)");
+    else fail("erase effect", JSON.stringify(r.stdout));
+
+    // Foreign erase (wrong password) must not wipe — re-seed then prove
+    r = run(process.execPath, [ACCT, "profile", "token", "personal", "--stdin"], {
+      env,
+      input: "gho_TEST_ONLY_PRIMARY_restored\n",
+    });
+    if (r.status === 0) ok("restore token via profile token --stdin");
+    else fail("profile token restore", r.stderr);
+
     r = helper(
-      "store",
-      "protocol=https\nhost=github.com\nusername=acct-sh\npassword=gho_TEST_ONLY_PRIMARY_restored\n\n",
+      "erase",
+      "protocol=https\nhost=github.com\nusername=acct-sh\npassword=gho_WRONG_ERASE\n\n",
       personalRoot,
     );
-    if (r.status === 0) ok("store op");
+    r = helper("get", getBody, personalRoot);
+    if (r.stdout.includes("gho_TEST_ONLY_PRIMARY_restored"))
+      ok("erase with wrong password ignored");
+    else fail("foreign erase", JSON.stringify(r.stdout));
+
+    // store poison ignored (I17 read-only)
+    r = helper(
+      "store",
+      "protocol=https\nhost=github.com\nusername=acct-sh\npassword=gho_POISON_SHOULD_NOT_STICK\n\n",
+      personalRoot,
+    );
+    if (r.status === 0) ok("store op ignored (exit 0)");
     else fail("store", r.stderr);
 
     r = helper("get", getBody, personalRoot);
-    if (r.stdout.includes("gho_TEST_ONLY_PRIMARY_restored")) ok("store then get");
+    if (
+      r.stdout.includes("gho_TEST_ONLY_PRIMARY_restored") &&
+      !r.stdout.includes("POISON")
+    )
+      ok("store poison ignored; CLI token retained");
     else fail("store then get", r.stdout);
+
+    // I16: http must not receive HTTPS tokens
+    r = helper(
+      "get",
+      "protocol=http\nhost=github.com\n\n",
+      personalRoot,
+    );
+    if (r.stdout.includes("quit=1") && !r.stdout.includes("password="))
+      ok("http protocol → quit=1 (I16)");
+    else fail("http protocol", JSON.stringify(r.stdout));
 
     // capability
     r = helper("capability", "\n", personalRoot);
@@ -426,16 +484,128 @@ async function main() {
     } else fail("stale GH_TOKEN", r.stdout);
 
     r = acct(["exec", "gh", "auth", "switch"], env, personalRoot);
-    if (r.status !== 0) ok("exec blocks gh auth switch");
-    else fail("exec should block switch", r.stdout);
+    if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+      ok("exec blocks gh auth switch");
+    else fail("exec should block switch", r.stdout + r.stderr);
 
     r = acct(["exec", "gh", "auth", "setup-git"], env, personalRoot);
-    if (r.status !== 0) ok("exec blocks gh auth setup-git");
-    else fail("exec should block setup-git", r.stdout);
+    if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+      ok("exec blocks gh auth setup-git");
+    else fail("exec should block setup-git", r.stdout + r.stderr);
+
+    r = acct(["exec", "gh", "auth", "token"], env, personalRoot);
+    if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+      ok("exec blocks gh auth token (I18)");
+    else fail("exec should block token", r.stdout + r.stderr);
+
+    r = acct(["exec", "gh", "auth", "login"], env, personalRoot);
+    if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+      ok("exec blocks gh auth login (I18)");
+    else fail("exec should block login", r.stdout + r.stderr);
+
+    r = acct(["exec", "env", "gh", "auth", "token"], env, personalRoot);
+    if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+      ok("exec blocks env gh auth token (I18)");
+    else fail("exec should block env wrapper", r.stdout + r.stderr);
+
+    r = acct(["exec", "bash", "-c", "gh auth token"], env, personalRoot);
+    if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+      ok("exec blocks bash -c gh auth token (I18)");
+    else fail("exec should block bash -c", r.stdout + r.stderr);
+
+    r = acct(["exec", "xargs", "-I{}", "gh", "auth", "token"], env, personalRoot);
+    if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
+      ok("exec blocks xargs gh auth token (I18)");
+    else fail("exec should block xargs", r.stdout + r.stderr);
+
+    // Stdin / -I{} invisible at deny time — fail-closed xargs→gh|shell
+    // Cite: docs/research/i18-xargs-stdin-bypass-cites-2026-08-08.md
+    r = acct(["exec", "xargs", "-n2", "gh"], env, personalRoot);
+    if (r.status !== 0 && /Refusing/.test(r.stderr + r.stdout))
+      ok("exec blocks xargs -n2 gh (stdin can supply auth token)");
+    else fail("exec should block xargs -n2 gh", r.stderr + r.stdout);
+
+    r = acct(
+      ["exec", "xargs", "-I{}", "sh", "-c", "unset GH_TOKEN; gh auth {} --user other"],
+      env,
+      personalRoot,
+    );
+    if (r.status !== 0 && /Refusing/.test(r.stderr + r.stdout))
+      ok("exec blocks xargs -I{} sh -c gh auth {}");
+    else fail("exec should block xargs shell {}", r.stderr + r.stdout);
+
+    r = run(process.execPath, [ACCT, "exec", "xargs", "gh"], {
+      cwd: personalRoot,
+      env,
+      input: "auth\ntoken\n",
+    });
+    if (
+      r.status !== 0 &&
+      /Refusing/.test(r.stderr + r.stdout) &&
+      !/gho_|ghp_|github_pat_/.test(r.stdout + r.stderr)
+    ) {
+      ok("exec blocks xargs gh with stdin auth/token (no dump)");
+    } else fail("exec xargs stdin bypass", redact(r.stdout + r.stderr));
+
+    r = acct(["exec", "bash", "-c", "g=gh; $g auth token"], env, personalRoot);
+    if (r.status !== 0 && /Refusing/.test(r.stderr + r.stdout))
+      ok("exec blocks shell var gh auth obfuscation (I18)");
+    else fail("exec block var obfuscation", r.stderr + r.stdout);
+
+    r = acct(
+      ["exec", "bash", "-c", "unset GH_TOKEN; x=auth; gh $x switch"],
+      env,
+      personalRoot,
+    );
+    if (r.status !== 0 && /Refusing/.test(r.stderr + r.stdout))
+      ok("exec blocks unset+auth switch obfuscation (I18)");
+    else fail("exec block unset switch", r.stderr + r.stdout);
+
+    const round2 = [
+      ["bash", "-c", "a=to; b=ken; gh auth $a$b"],
+      ["bash", "-c", 'gh auth "$(echo token)"'],
+      ["bash", "-c", "IFS=; gh$IFS auth$IFS token"],
+      ["bash", "-c", String.raw`printf 'auth\ntoken\n' | xargs -n2 gh`],
+      ["bash", "-c", "echo Z2ggYXV0aCB0b2tlbg== | base64 -d | sh"],
+    ];
+    let r2ok = true;
+    for (const cmd of round2) {
+      r = acct(["exec", ...cmd], env, personalRoot);
+      if (!(r.status !== 0 && /Refusing/.test(r.stderr + r.stdout))) {
+        r2ok = false;
+        fail(`exec block round2 ${cmd.slice(0, 3).join(" ")}`, r.stderr + r.stdout);
+      }
+    }
+    if (r2ok) ok("exec blocks I18 round-2 shell bypasses");
 
     r = acct(["exec", "node", "-e", "console.log(process.env.ACCT_PROFILE)"], env, personalRoot);
     if (r.status === 0 && r.stdout.trim() === "personal") ok("exec injects ACCT_PROFILE");
     else fail("exec env", r.stdout + r.stderr);
+
+    r = acct(
+      ["exec", "--profile", SECONDARY.id, "node", "-e", "console.log(process.env.ACCT_PROFILE)"],
+      env,
+      personalRoot,
+    );
+    if (r.status !== 0 && /allow-cross-profile|Refusing --profile/i.test(r.stderr + r.stdout))
+      ok("exec denies cross-profile without flag");
+    else fail("exec cross-profile deny", r.stderr + r.stdout);
+
+    r = acct(
+      [
+        "exec",
+        "--profile",
+        SECONDARY.id,
+        "--allow-cross-profile",
+        "node",
+        "-e",
+        "console.log(process.env.ACCT_PROFILE)",
+      ],
+      env,
+      personalRoot,
+    );
+    if (r.status === 0 && r.stdout.trim() === "work") ok("exec --allow-cross-profile works");
+    else fail("exec allow-cross-profile", r.stderr + r.stdout);
   }
 
   // ---------- enforce ----------
