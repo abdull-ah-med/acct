@@ -6,6 +6,7 @@ import { loadConfig, hooksDir, acctConfigDir } from "../config/store.js";
 import { globalGitconfigPath } from "../identity/includeIf.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { secretsFilePath } from "../secrets/store.js";
+import { ghApiLogin } from "../gh/env.js";
 
 export interface DoctorFinding {
   severity: "error" | "warn" | "ok";
@@ -33,8 +34,10 @@ export function runDoctor(
   findings.push(...checkCredentialHelpers(env));
   findings.push(...checkManagedBlock(env));
   findings.push(...checkStaleGhToken(cwd, env, config));
+  findings.push(...checkEnforceFallthrough(cwd, env, config));
   findings.push(...checkAmbientProfile(cwd, env));
   findings.push(...checkHooksAbsolute(env));
+  findings.push(...checkHooksBypassable());
   findings.push(...checkSshKeys(config, env));
   findings.push(...checkBindings(config));
   findings.push(...checkSecretBackend(env));
@@ -51,40 +54,129 @@ export function runDoctor(
   return findings;
 }
 
+/**
+ * Simulate git's credential.helper list after empty-string resets.
+ * Cite: https://git-scm.com/docs/gitcredentials ; git.git 24321375
+ */
+export function effectiveCredentialHelpers(helpers: string[]): string[] {
+  let result: string[] = [];
+  for (const h of helpers) {
+    if (h === "") result = [];
+    else result.push(h);
+  }
+  return result;
+}
+
+const COMPETING_HELPER_RE =
+  /\b(osxkeychain|wincred|libsecret|manager-core|manager|store|cache|gh)\b/i;
+
+function isAcctHelper(helper: string): boolean {
+  return /git-credential-acct|credential-acct|\bacct\b/i.test(helper);
+}
+
 function checkCredentialHelpers(env: NodeJS.ProcessEnv): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
+  let helpers: string[] = [];
   try {
-    const out = execFileSync("git", ["config", "--global", "--get-all", "credential.helper"], {
-      encoding: "utf8",
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
-    const helpers = out.split(/\r?\n/).filter(Boolean);
-    if (helpers.some((h) => /\bgh\b/.test(h))) {
-      findings.push({
-        severity: "warn",
-        code: "gh-credential-helper",
-        message:
-          "Global git credential.helper includes gh — active account can leak across directories",
-        fix: "Prefer acct-managed helpers via includeIf; avoid gh auth setup-git for multi-account",
-      });
+    // Prefer effective config (includes includes + system) when possible.
+    // Fall back to --global for sandboxed / minimal environments.
+    let out = "";
+    try {
+      out = execFileSync(
+        "git",
+        ["config", "--get-all", "credential.helper"],
+        {
+          encoding: "utf8",
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      ).trim();
+    } catch {
+      out = execFileSync(
+        "git",
+        ["config", "--global", "--get-all", "credential.helper"],
+        {
+          encoding: "utf8",
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      ).trim();
     }
-    if (helpers.length > 1) {
-      findings.push({
-        severity: "warn",
-        code: "multiple-helpers",
-        message: `Multiple global credential helpers: ${helpers.join(", ")}`,
-        fix: "acct install rewrites helpers inside bound profiles; review global helpers",
-      });
-    }
+    helpers = out.replace(/\r/g, "").split("\n");
+    // Drop the single trailing empty entry from a final newline only.
+    if (helpers.length && helpers[helpers.length - 1] === "") helpers.pop();
   } catch {
     findings.push({
       severity: "ok",
       code: "no-global-helper",
-      message: "No global credential.helper set",
+      message: "No credential.helper set",
+    });
+    return findings;
+  }
+
+  const effective = effectiveCredentialHelpers(helpers);
+  const competing = effective.filter(
+    (h) => COMPETING_HELPER_RE.test(h) && !isAcctHelper(h),
+  );
+  const hasAcct = effective.some(isAcctHelper);
+
+  if (competing.some((h) => /\bgh\b/i.test(h))) {
+    findings.push({
+      severity: "warn",
+      code: "gh-credential-helper",
+      message:
+        "Effective git credential.helper includes gh — active gh account can leak across directories",
+      fix: "Prefer acct-managed helpers via includeIf; avoid gh auth setup-git for multi-account",
     });
   }
+
+  if (competing.some((h) => /osxkeychain|wincred|libsecret|manager/i.test(h))) {
+    findings.push({
+      severity: "warn",
+      code: "competing-os-helper",
+      message: `Effective credential helpers still include OS/store helpers: ${competing.join(", ")} — wrong-account HTTPS auth is possible outside acct fail-closed paths`,
+      fix: "Run acct install (writes helper=\"\" then acct). Outside bound trees with enforce=off, competing helpers may answer.",
+    });
+  }
+
+  if (!hasAcct && competing.length > 0) {
+    findings.push({
+      severity: "warn",
+      code: "acct-helper-missing",
+      message:
+        "acct credential helper is not in the effective helper chain — machine keychain entries (any account) can answer HTTPS for github.com after uninstall or before install",
+      fix: "acct install  # restores helper=\"\" then acct. To erase a cached github.com cred: printf 'protocol=https\\nhost=github.com\\n\\n' | git credential reject  (https://git-scm.com/docs/gitcredentials)",
+    });
+  }
+
+  if (effective.length > 1) {
+    findings.push({
+      severity: "warn",
+      code: "multiple-helpers",
+      message: `Multiple effective credential helpers: ${effective.join(", ")}`,
+      fix: "acct install rewrites helpers; review git config --get-all credential.helper",
+    });
+  } else if (hasAcct && competing.length === 0) {
+    findings.push({
+      severity: "ok",
+      code: "helper-acct-only",
+      message: "Effective credential helper chain is acct-only (after resets)",
+    });
+  }
+
   return findings;
+}
+
+function checkHooksBypassable(): DoctorFinding[] {
+  return [
+    {
+      severity: "warn",
+      code: "hooks-client-side-bypassable",
+      message:
+        "pre-commit/pre-push are client-side only — git commit/push --no-verify and -c core.hooksPath=… bypass them",
+      fix: "Use organization/server branch protection and required status checks for non-bypassable policy (https://git-scm.com/docs/githooks)",
+    },
+  ];
 }
 
 function checkManagedBlock(env: NodeJS.ProcessEnv): DoctorFinding[] {
@@ -105,8 +197,9 @@ function checkManagedBlock(env: NodeJS.ProcessEnv): DoctorFinding[] {
       {
         severity: "warn",
         code: "not-installed",
-        message: "acct includeIf block not present in global gitconfig",
-        fix: "acct install",
+        message:
+          "acct includeIf block not present in global gitconfig — OS credential helpers may answer for github.com with any cached account (post-uninstall residual)",
+        fix: "acct install  # or clear cached creds: printf 'protocol=https\\nhost=github.com\\n\\n' | git credential reject",
       },
     ];
   }
@@ -197,19 +290,76 @@ function checkStaleGhToken(
   _config: AcctConfig,
 ): DoctorFinding[] {
   const resolved = resolveFromCwd(cwd, env, { allowEnvProfile: false });
-  if (!resolved.profile) return [];
-  if (env.GH_TOKEN || env.GITHUB_TOKEN) {
+  const hasToken = !!(env.GH_TOKEN || env.GITHUB_TOKEN);
+
+  // T5: unbound must not keep acct-injected tokens lingering in the shell
+  if (!resolved.profile) {
+    if (hasToken) {
+      return [
+        {
+          severity: "warn",
+          code: "env-token-unbound",
+          message:
+            "GH_TOKEN/GITHUB_TOKEN is set but cwd is unbound — raw gh may use a sticky token from a previous tree (T5)",
+          fix: 'eval "$(acct hook zsh)"  # or: unset GH_TOKEN GITHUB_TOKEN',
+        },
+      ];
+    }
+    return [];
+  }
+
+  if (!hasToken) return [];
+
+  // Compare ambient token principal to cwd profile (gh environment: GH_TOKEN wins).
+  // Cite: https://cli.github.com/manual/gh_help_environment
+  // Cite: docs/research/xargs-sticky-uninstall-delete-cites-2026-08-08.md
+  const login = ghApiLogin(env);
+  if (login && login !== resolved.profile.githubUser) {
     return [
       {
         severity: "warn",
-        code: "env-token-present",
-        message:
-          "GH_TOKEN/GITHUB_TOKEN is set in the environment — ensure shell hook refreshed it for this profile",
-        fix: "eval \"$(acct hook zsh)\" or use: acct exec -- <cmd>",
+        code: "env-token-principal-mismatch",
+        message: `Ambient GH_TOKEN authenticates as ${login} but cwd profile expects ${resolved.profile.githubUser} — raw gh uses the sticky token; acct exec/helper/hooks follow cwd (T5/I4)`,
+        fix: 'eval "$(acct hook zsh)"  # rebind on cd; or: unset GH_TOKEN; acct exec -- <cmd>',
       },
     ];
   }
+
+  // Matching (or unverifiable offline) token is expected when the shell hook ran.
   return [];
+}
+
+/**
+ * I6: unbound + enforce off returns empty without quit — later helpers
+ * (osxkeychain, etc.) may answer with any cached github.com account.
+ * Cite: https://git-scm.com/docs/gitcredentials (helper chain; quit=true)
+ */
+function checkEnforceFallthrough(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  config: AcctConfig,
+): DoctorFinding[] {
+  const findings: DoctorFinding[] = [];
+  if (config.defaultEnforce === "off") {
+    findings.push({
+      severity: "warn",
+      code: "default-enforce-off",
+      message:
+        "defaultEnforce=off — unbound directories do not quit the credential helper chain; OS helpers (osxkeychain/wincred/…) may return a cached github.com account (I6/T1)",
+      fix: "acct enforce strict   # restore fail-closed unbound behavior",
+    });
+  }
+  const resolved = resolveFromCwd(cwd, env, { allowEnvProfile: false });
+  if (!resolved.profile && resolved.enforce === "off") {
+    findings.push({
+      severity: "warn",
+      code: "unbound-enforce-off",
+      message:
+        "cwd is unbound with enforce=off — HTTPS get returns no password and does not quit; git may fall through to osxkeychain/other helpers (cross-account residual)",
+      fix: "acct enforce strict  # or bind this directory; clear cache: printf 'protocol=https\\nhost=github.com\\n\\n' | git credential reject",
+    });
+  }
+  return findings;
 }
 
 function checkSshKeys(

@@ -165,7 +165,10 @@ export async function getProfileToken(profile: Profile): Promise<string | null> 
   const store = await getSecretStore();
   const token = await store.get(accountKey(profile));
   if (token && process.env.ACCT_DEBUG) {
-    debugLog(`loaded token for ${accountKey(profile)}=${redactSecret(token)}`);
+    // Never interpolate token material — even redacted prefixes are forbidden.
+    debugLog(
+      `loaded token for ${accountKey(profile)}=${redactSecret(token)}`,
+    );
   }
   return token;
 }
