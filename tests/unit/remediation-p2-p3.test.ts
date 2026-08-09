@@ -250,4 +250,42 @@ describe("configureHooksPath", () => {
     });
     expect(() => configureHooksPath(hooks, { bindDir: repo })).not.toThrow();
   });
+
+  it("skips when bindDir is not a git toplevel (parent walk-up)", () => {
+    const nested = path.join(repo, "subdir");
+    fs.mkdirSync(nested, { recursive: true });
+    // Must not set hooksPath on the parent repo
+    expect(() =>
+      configureHooksPath(hooks, { bindDir: nested }),
+    ).not.toThrow();
+    let v = "";
+    try {
+      v = execFileSync("git", ["config", "--local", "--get", "core.hooksPath"], {
+        cwd: repo,
+        encoding: "utf8",
+      }).trim();
+    } catch {
+      v = "";
+    }
+    expect(v).toBe("");
+  });
+
+  it("updates when existing hooksPath is another acct hooks dir", () => {
+    const otherHooks = path.join(path.dirname(hooks), "other-acct-hooks");
+    fs.mkdirSync(otherHooks, { recursive: true });
+    fs.writeFileSync(
+      path.join(otherHooks, "pre-commit"),
+      "#!/bin/sh\nexec /usr/bin/node /tmp/acct.js hook-run pre-commit\n",
+    );
+    execFileSync("git", ["config", "core.hooksPath", otherHooks], {
+      cwd: repo,
+      stdio: "ignore",
+    });
+    expect(() => configureHooksPath(hooks, { bindDir: repo })).not.toThrow();
+    const v = execFileSync("git", ["config", "--get", "core.hooksPath"], {
+      cwd: repo,
+      encoding: "utf8",
+    }).trim();
+    expect(path.resolve(v)).toBe(path.resolve(hooks));
+  });
 });

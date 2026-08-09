@@ -59,6 +59,10 @@ fs.writeFileSync(
   gitconfig,
   "[user]\n\tname = G\n\temail = g@e.com\n[credential]\n\thelper = osxkeychain\n",
 );
+// Bind targets must be git toplevels so core.hooksPath does not walk into the
+// checkout (CI runs security then e2e in the same workspace).
+run("git", ["init"], { cwd: personal });
+run("git", ["init"], { cwd: work });
 
 const env = {
   ...process.env,
@@ -122,7 +126,7 @@ run(process.execPath, [ACCT, "profile", "token", SECONDARY.id, "--stdin"], {
   env,
   input: TOK_B,
 });
-acct(["install"], env);
+acct(["install"], env, personal);
 
 {
   const r = helper(

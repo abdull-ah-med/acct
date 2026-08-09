@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
+import fs from "node:fs";
 import path from "node:path";
 import {
   loadConfig,
@@ -64,21 +65,33 @@ export function configureHooksPath(
     return;
   }
 
-  const gitArgsPrefix =
-    opts.bindDir != null ? (["-C", path.resolve(opts.bindDir)] as string[]) : [];
+  const targetDir = path.resolve(opts.bindDir ?? process.cwd());
+  const gitArgsPrefix = ["-C", targetDir] as string[];
 
+  let toplevel = "";
   try {
-    execFileSync(
+    toplevel = execFileSync(
       "git",
-      [...gitArgsPrefix, "rev-parse", "--is-inside-work-tree"],
+      [...gitArgsPrefix, "rev-parse", "--show-toplevel"],
       {
+        encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       },
-    );
+    ).trim();
   } catch {
     console.log(`Hooks written to ${hooks}`);
     console.log(
       "Not inside a git repo — skipped core.hooksPath. Re-run `acct install` inside a repo, or pass --global.",
+    );
+    return;
+  }
+
+  // Do not walk into a parent repo when bindDir/cwd is not itself the toplevel
+  // (e.g. binding a plain directory under the acct checkout in CI).
+  if (path.resolve(toplevel) !== targetDir) {
+    console.log(`Hooks written to ${hooks}`);
+    console.log(
+      `Directory ${targetDir} is not a git toplevel (found ${toplevel}) — skipped core.hooksPath.`,
     );
     return;
   }
@@ -101,22 +114,38 @@ export function configureHooksPath(
       console.log(`core.hooksPath already points to acct hooks (${hooks})`);
       return;
     }
-    if (!opts.force) {
+    // Another acct-managed hooks dir (e.g. prior ACCT_CONFIG_DIR) may be updated.
+    if (isAcctHooksDir(existingResolved)) {
+      console.log(
+        `Updating acct core.hooksPath from ${existing} to ${hooks}`,
+      );
+    } else if (!opts.force) {
       throw new Error(
         `Refusing to overwrite existing core.hooksPath=${existing}. ` +
           `Pass --force to replace it with ${hooks}, or unset it first: ` +
-          `git ${opts.bindDir ? `-C ${opts.bindDir} ` : ""}config --unset core.hooksPath`,
+          `git -C ${targetDir} config --unset core.hooksPath`,
+      );
+    } else {
+      console.warn(
+        `Overwriting existing core.hooksPath=${existing} with ${hooks} (--force)`,
       );
     }
-    console.warn(
-      `Overwriting existing core.hooksPath=${existing} with ${hooks} (--force)`,
-    );
   }
 
   execFileSync("git", [...gitArgsPrefix, "config", "core.hooksPath", hooks]);
   console.log(
     `core.hooksPath=${hooks} (local repo${opts.bindDir ? ` via -C ${opts.bindDir}` : ""})`,
   );
+}
+
+/** True when dir looks like acct-installed hooks (I11b absolute hook-run). */
+function isAcctHooksDir(dir: string): boolean {
+  try {
+    const body = fs.readFileSync(path.join(dir, "pre-commit"), "utf8");
+    return body.includes("hook-run") && /\bexec\b/.test(body);
+  } catch {
+    return false;
+  }
 }
 
 export async function runCli(argv: string[]): Promise<void> {

@@ -80,6 +80,10 @@ async function main() {
   fs.mkdirSync(workRoot, { recursive: true });
   fs.mkdirSync(unboundRoot, { recursive: true });
   fs.writeFileSync(gitconfig, "[user]\n\tname = GlobalFallback\n\temail = global@example.com\n");
+  // Bind targets must be git toplevels so core.hooksPath does not walk into the
+  // checkout repo (CI runs security + e2e in the same workspace).
+  run("git", ["init"], { cwd: personalRoot });
+  run("git", ["init"], { cwd: workRoot });
 
   // Do NOT override HOME (breaks macOS keychain). Isolate via ACCT_* + GIT_CONFIG_GLOBAL.
   // Use file secret backend so we never touch OS keychain entries (including any mair tokens).
