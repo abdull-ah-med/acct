@@ -32,6 +32,7 @@
     "test": "vitest run",
     "test:e2e": "npm run build && node scripts/e2e-extensive.mjs",
     "test:security": "npm run build && node scripts/e2e-security-regression.mjs",
+    "cleanup:e2e-repos": "node scripts/cleanup-e2e-repos.mjs",
     "test:watch": "vitest",
     "lint": "tsc -p tsconfig.json --noEmit",
     "pack:check": "npm pack --dry-run",
