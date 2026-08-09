@@ -61,6 +61,39 @@ describe("resolution (invariants I1–I5)", () => {
     expect(r.reason).toBe("local");
   });
 
+  it("I3 empty .acct does not fall through to parent binding", () => {
+    const r = resolveProfile({
+      cwd: "/Users/x/Work/repo",
+      gitToplevel: "/Users/x/Work/repo",
+      localAcct: { profile: "" },
+      config: base,
+    });
+    expect(r.profile).toBeNull();
+    expect(r.reason).toBe("local");
+  });
+
+  it("I3 whitespace-only .acct profile is local unbound", () => {
+    const r = resolveProfile({
+      cwd: "/Users/x/Work/repo",
+      gitToplevel: "/Users/x/Work/repo",
+      localAcct: { profile: "   " },
+      config: base,
+    });
+    expect(r.profile).toBeNull();
+    expect(r.reason).toBe("local");
+  });
+
+  it("I3 unknown .acct profile is local unbound (not parent)", () => {
+    const r = resolveProfile({
+      cwd: "/Users/x/Work/repo",
+      gitToplevel: "/Users/x/Work/repo",
+      localAcct: { profile: "does-not-exist" },
+      config: base,
+    });
+    expect(r.profile).toBeNull();
+    expect(r.reason).toBe("local");
+  });
+
   it("I4 ambient ACCT_PROFILE is ignored by default (directory wins)", () => {
     const r = resolveProfile({
       cwd: "/Users/x/Work/repo",

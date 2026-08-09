@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readLocalAcct, loadConfig } from "../config/store.js";
+import { findLocalAcct, loadConfig } from "../config/store.js";
 import { resolveProfile } from "./resolve.js";
 import type { ResolveResult } from "../types.js";
 
@@ -32,7 +32,9 @@ export function resolveFromCwd(
 ): ResolveResult {
   const config = loadConfig(env);
   const toplevel = gitToplevel(cwd);
-  const localAcct = toplevel ? readLocalAcct(toplevel) : null;
+  // Nearest .acct from cwd upward (direnv find_up model) — works outside git repos.
+  // Cite: docs/research/local-acct-exec-deny-cites-2026-08-08.md
+  const localAcct = findLocalAcct(cwd);
   return resolveProfile({
     cwd,
     env,
