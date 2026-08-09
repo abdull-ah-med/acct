@@ -1,6 +1,6 @@
 import { stdin as input, stdout as output } from "node:process";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
-import { getProfileToken, setProfileToken, deleteProfileToken } from "../secrets/store.js";
+import { getProfileToken, deleteProfileToken } from "../secrets/store.js";
 import {
   parseCredentialInput,
   formatCredentialOutput,
@@ -17,11 +17,18 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** GitHub HTTPS only — protocol contexts match exactly (gitcredentials). */
+function isHttpsProtocol(protocol: string | undefined): boolean {
+  return protocol === "https";
+}
+
 /**
  * git-credential-acct entrypoint.
  * On strict failure: emit quit=true with no password (fail closed).
  * Ambient ACCT_PROFILE is ignored — directory / .acct win (I4).
- * Cite: https://git-scm.com/docs/gitcredentials (quit=true; helper="")
+ * Host port: hostname-only profiles accept bare host or :443 only (I7).
+ * Cite: https://git-scm.com/docs/gitcredentials (quit=true; helper=""; read-only store)
+ * Cite: docs/research/host-port-local-acct-cites-2026-08-08.md
  */
 export async function runCredentialHelper(argv: string[]): Promise<void> {
   const op = argv[0];
@@ -63,7 +70,9 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
       return;
     }
 
-    if (attrs.protocol && attrs.protocol !== "https" && attrs.protocol !== "http") {
+    // I16: never return HTTPS profile tokens for http (or other) contexts
+    if (!isHttpsProtocol(attrs.protocol)) {
+      debugLog(`credential get: refusing protocol=${attrs.protocol ?? "(missing)"}`);
       output.write(formatCredentialOutput({ quit: "1" }));
       return;
     }
@@ -85,6 +94,16 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
       return;
     }
 
+    // Directory binding wins over any username git asked for (I4 / isolation).
+    // Always emit profile.githubUser so the password is paired with the correct
+    // principal — never return another account's username with this token.
+    // Cite: https://git-scm.com/docs/gitcredentials (helper may set username)
+    if (attrs.username && attrs.username !== profile.githubUser) {
+      debugLog(
+        `credential get: ignoring requested username=${attrs.username}; using profile ${profile.githubUser}`,
+      );
+    }
+
     output.write(
       formatCredentialOutput({
         username: profile.githubUser,
@@ -95,16 +114,30 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
   }
 
   if (op === "store") {
-    if (!profile || !attrs.password || !isSafeHost(attrs.host)) return;
-    if (!hostAllowed(attrs.host!, profile.host)) return;
-    if (attrs.username && attrs.username !== profile.githubUser) return;
-    await setProfileToken(profile, attrs.password);
+    // I17: read-only helper — silently ignore store (gitcredentials).
+    // Token writes only via `acct profile token` / --import-gh / --stdin.
+    // Prevents cross-account poison via `git credential approve`.
+    debugLog("credential store: ignored (acct owns token lifecycle)");
     return;
   }
 
   if (op === "erase") {
     if (!profile) return;
-    if (attrs.host && isSafeHost(attrs.host) && !hostAllowed(attrs.host, profile.host)) {
+    if (!attrs.host || !isSafeHost(attrs.host) || !hostAllowed(attrs.host, profile.host)) {
+      return;
+    }
+    if (!isHttpsProtocol(attrs.protocol)) {
+      return;
+    }
+    if (attrs.username && attrs.username !== profile.githubUser) {
+      return;
+    }
+    const current = await getProfileToken(profile);
+    if (!current) return;
+    // Only erase when reject confirms our stored credential (password match).
+    // Cite: git-credential reject feeds the failed credential description.
+    if (!attrs.password || attrs.password !== current) {
+      debugLog("credential erase: ignored (password does not match stored token)");
       return;
     }
     await deleteProfileToken(profile);
