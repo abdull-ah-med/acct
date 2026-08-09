@@ -131,4 +131,92 @@ describe("credential helper security planes (I4/I6)", () => {
     expect(r.stdout).not.toContain("quit=1");
     expect(r.stdout).not.toContain("password=");
   });
+
+  it("I16 http protocol get returns quit=1 with no password", () => {
+    const r = helperGet(
+      workDir,
+      { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" },
+      "protocol=http\nhost=github.com\n\n",
+    );
+    expect(r.stdout).toContain("quit=1");
+    expect(r.stdout).not.toContain("password=");
+  });
+
+  it("I7 non-default port does not receive token", () => {
+    const env = { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" };
+    const bad = helperGet(
+      workDir,
+      env,
+      "protocol=https\nhost=github.com:8443\n\n",
+    );
+    expect(bad.stdout).toContain("quit=1");
+    expect(bad.stdout).not.toContain("password=");
+
+    const ok443 = helperGet(
+      workDir,
+      env,
+      "protocol=https\nhost=github.com:443\n\n",
+    );
+    expect(ok443.stdout).toContain("gho_TEST_ONLY_work_token");
+  });
+
+  it("I7 duplicate host lines fail closed", () => {
+    const r = helperGet(
+      workDir,
+      { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" },
+      "protocol=https\nhost=evil.com\nhost=github.com\n\n",
+    );
+    expect(r.stdout).toContain("quit=1");
+    expect(r.stdout).not.toContain("password=");
+  });
+
+  it("I17 store is ignored (no cross-account poison)", async () => {
+    const env = { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" };
+    spawnSync(
+      process.execPath,
+      [HELPER, "store"],
+      {
+        cwd: workDir,
+        env: { ...process.env, ...env },
+        input:
+          "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_TEST_ONLY_personal_token\n\n",
+        encoding: "utf8",
+      },
+    );
+    const r = helperGet(workDir, env);
+    expect(r.stdout).toContain("gho_TEST_ONLY_work_token");
+    expect(r.stdout).not.toContain("personal_token");
+  });
+
+  it("I17 erase only when password matches stored token", async () => {
+    const env = { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" };
+    spawnSync(
+      process.execPath,
+      [HELPER, "erase"],
+      {
+        cwd: workDir,
+        env: { ...process.env, ...env },
+        input:
+          "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_WRONG\n\n",
+        encoding: "utf8",
+      },
+    );
+    let r = helperGet(workDir, env);
+    expect(r.stdout).toContain("gho_TEST_ONLY_work_token");
+
+    spawnSync(
+      process.execPath,
+      [HELPER, "erase"],
+      {
+        cwd: workDir,
+        env: { ...process.env, ...env },
+        input:
+          "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_TEST_ONLY_work_token\n\n",
+        encoding: "utf8",
+      },
+    );
+    r = helperGet(workDir, env);
+    expect(r.stdout).toContain("quit=1");
+    expect(r.stdout).not.toContain("password=");
+  });
 });

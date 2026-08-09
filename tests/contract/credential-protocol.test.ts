@@ -4,6 +4,7 @@ import {
   formatCredentialOutput,
   isSafeHost,
   hostAllowed,
+  splitHostPort,
 } from "../../src/credential/protocol.js";
 
 describe("credential protocol (git-scm.com/docs/git-credential)", () => {
@@ -39,10 +40,35 @@ describe("credential protocol (git-scm.com/docs/git-credential)", () => {
     expect(isSafeHost("github.com%0Ahost=evil")).toBe(false);
   });
 
-  it("matches hosts ignoring port when needed", () => {
+  it("I7 hostname-only profile: bare host or :443 only", () => {
     expect(hostAllowed("github.com", "github.com")).toBe(true);
     expect(hostAllowed("github.com:443", "github.com")).toBe(true);
+    expect(hostAllowed("GITHUB.COM", "github.com")).toBe(true);
+    expect(hostAllowed("github.com:8443", "github.com")).toBe(false);
+    expect(hostAllowed("github.com:9", "github.com")).toBe(false);
+    expect(hostAllowed("github.com:80", "github.com")).toBe(false);
     expect(hostAllowed("evil.com", "github.com")).toBe(false);
+  });
+
+  it("I7 pinned profile.port requires exact port match", () => {
+    expect(hostAllowed("ghe.example.com:8443", "ghe.example.com:8443")).toBe(
+      true,
+    );
+    expect(hostAllowed("ghe.example.com", "ghe.example.com:8443")).toBe(false);
+    expect(hostAllowed("ghe.example.com:443", "ghe.example.com:8443")).toBe(
+      false,
+    );
+  });
+
+  it("splitHostPort handles host:port and bracket IPv6", () => {
+    expect(splitHostPort("github.com:443")).toEqual({
+      hostname: "github.com",
+      port: "443",
+    });
+    expect(splitHostPort("[::1]:8443")).toEqual({
+      hostname: "[::1]",
+      port: "8443",
+    });
   });
 
   it("parses url attribute into parts", () => {
@@ -52,5 +78,28 @@ describe("credential protocol (git-scm.com/docs/git-credential)", () => {
     expect(attrs.protocol).toBe("https");
     expect(attrs.host).toBe("github.com");
     expect(attrs.username).toBe("alice");
+  });
+
+  it("rejects duplicate disagreeing host lines (no last-wins)", () => {
+    const attrs = parseCredentialInput(
+      "protocol=https\nhost=evil.com\nhost=github.com\n\n",
+    );
+    expect(attrs.host).toBe("");
+    expect(isSafeHost(attrs.host)).toBe(false);
+  });
+
+  it("rejects url= that disagrees with explicit host", () => {
+    const attrs = parseCredentialInput(
+      "protocol=https\nhost=github.com\nurl=https://evil.com/x\n\n",
+    );
+    expect(attrs.host).toBe("");
+  });
+
+  it("allows agreeing url= and host=", () => {
+    const attrs = parseCredentialInput(
+      "host=github.com\nurl=https://github.com/org/repo.git\n\n",
+    );
+    expect(attrs.host).toBe("github.com");
+    expect(attrs.protocol).toBe("https");
   });
 });
