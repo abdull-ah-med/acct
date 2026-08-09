@@ -14,6 +14,7 @@ import {
 import type { EnforceMode, Profile, Protocol } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { normalizePath } from "../util/paths.js";
+import { assertValidProfileId } from "../util/profile-id.js";
 import {
   installIncludeIf,
   uninstallIncludeIf,
@@ -87,6 +88,7 @@ export async function runCli(argv: string[]): Promise<void> {
       "Set core.hooksPath globally (discouraged; replaces hooks in all repos)",
     )
     .action(async (opts) => {
+      assertValidProfileId(opts.id);
       let config = loadConfig();
       const profile: Profile = {
         id: opts.id,
@@ -133,6 +135,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--protocol <protocol>", "https")
     .option("--import-gh", "Import token via gh auth token --user")
     .action(async (opts) => {
+      assertValidProfileId(opts.id);
       let config = loadConfig();
       const profile: Profile = {
         id: opts.id,
@@ -370,12 +373,16 @@ export async function runCli(argv: string[]): Promise<void> {
   program
     .command("exec")
     .description(
-      "Run a command with profile GH_TOKEN (no gh auth switch). Git HTTPS still follows cwd/.acct.",
+      "Run a command with profile GH_TOKEN (no gh auth switch/login/token). Git HTTPS still follows cwd/.acct.",
     )
     .allowUnknownOption(true)
     .option(
       "--profile <id>",
       "Inject this profile's token for gh (does not rebind git credential helper)",
+    )
+    .option(
+      "--allow-cross-profile",
+      "Required when --profile differs from the cwd binding (gh plane only)",
     )
     .argument("<command...>")
     .action(async (command: string[], opts) => {
@@ -385,14 +392,41 @@ export async function runCli(argv: string[]): Promise<void> {
         );
       }
       // GH plane: optional --profile. Git helper ignores ambient ACCT_PROFILE (I4).
+      // Cite: https://cli.github.com/manual/gh_help_environment (GH_TOKEN);
+      //       https://github.com/cli/cli/issues/2771 (GH_TOKEN ≠ git HTTPS).
+      const cwdResolved = resolveFromCwd(process.cwd(), process.env, {
+        allowEnvProfile: false,
+      });
       const resolved = resolveFromCwd(process.cwd(), process.env, {
         forcedProfileId: opts.profile,
         allowEnvProfile: false,
       });
+      if (
+        opts.profile &&
+        cwdResolved.profile &&
+        resolved.profile &&
+        cwdResolved.profile.id !== resolved.profile.id &&
+        !opts.allowCrossProfile
+      ) {
+        throw new Error(
+          `Refusing --profile ${opts.profile}: cwd resolves to "${cwdResolved.profile.id}". ` +
+            `Git HTTPS still follows the directory/.acct. Pass --allow-cross-profile to inject the other account's GH_TOKEN for gh only.`,
+        );
+      }
       const env = resolved.profile
         ? await envForProfile(resolved.profile)
         : { ...process.env };
-      if (command[0] === "git" && opts.profile) {
+      if (
+        opts.profile &&
+        cwdResolved.profile &&
+        resolved.profile &&
+        cwdResolved.profile.id !== resolved.profile.id
+      ) {
+        console.error(
+          `acct warning: --profile ${resolved.profile.id} differs from cwd profile ${cwdResolved.profile.id}. ` +
+            `GH_TOKEN injected for gh only; git HTTPS credentials still follow cwd/.acct.`,
+        );
+      } else if (command[0] === "git" && opts.profile) {
         console.error(
           "acct note: --profile affects GH_TOKEN only; git HTTPS credentials follow directory/.acct (https://github.com/cli/cli/issues/2771).",
         );
@@ -515,6 +549,18 @@ export async function runCli(argv: string[]): Promise<void> {
       config.installed = false;
       saveConfig(config);
       console.log("Uninstalled acct managed gitconfig block");
+      // I14 strips only the managed block — prior OS helpers often remain.
+      // Cite: https://git-scm.com/docs/gitcredentials
+      // Cite: docs/research/xargs-sticky-uninstall-delete-cites-2026-08-08.md
+      console.error(
+        "warning: OS credential helpers (osxkeychain/wincred/libsecret/manager) may still answer for github.com with whatever account is cached.",
+      );
+      console.error(
+        "warning: Clear a cached github.com credential with:\n  printf 'protocol=https\\nhost=github.com\\n\\n' | git credential reject",
+      );
+      console.error(
+        "warning: Re-run `acct install` to restore fail-closed unbound HTTPS, or `acct doctor` to inspect helpers.",
+      );
     });
 
   program
