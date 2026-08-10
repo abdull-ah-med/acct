@@ -57,7 +57,7 @@ npm install -g acct-sh
 pnpm add -g acct-sh
 ```
 
-Install prints next steps (`acct --help`, `acct init`, shell hook). Skip with `ACCT_SKIP_POSTINSTALL=1`.
+Install prints next steps when scripts are visible (`--foreground-scripts`). Otherwise run `acct` after install for the same tip sheet. Skip with `ACCT_SKIP_POSTINSTALL=1`.
 
 Also on [GitHub Packages](https://github.com/abdull-ah-med/acct/pkgs/npm/acct-sh) as `@abdull-ah-med/acct-sh` (same bins).
 

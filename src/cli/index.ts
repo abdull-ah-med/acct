@@ -38,6 +38,7 @@ import {
 } from "../enforce/checks.js";
 import { installHooks } from "../enforce/hooks.js";
 import { hookScript, shellEnvExports, type ShellKind } from "../shell/hooks.js";
+import { formatWelcomeBanner } from "./banner.js";
 import { buildShellEnvExports } from "../shell/env.js";
 import { installWrapShims, wrapPathExport } from "../shell/wrap.js";
 import { runDoctor } from "../doctor/run.js";
@@ -156,6 +157,12 @@ export async function runCli(argv: string[]): Promise<void> {
       "Directory-scoped GitHub identity and auth — one account, one identity, one directory",
     )
     .version(CLI_VERSION);
+
+  // Bare `acct` — npm hides postinstall stdout (npm ≥7), so welcome lives here.
+  program.action(() => {
+    console.log(formatWelcomeBanner());
+    console.log("  Run acct --help for all commands.\n");
+  });
 
   program
     .command("init")
