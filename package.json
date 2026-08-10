@@ -1,6 +1,6 @@
 {
   "name": "acct-sh",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Directory-scoped GitHub identity and auth — one account, one identity, one directory tree",
   "type": "module",
   "main": "./dist/cli/index.js",
@@ -20,6 +20,7 @@
     "data",
     "dist",
     "hooks",
+    "scripts/postinstall.mjs",
     "shell",
     "LICENSE",
     "README.md",
@@ -37,6 +38,7 @@
     "test:watch": "vitest",
     "lint": "tsc -p tsconfig.json --noEmit",
     "pack:check": "npm pack --dry-run",
+    "postinstall": "node ./scripts/postinstall.mjs",
     "prepublishOnly": "npm run lint && npm run build && npm test"
   },
   "engines": {

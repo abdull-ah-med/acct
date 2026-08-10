@@ -55,9 +55,9 @@ Official `gh` documents that automatic switching by directory is **out of scope*
 npm install -g acct-sh
 # or
 pnpm add -g acct-sh
-
-acct --help
 ```
+
+Install prints next steps (`acct --help`, `acct init`, shell hook). Skip with `ACCT_SKIP_POSTINSTALL=1`.
 
 Also on [GitHub Packages](https://github.com/abdull-ah-med/acct/pkgs/npm/acct-sh) as `@abdull-ah-med/acct-sh` (same bins).
 
