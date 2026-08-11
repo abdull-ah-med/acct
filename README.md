@@ -53,8 +53,6 @@ Official `gh` documents that automatic switching by directory is **out of scope*
 
 ```bash
 npm install -g acct-sh
-# or
-pnpm add -g acct-sh
 ```
 
 Install prints next steps when scripts are visible (`--foreground-scripts`). Otherwise run `acct` after install for the same tip sheet. Skip with `ACCT_SKIP_POSTINSTALL=1`.
