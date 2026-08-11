@@ -238,6 +238,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   profileCmd
     .command("add")
+    .description("Create a profile")
     .requiredOption("--id <id>")
     .requiredOption("--user <githubUser>")
     .requiredOption("--email <email>")
@@ -275,17 +276,21 @@ export async function runCli(argv: string[]): Promise<void> {
       console.log(`Added profile ${profile.id}`);
     });
 
-  profileCmd.command("list").action(() => {
-    const config = loadConfig();
-    for (const p of config.profiles) {
-      console.log(
-        `${p.id}\t${p.githubUser}@${p.host}\t${p.email}\t${p.protocol}`,
-      );
-    }
-  });
+  profileCmd
+    .command("list")
+    .description("List profiles")
+    .action(() => {
+      const config = loadConfig();
+      for (const p of config.profiles) {
+        console.log(
+          `${p.id}\t${p.githubUser}@${p.host}\t${p.email}\t${p.protocol}`,
+        );
+      }
+    });
 
   profileCmd
     .command("show")
+    .description("Show one profile as JSON")
     .argument("<id>")
     .action((id) => {
       const config = loadConfig();
@@ -296,6 +301,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   profileCmd
     .command("remove")
+    .description("Remove a profile and its stored token")
     .argument("<id>")
     .action(async (id) => {
       let config = loadConfig();
@@ -311,6 +317,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   profileCmd
     .command("token")
+    .description("Store a token in the OS keychain")
     .argument("<id>")
     .option("--import-gh", "Import from gh auth token --user")
     .option("--stdin", "Read token from stdin")
@@ -337,6 +344,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   profileCmd
     .command("ssh-key")
+    .description("Generate or attach an SSH key for a profile")
     .argument("<id>")
     .option("--generate", "Generate ed25519 key")
     .option("--path <path>", "Attach existing private key")
@@ -385,8 +393,9 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("bind")
-    .argument("<dir>")
-    .argument("<profileId>")
+    .description("Bind a directory tree to a profile")
+    .argument("<dir>", "Directory to bind (absolute or relative)")
+    .argument("<profileId>", "Existing profile id")
     .option("--enforce <mode>", "strict|warn|off")
     .action((dir, profileId, opts) => {
       let config = loadConfig();
@@ -405,7 +414,8 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("unbind")
-    .argument("<dir>")
+    .description("Remove a directory → profile binding")
+    .argument("<dir>", "Directory previously passed to bind")
     .action((dir) => {
       let config = loadConfig();
       config = removeBinding(config, path.resolve(dir));
@@ -482,6 +492,9 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("doctor")
+    .description(
+      "Scan for auth conflicts, helper leaks, and keychain issues (trust check)",
+    )
     .option("--online", "Allow network checks (gh api user)")
     .action((opts) => {
       const findings = runDoctor(process.cwd(), process.env, {
@@ -492,7 +505,17 @@ export async function runCli(argv: string[]): Promise<void> {
         console.log(`[${tag}] ${f.code}: ${f.message}`);
         if (f.fix) console.log(`  fix: ${f.fix}`);
       }
-      if (findings.some((f) => f.severity === "error")) process.exitCode = 1;
+      const errors = findings.filter((f) => f.severity === "error").length;
+      const warns = findings.filter((f) => f.severity === "warn").length;
+      const oks = findings.filter((f) => f.severity === "ok").length;
+      console.log("---");
+      console.log(`${oks} ok · ${warns} warn · ${errors} error`);
+      if (!opts.online) {
+        console.log(
+          "Tip: pass --online to verify ambient GH_TOKEN against the cwd profile principal.",
+        );
+      }
+      if (errors > 0) process.exitCode = 1;
     });
 
   program
@@ -572,6 +595,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("clone")
+    .description("git clone with the cwd profile's GH_TOKEN injected")
     .argument("<url>")
     .argument("[dir]")
     .option(
@@ -599,6 +623,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("enforce")
+    .description("Set default enforcement mode (strict|warn|off)")
     .argument("<mode>", "strict|warn|off|on")
     .action((mode) => {
       let m = mode as string;
@@ -614,6 +639,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("hook")
+    .description("Print shell hook to rebind env on cd")
     .argument("<shell>", "bash|zsh|fish|powershell")
     .action((shell: string) => {
       if (!["bash", "zsh", "fish", "powershell"].includes(shell)) {
@@ -634,6 +660,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("wrap-path")
+    .description("Print PATH export for wrap shims")
     .option("--powershell", "Emit PowerShell syntax")
     .action((opts) => {
       const dir = installWrapShims();
@@ -642,6 +669,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("shell-env")
+    .description("Print env exports for the cwd profile (used by shell hooks)")
     .option("--powershell", "Emit PowerShell syntax")
     .action(async (opts) => {
       const exports = await buildShellEnvExports();
@@ -671,6 +699,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("uninstall")
+    .description("Remove acct managed gitconfig block")
     .option("--restore-backup", "Restore pre-acct gitconfig backup")
     .action((opts) => {
       uninstallIncludeIf();
@@ -703,6 +732,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("hook-run")
+    .description("Internal: run enforce hook (pre-commit|pre-push)")
     .argument("<hook>", "pre-commit|pre-push")
     .action(async (hook) => {
       if (hook === "pre-commit") {
@@ -732,6 +762,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("ssh-test")
+    .description("Test SSH auth for a profile against github.com")
     .argument("<id>")
     .action((id) => {
       const config = loadConfig();

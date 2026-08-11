@@ -1,6 +1,6 @@
 {
   "name": "acct-sh",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Directory-scoped GitHub identity and auth — one account, one identity, one directory tree",
   "type": "module",
   "main": "./dist/cli/index.js",
@@ -49,8 +49,15 @@
     "github",
     "gh",
     "credential",
+    "credential-helper",
     "multi-account",
-    "identity"
+    "github-multi-account",
+    "identity",
+    "includeIf",
+    "directory-scoped",
+    "keychain",
+    "developer-tools",
+    "acct"
   ],
   "license": "MIT",
   "publishConfig": {

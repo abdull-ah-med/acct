@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://acct-web.vercel.app/">
-    <img src="website.jpeg" alt="acct website homepage" width="800" />
+    <img src="website.jpg" alt="acct website homepage" width="800" />
   </a>
 </p>
 
@@ -80,11 +80,22 @@ eval "$(acct hook zsh)"
 cd ~/Work/some-repo
 acct status
 acct whoami
-acct doctor
+acct doctor          # conflict scan — run this first when something feels off
 ```
 
 Walk into `~/Work` → work account.  
 Walk out → that identity is gone.
+
+## Trust check: `acct doctor`
+
+`acct` is young. When you want confidence that identity, HTTPS helpers, hooks, and the OS keychain agree:
+
+```bash
+acct doctor
+acct doctor --online   # also verify ambient GH_TOKEN vs cwd profile via gh api
+```
+
+Doctor reports credential-helper competition, missing install blocks, orphan bindings, sticky `GH_TOKEN`, enforce fallthrough, and whether the native keyring backend loads on this machine. Exit code `1` if any **error** findings.
 
 ## What it wires
 
@@ -107,28 +118,49 @@ Local always beats global. Ambient `ACCT_PROFILE` does **not** override git cred
 
 ## Commands
 
+```bash
+acct --help
+```
+
 | Command | Purpose |
 |---------|---------|
 | `acct init` | Profile + binding + install |
 | `acct profile add\|list\|show\|remove\|token\|ssh-key` | Profiles |
 | `acct bind` / `unbind` | Directory → profile |
 | `acct status` / `whoami` | Current resolution |
-| `acct doctor` | Conflict scan |
+| `acct doctor` | Conflict / keychain / helper scan |
 | `acct exec -- <cmd>` | Run with correct `GH_TOKEN` |
 | `acct clone <url>` | Clone under current profile env |
 | `acct enforce strict\|warn\|off` | Enforcement mode |
 | `acct hook bash\|zsh\|fish\|powershell` | Shell integration |
 | `acct install` / `uninstall` | Wire / remove git includeIf + hooks |
 
+## Platforms & OS keychain
+
+Tokens are stored via [`@napi-rs/keyring`](https://www.npmjs.com/package/@napi-rs/keyring) (native bindings). Behavior differs by OS:
+
+| OS | Backend | Notes |
+|----|---------|--------|
+| **macOS** | Keychain | Primary test target. CI: `macos-latest` (unit + e2e). |
+| **Linux** | Secret Service via **libsecret** (GNOME Keyring / KWallet) | Unit + e2e in CI (`ubuntu-latest`) use `ACCT_SECRET_BACKEND=file`. Headless/CI hosts often lack a session keyring — prefer the file backend there, or unlock a Secret Service session for keyring mode. |
+| **Windows** | Credential Manager | Unit tests in CI (`windows-latest`). Keychain UX differs from macOS; run `acct doctor` after install. |
+
+**Tested in CI:** Node 20 + 22 × Ubuntu / macOS / Windows (lint, unit, package). Security regression + directory e2e on Ubuntu and macOS with `ACCT_SECRET_BACKEND=file`. Live keychain writes are exercised on developer macOS; treat Linux/Windows keyring paths as supported via the native module but less battle-tested in the wild.
+
+Explicit opt-in for plaintext storage (CI / locked-down hosts):
+
+```bash
+export ACCT_SECRET_BACKEND=file   # → ~/.config/acct/secrets.json (0600)
+```
+
 ## Security
 
-- Tokens live in the **OS keychain** — never in `config.yaml`
-- CI / locked-down hosts: `ACCT_SECRET_BACKEND=file` → `~/.config/acct/secrets.json` (`0600`) as an **explicit** opt-in
+- Tokens live in the **OS keychain** by default — never in `config.yaml`
 - Credential helper rejects empty / non-allowlisted hosts
 - Bound profiles reset competing helpers, then install `acct` only
 - Shell hook rebinds from cwd (ignores sticky `ACCT_PROFILE`) and clears tokens when unbound
 
-See [docs/threat-model.md](docs/threat-model.md) and [docs/invariants.md](docs/invariants.md).
+See [threat model](https://github.com/abdull-ah-med/acct/blob/main/docs/threat-model.md) and [invariants](https://github.com/abdull-ah-med/acct/blob/main/docs/invariants.md).
 
 ## How it feels
 
@@ -142,8 +174,14 @@ No global flip. No “forgot to switch.” No silent wrong-account push.
 
 ## Agent / contributors
 
-Read [AGENTS.md](AGENTS.md).  
-Verify primary docs in [docs/sources/SOURCE_OF_TRUTH.md](docs/sources/SOURCE_OF_TRUTH.md) before changing auth behavior.
+**For coding agents discovering this package:** start at the website LLM index —
+
+- https://acct-web.vercel.app/llms.txt  
+- https://acct-web.vercel.app/llms-full.txt  
+- https://acct-web.vercel.app/agents.md  
+
+Read [AGENTS.md](https://github.com/abdull-ah-med/acct/blob/main/AGENTS.md) in the repo.  
+Verify primary docs in [SOURCE_OF_TRUTH.md](https://github.com/abdull-ah-med/acct/blob/main/docs/sources/SOURCE_OF_TRUTH.md) before changing auth behavior.
 
 ## License
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import type { AcctConfig } from "../types.js";
@@ -9,6 +10,8 @@ import { secretsFilePath } from "../secrets/store.js";
 import { ghApiLogin } from "../gh/env.js";
 import { listProfileIdCaseCollisions } from "../util/profile-id.js";
 import { resolveAcctCliPaths } from "../enforce/hooks.js";
+
+const require = createRequire(import.meta.url);
 
 export interface DoctorFinding {
   severity: "error" | "warn" | "ok";
@@ -50,6 +53,7 @@ export function runDoctor(
   findings.push(...checkSshKeys(config, env));
   findings.push(...checkBindings(config));
   findings.push(...checkSecretBackend(env));
+  findings.push(...checkKeyring(env));
   findings.push(...checkGlobalHooksPath(env));
   findings.push(...checkConfigDirPerms(env));
   findings.push(...checkOrphanIncFiles(config, env));
@@ -500,6 +504,61 @@ function checkSecretBackend(env: NodeJS.ProcessEnv): DoctorFinding[] {
     });
   }
   return findings;
+}
+
+/** Human label for the OS secret store behind @napi-rs/keyring. */
+export function keyringBackendLabel(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === "darwin") return "macOS Keychain";
+  if (platform === "win32") return "Windows Credential Manager";
+  if (platform === "linux") {
+    return "Linux Secret Service (libsecret — GNOME Keyring / KWallet)";
+  }
+  return platform;
+}
+
+/**
+ * Probe whether the native keyring binding loads and can be constructed.
+ * Does not write secrets. Skipped when ACCT_SECRET_BACKEND=file.
+ */
+function checkKeyring(env: NodeJS.ProcessEnv): DoctorFinding[] {
+  const backend = (env.ACCT_SECRET_BACKEND || "auto").toLowerCase();
+  if (backend === "file") return [];
+
+  const label = keyringBackendLabel();
+  try {
+    const { Entry } = require("@napi-rs/keyring") as {
+      Entry: new (service: string, account: string) => {
+        getPassword: () => string | null;
+      };
+    };
+    const entry = new Entry("acct-github", "__acct_doctor_probe__");
+    try {
+      entry.getPassword();
+    } catch {
+      // Missing entry is fine — we only care that the backend answers.
+    }
+    return [
+      {
+        severity: "ok",
+        code: "keyring-available",
+        message: `OS keyring available (${label}) via @napi-rs/keyring`,
+      },
+    ];
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return [
+      {
+        severity: "error",
+        code: "keyring-unavailable",
+        message: `OS keyring unavailable on this host (${label}): ${detail}`,
+        fix:
+          "Install platform keyring support (macOS: Keychain; Windows: Credential Manager; Linux: libsecret + GNOME Keyring or KWallet). " +
+          "CI/locked-down hosts may set ACCT_SECRET_BACKEND=file (plaintext secrets.json — explicit opt-in only).",
+      },
+    ];
+  }
 }
 
 function checkGlobalHooksPath(env: NodeJS.ProcessEnv): DoctorFinding[] {

@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-08-11
+
+### Added
+
+- `acct --help` descriptions for every command, including `bind` / `unbind` and profile subcommands
+- `acct doctor` probes OS keyring availability (`@napi-rs/keyring`) and prints an ok/warn/error summary
+- README documents platform keychain backends (macOS Keychain, Linux libsecret/KWallet, Windows Credential Manager) and what CI actually tests
+- Website agent discovery: `/llms.txt`, `/llms-full.txt`, `/agents.md` plus richer SEO metadata (JSON-LD, Open Graph, robots AI crawlers)
+
+### Fixed
+
+- npm package includes `website.jpg` (README previously referenced `website.jpeg`, which was not packed)
+- README links to threat model / invariants / AGENTS point at GitHub so they work on npmjs.com
+
 ## [0.1.7] - 2026-08-10
 
 ### Changed
