@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-13
+
 ### Added
 
 - HTTPS / `GH_TOKEN` follow `gh auth token --hostname --user` automatically (no `gh auth switch`). After `gh auth refresh`, `acct status`, the shell hook, and git HTTPS pick up the new token without `acct profile token --import-gh`. `--stdin` PATs set `followGh: false` so they are not overwritten. Disable with `ACCT_FOLLOW_GH=0` or `ACCT_SECRET_BACKEND=file`. Tests force follow-gh on the file backend with `ACCT_FOLLOW_GH=1`. Cite: [gh auth token](https://cli.github.com/manual/gh_auth_token).
@@ -183,6 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI matrix (Ubuntu / macOS / Windows × Node 20 / 22) with lint, test, package, and e2e gates
 - Tagged npm publish with provenance
 
+[0.1.11]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.11
 [0.1.10]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.10
 [0.1.9]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.9
 [0.1.8]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.8
