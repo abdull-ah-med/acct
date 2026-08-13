@@ -28,7 +28,7 @@ import {
   writeProfileInclude,
   removeProfileArtifacts,
 } from "../identity/includeIf.js";
-import { setProfileToken, getProfileToken, deleteProfileToken } from "../secrets/store.js";
+import { setProfileToken, deleteProfileToken } from "../secrets/store.js";
 import { importAndStoreToken, envForProfile, isDangerousGhArgv, ghApiLogin, stripGitConfigEnvOverrides } from "../gh/env.js";
 import { generateSshKey, readPublicKey, testSshAuth } from "../ssh/keys.js";
 import {
@@ -42,6 +42,12 @@ import { formatWelcomeBanner } from "./banner.js";
 import { buildShellEnvExports } from "../shell/env.js";
 import { installWrapShims, wrapPathExport } from "../shell/wrap.js";
 import { runDoctor } from "../doctor/run.js";
+import {
+  diagnose,
+  diagnoseHasErrors,
+  formatDiagnoseReport,
+} from "../status/explain.js";
+import { diagnoseCwd, collectDiagnoseInput } from "../status/collect.js";
 
 const require = createRequire(import.meta.url);
 const { version: CLI_VERSION } = require("../../package.json") as {
@@ -460,13 +466,28 @@ export async function runCli(argv: string[]): Promise<void> {
       console.log(`github: ${p.githubUser}@${p.host}`);
       console.log(`identity: ${p.name} <${p.email}>`);
       console.log(`protocol: ${p.protocol}`);
-      const hasToken = !!(await getProfileToken(p));
-      console.log(`token: ${hasToken ? "present (keychain)" : "missing"}`);
-      const env = await envForProfile(p);
-      const login = ghApiLogin(env);
-      console.log(`auth principal: ${login ?? "(could not query)"}`);
-      if (login && login !== p.githubUser) {
+      const input = await collectDiagnoseInput(
+        p,
+        resolved.enforce,
+        process.cwd(),
+        process.env,
+        { queryPrincipal: true },
+      );
+      console.log(`token: ${input.hasToken ? "present (keychain)" : "missing"}`);
+      console.log(
+        `auth principal: ${input.authPrincipal ?? "(could not query)"}`,
+      );
+      if (
+        input.authPrincipal &&
+        input.authPrincipal !== p.githubUser
+      ) {
         console.log("LEAK RISK: auth principal ≠ profile github user");
+      }
+      const report = diagnose(input);
+      if (report.issues.length > 0) {
+        console.log("---");
+        console.log(formatDiagnoseReport(report));
+        if (diagnoseHasErrors(report)) process.exitCode = 1;
       }
     });
 
@@ -488,6 +509,12 @@ export async function runCli(argv: string[]): Promise<void> {
       console.log(
         `expected=${resolved.profile.githubUser} actual=${login ?? "?"} email=${resolved.profile.email}`,
       );
+      if (login && login !== resolved.profile.githubUser) {
+        console.log(
+          "mismatch — run `acct status` for what's wrong, the fix commands, and whether commit/push will go through",
+        );
+        process.exitCode = 1;
+      }
     });
 
   program
@@ -496,8 +523,8 @@ export async function runCli(argv: string[]): Promise<void> {
       "Scan for auth conflicts, helper leaks, and keychain issues (trust check)",
     )
     .option("--online", "Allow network checks (gh api user)")
-    .action((opts) => {
-      const findings = runDoctor(process.cwd(), process.env, {
+    .action(async (opts) => {
+      const { findings, explain } = await runDoctor(process.cwd(), process.env, {
         online: !!opts.online,
       });
       for (const f of findings) {
@@ -510,10 +537,14 @@ export async function runCli(argv: string[]): Promise<void> {
       const oks = findings.filter((f) => f.severity === "ok").length;
       console.log("---");
       console.log(`${oks} ok · ${warns} warn · ${errors} error`);
-      if (!opts.online) {
+      if (!opts.online && !explain) {
         console.log(
           "Tip: pass --online to verify ambient GH_TOKEN against the cwd profile principal.",
         );
+      }
+      if (explain) {
+        console.log("");
+        console.log(explain);
       }
       if (errors > 0) process.exitCode = 1;
     });
@@ -742,6 +773,18 @@ export async function runCli(argv: string[]): Promise<void> {
           console.error(
             formatBlockMessage("commit", resolved.profile, result.messages),
           );
+          if (resolved.profile) {
+            const report = await diagnoseCwd(
+              resolved.profile,
+              resolved.enforce,
+              process.cwd(),
+              process.env,
+            );
+            if (report.issues.length > 0) {
+              console.error("");
+              console.error(formatDiagnoseReport(report));
+            }
+          }
           process.exitCode = 1;
         }
         return;
@@ -753,6 +796,18 @@ export async function runCli(argv: string[]): Promise<void> {
           console.error(
             formatBlockMessage("push", resolved.profile, result.messages),
           );
+          if (resolved.profile) {
+            const report = await diagnoseCwd(
+              resolved.profile,
+              resolved.enforce,
+              process.cwd(),
+              process.env,
+            );
+            if (report.issues.length > 0) {
+              console.error("");
+              console.error(formatDiagnoseReport(report));
+            }
+          }
           process.exitCode = 1;
         }
         return;

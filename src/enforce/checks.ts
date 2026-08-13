@@ -110,10 +110,6 @@ export function formatBlockMessage(
   const lines = [header, ...messages.map((m) => `  - ${m}`)];
   if (profile) {
     lines.push(
-      `  Fix: ensure you are in the correct directory for profile "${profile.id}"`,
-    );
-    lines.push(`  Or: acct enforce warn   (temporarily)`);
-    lines.push(
       "  Note: git --no-verify / -c core.hooksPath=… bypass client hooks (githooks); use server-side rules for non-bypassable policy",
     );
   }

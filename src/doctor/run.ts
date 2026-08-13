@@ -10,6 +10,12 @@ import { secretsFilePath } from "../secrets/store.js";
 import { ghApiLogin } from "../gh/env.js";
 import { listProfileIdCaseCollisions } from "../util/profile-id.js";
 import { resolveAcctCliPaths } from "../enforce/hooks.js";
+import { diagnoseCwd } from "../status/collect.js";
+import {
+  formatDiagnoseReport,
+  type DiagnoseIssueCode,
+  type DiagnoseReport,
+} from "../status/explain.js";
 
 const require = createRequire(import.meta.url);
 
@@ -25,11 +31,24 @@ export interface DoctorOptions {
   online?: boolean;
 }
 
-export function runDoctor(
+export interface DoctorResult {
+  findings: DoctorFinding[];
+  /** Human explanation for cwd profile problems (what's wrong / fix / commit-push). */
+  explain?: string;
+}
+
+const ISSUE_CODE: Record<DiagnoseIssueCode, string> = {
+  "token-missing": "profile-token-missing",
+  "principal-mismatch": "auth-principal-mismatch",
+  "principal-unknown": "auth-principal-unverified",
+  "commit-identity-mismatch": "commit-identity-mismatch",
+};
+
+export async function runDoctor(
   cwd: string = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
   opts: DoctorOptions = {},
-): DoctorFinding[] {
+): Promise<DoctorResult> {
   const findings: DoctorFinding[] = [];
   const config = loadConfig(env);
 
@@ -61,6 +80,9 @@ export function runDoctor(
   findings.push(...checkCredentialShim(env));
   findings.push(...checkStaleHookNodePath(env));
 
+  const cwdReport = await checkCwdProfile(cwd, env);
+  findings.push(...cwdReport.findings);
+
   if (findings.every((f) => f.severity === "ok") || findings.length === 0) {
     findings.push({
       severity: "ok",
@@ -69,7 +91,49 @@ export function runDoctor(
     });
   }
 
-  return findings;
+  return { findings, explain: cwdReport.explain };
+}
+
+async function checkCwdProfile(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ findings: DoctorFinding[]; explain?: string }> {
+  const resolved = resolveFromCwd(cwd, env, { allowEnvProfile: false });
+  if (!resolved.profile) return { findings: [] };
+
+  const report = await diagnoseCwd(
+    resolved.profile,
+    resolved.enforce,
+    cwd,
+    env,
+    { queryPrincipal: true },
+  );
+  return {
+    findings: findingsFromDiagnose(report),
+    explain:
+      report.issues.length > 0 ? formatDiagnoseReport(report) : undefined,
+  };
+}
+
+function findingsFromDiagnose(report: DiagnoseReport): DoctorFinding[] {
+  const importFix = report.fixes.find(
+    (c) => c.includes("profile token") && c.includes("--import-gh"),
+  );
+  const loginFix = report.fixes.find((c) => c.startsWith("gh auth login"));
+  const installFix = report.fixes.find((c) => c === "acct install");
+  const onlineFix = report.fixes.find((c) => c.includes("doctor --online"));
+  return report.issues.map((issue) => {
+    let fix: string | undefined;
+    if (issue.code === "commit-identity-mismatch") fix = installFix;
+    else if (issue.code === "principal-unknown") fix = onlineFix;
+    else fix = importFix ?? loginFix;
+    return {
+      severity: issue.severity,
+      code: ISSUE_CODE[issue.code],
+      message: issue.summary,
+      fix,
+    };
+  });
 }
 
 /**

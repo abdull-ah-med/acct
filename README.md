@@ -84,16 +84,23 @@ acct doctor          # conflict scan — run this first when something feels off
 Walk into `~/Work` → work account.  
 Walk out → that identity is gone.
 
-## Trust check: `acct doctor`
+## Trust check: `acct doctor` / `acct status`
 
-`acct` is young. When you want confidence that identity, HTTPS helpers, hooks, and the OS keychain agree:
+When something is off (`token: missing`, `LEAK RISK`, identity mismatch), `acct status` and `acct doctor` explain:
+
+1. **What's wrong**
+2. **Commands to run** (`gh auth login --user …`, `acct profile token <id> --import-gh`, …)
+3. **Whether commit / push will go through** — and whether they would use the wrong GitHub account
+
+In `strict` mode a missing profile token or a mismatched `gh` principal **blocks push**. A commit still uses `includeIf` `user.name` / `user.email` (not `gh`), so it will not pick up the other GitHub login. Raw `gh` without `acct exec` *can* still be the wrong user — that's the leak risk.
 
 ```bash
-acct doctor
+acct status            # cwd dump + diagnosis when unhealthy (exit 1)
+acct doctor            # helper/keychain scan + the same cwd diagnosis
 acct doctor --online   # also verify ambient GH_TOKEN vs cwd profile via gh api
 ```
 
-Doctor reports credential-helper competition, missing install blocks, orphan bindings, sticky `GH_TOKEN`, enforce fallthrough, and whether the native keyring backend loads on this machine. Exit code `1` if any **error** findings.
+Doctor also reports credential-helper competition, missing install blocks, orphan bindings, sticky `GH_TOKEN`, enforce fallthrough, and whether the native keyring backend loads on this machine. Exit code `1` if any **error** findings.
 
 ## What it wires
 
@@ -125,8 +132,8 @@ acct --help
 | `acct init` | Profile + binding + install |
 | `acct profile add\|list\|show\|remove\|token\|ssh-key` | Profiles |
 | `acct bind` / `unbind` | Directory → profile |
-| `acct status` / `whoami` | Current resolution |
-| `acct doctor` | Conflict / keychain / helper scan |
+| `acct status` / `whoami` | Current resolution; status explains problems + fix + commit/push impact |
+| `acct doctor` | Conflict / keychain scan + cwd diagnosis when unhealthy |
 | `acct exec -- <cmd>` | Run with correct `GH_TOKEN` |
 | `acct clone <url>` | Clone under current profile env |
 | `acct enforce strict\|warn\|off` | Enforcement mode |

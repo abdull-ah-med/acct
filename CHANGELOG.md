@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `acct status` / `acct doctor` diagnose cwd problems: what's wrong, exact fix commands, and whether commit/push/raw `gh` will go through (and as whom). Missing profile token + mismatched `gh` principal in `strict` **blocks push** (helper quits; will not push as the other account). Commit still uses includeIf identity, not `gh`. `whoami` points at `acct status` on mismatch. Blocked pre-commit/pre-push hooks print the same diagnosis.
+
 ### Fixed
 
 - Profile ids are **unique under ASCII case-folding** — `work` + `WORK` rejected (would overwrite the same `git/<id>.inc` on macOS/Windows); doctor errors on existing collisions ([git-config](https://git-scm.com/docs/git-config) `gitdir/i` / `core.ignoreCase`; [round-3 cites](docs/research/i18-profile-case-round3-cites-2026-08-08.md))
