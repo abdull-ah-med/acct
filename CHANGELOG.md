@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.1.10] - 2026-08-13
+
+### Added
+
+- `acct status` / `acct doctor` diagnose cwd problems: what's wrong, exact fix commands, and whether commit/push/raw `gh` will go through (and as whom). Missing profile token + mismatched `gh` principal in `strict` **blocks push** (helper quits; will not push as the other account). Commit still uses includeIf identity, not `gh`. `whoami` points at `acct status` on mismatch. Blocked pre-commit/pre-push hooks print the same diagnosis.
+
+### Fixed
+
+- Profile ids are **unique under ASCII case-folding** — `work` + `WORK` rejected (would overwrite the same `git/<id>.inc` on macOS/Windows); doctor errors on existing collisions ([git-config](https://git-scm.com/docs/git-config) `gitdir/i` / `core.ignoreCase`; [round-3 cites](docs/research/i18-profile-case-round3-cites-2026-08-08.md))
+- `acct exec` I18 shell deny closes glued argv0 (`$a$b auth token`) and sole-command glued reconstruction (`x=gh; y=' auth token'; $x$y`) ([bash Word Splitting](https://www.gnu.org/software/bash/manual/html_node/Word-Splitting.html); [round-3 cites](docs/research/i18-profile-case-round3-cites-2026-08-08.md))
+- `acct exec` I18 denies script hosts that run `gh auth`: `awk`/`gawk`/`mawk` program text, `osascript -e`, and `git -c alias.*=!…` shell aliases ([git-config alias](https://git-scm.com/docs/git-config); `man awk`; `man osascript`)
+
 ## [0.1.9] - 2026-08-11
 
 ### Changed
@@ -71,18 +85,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Invariants: I18 expanded bypass classes; **I20** / **I21** added
 - Threat model: T13 expanded; **T16** concurrent process safety
 - Package includes `data/github_known_hosts` for ssh-test pinning
-
-## [Unreleased]
-
-### Added
-
-- `acct status` / `acct doctor` diagnose cwd problems: what's wrong, exact fix commands, and whether commit/push/raw `gh` will go through (and as whom). Missing profile token + mismatched `gh` principal in `strict` **blocks push** (helper quits; will not push as the other account). Commit still uses includeIf identity, not `gh`. `whoami` points at `acct status` on mismatch. Blocked pre-commit/pre-push hooks print the same diagnosis.
-
-### Fixed
-
-- Profile ids are **unique under ASCII case-folding** — `work` + `WORK` rejected (would overwrite the same `git/<id>.inc` on macOS/Windows); doctor errors on existing collisions ([git-config](https://git-scm.com/docs/git-config) `gitdir/i` / `core.ignoreCase`; [round-3 cites](docs/research/i18-profile-case-round3-cites-2026-08-08.md))
-- `acct exec` I18 shell deny closes glued argv0 (`$a$b auth token`) and sole-command glued reconstruction (`x=gh; y=' auth token'; $x$y`) ([bash Word Splitting](https://www.gnu.org/software/bash/manual/html_node/Word-Splitting.html); [round-3 cites](docs/research/i18-profile-case-round3-cites-2026-08-08.md))
-- `acct exec` I18 denies script hosts that run `gh auth`: `awk`/`gawk`/`mawk` program text, `osascript -e`, and `git -c alias.*=!…` shell aliases ([git-config alias](https://git-scm.com/docs/git-config); `man awk`; `man osascript`)
 
 ## [0.1.4] - 2026-08-08
 
@@ -172,6 +174,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI matrix (Ubuntu / macOS / Windows × Node 20 / 22) with lint, test, package, and e2e gates
 - Tagged npm publish with provenance
 
+[0.1.10]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.10
+[0.1.9]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.9
+[0.1.8]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.8
+[0.1.7]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.7
+[0.1.6]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.6
 [0.1.5]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.5
 [0.1.4]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.4
 [0.1.3]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.3
