@@ -68,7 +68,7 @@ export function diagnose(input: DiagnoseInput): DiagnoseReport {
       severity: "error",
       summary: `profile "${input.profileId}" has no token in the OS keychain`,
       detail:
-        "HTTPS git and `acct exec` cannot inject this profile's credentials until you store a PAT.",
+        "HTTPS git and `acct exec` follow `gh auth token --user` for this profile. Re-auth that GitHub user in gh (`gh auth refresh`); you do not need `--import-gh` after that.",
     });
   }
 
@@ -120,12 +120,24 @@ function buildFixes(input: DiagnoseInput, issues: DiagnoseIssue[]): string[] {
   }
 
   if (codes.has("token-missing") || codes.has("principal-mismatch")) {
+    // Flag matrix from cli.github.com (verified 2026-08-13):
+    //   login   --hostname --web          (NO --user)
+    //   switch  --hostname --user
+    //   refresh --hostname                (NO --user; active account only)
+    //   token   --hostname --user         (what --import-gh runs)
+    // Cite: https://cli.github.com/manual/gh_auth_login
+    // Cite: https://cli.github.com/manual/gh_auth_switch
+    // Cite: https://cli.github.com/manual/gh_auth_refresh
+    // Cite: https://cli.github.com/manual/gh_auth_token
     fixes.push(
-      `gh auth login --hostname ${input.host} --user ${input.githubUser}`,
+      `gh auth switch --hostname ${input.host} --user ${input.githubUser}`,
     );
-    fixes.push(`acct profile token ${input.profileId} --import-gh`);
+    fixes.push(`gh auth refresh --hostname ${input.host}`);
     fixes.push(
-      `# or paste a PAT: acct profile token ${input.profileId} --stdin`,
+      `# if switch fails (account not in gh): gh auth login --hostname ${input.host} --web`,
+    );
+    fixes.push(
+      `# or paste a PAT (disables follow-gh): acct profile token ${input.profileId} --stdin`,
     );
   }
 

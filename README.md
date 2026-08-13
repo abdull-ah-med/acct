@@ -15,6 +15,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/acct-sh"><img src="https://img.shields.io/npm/v/acct-sh.svg?style=flat-square" alt="npm" /></a>
+  <a href="https://www.npmjs.com/package/acct-sh"><img src="https://img.shields.io/npm/dt/acct-sh.svg?style=flat-square" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="MIT" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg?style=flat-square" alt="Node >= 20" /></a>
   <a href="https://acct-web.vercel.app/"><img src="https://img.shields.io/badge/website-acct--web.vercel.app-black.svg?style=flat-square" alt="Website" /></a>
@@ -89,7 +90,7 @@ Walk out → that identity is gone.
 When something is off (`token: missing`, `LEAK RISK`, identity mismatch), `acct status` and `acct doctor` explain:
 
 1. **What's wrong**
-2. **Commands to run** (`gh auth login --user …`, `acct profile token <id> --import-gh`, …)
+2. **Commands to run** (`gh auth switch --hostname … --user …`, `gh auth refresh --hostname …`, `acct profile token <id> --import-gh`, …)
 3. **Whether commit / push will go through** — and whether they would use the wrong GitHub account
 
 In `strict` mode a missing profile token or a mismatched `gh` principal **blocks push**. A commit still uses `includeIf` `user.name` / `user.email` (not `gh`), so it will not pick up the other GitHub login. Raw `gh` without `acct exec` *can* still be the wrong user — that's the leak risk.
@@ -160,7 +161,7 @@ export ACCT_SECRET_BACKEND=file   # → ~/.config/acct/secrets.json (0600)
 
 ## Security
 
-- Tokens live in the **OS keychain** by default — never in `config.yaml`
+- Tokens live in the **OS keychain** by default — never in `config.yaml`. HTTPS and `acct exec` follow `gh auth token --hostname --user` for that profile (no `gh auth switch`), so `gh auth refresh` is enough; you do not need to re-run `acct profile token --import-gh`. A PAT stored with `--stdin` is not overwritten (`followGh: false`). Set `ACCT_FOLLOW_GH=0` to disable.
 - Credential helper rejects empty / non-allowlisted hosts
 - Bound profiles reset competing helpers, then install `acct` only
 - Shell hook rebinds from cwd (ignores sticky `ACCT_PROFILE`) and clears tokens when unbound
@@ -186,7 +187,8 @@ No global flip. No “forgot to switch.” No silent wrong-account push.
 - https://acct-web.vercel.app/agents.md  
 
 Read [AGENTS.md](https://github.com/abdull-ah-med/acct/blob/main/AGENTS.md) in the repo.  
-Verify primary docs in [SOURCE_OF_TRUTH.md](https://github.com/abdull-ah-med/acct/blob/main/docs/sources/SOURCE_OF_TRUTH.md) before changing auth behavior.
+Verify primary docs in [SOURCE_OF_TRUTH.md](https://github.com/abdull-ah-med/acct/blob/main/docs/sources/SOURCE_OF_TRUTH.md) before changing auth behavior.  
+How we test: [docs/testing.md](https://github.com/abdull-ah-med/acct/blob/main/docs/testing.md).
 
 ## License
 

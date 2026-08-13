@@ -1,5 +1,5 @@
 import type { EnforceMode, Profile } from "../types.js";
-import { getProfileToken } from "../secrets/store.js";
+import { resolveProfileToken } from "../gh/token.js";
 import { envForProfile, ghApiLogin } from "../gh/env.js";
 import { defaultGitConfigReader } from "../enforce/checks.js";
 import { diagnose, type DiagnoseInput, type DiagnoseReport } from "./explain.js";
@@ -20,7 +20,7 @@ export async function collectDiagnoseInput(
   env: NodeJS.ProcessEnv,
   opts: CollectDiagnoseOptions = {},
 ): Promise<DiagnoseInput> {
-  const hasToken = !!(await getProfileToken(profile));
+  const hasToken = !!(await resolveProfileToken(profile, env));
   const queryPrincipal = opts.queryPrincipal !== false;
   let authPrincipal: string | null = null;
   if (queryPrincipal) {

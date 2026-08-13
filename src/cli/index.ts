@@ -325,15 +325,18 @@ export async function runCli(argv: string[]): Promise<void> {
     .command("token")
     .description("Store a token in the OS keychain")
     .argument("<id>")
-    .option("--import-gh", "Import from gh auth token --user")
+    .option("--import-gh", "Import from gh auth token --user (and keep following gh)")
     .option("--stdin", "Read token from stdin")
     .action(async (id, opts) => {
-      const config = loadConfig();
+      let config = loadConfig();
       const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       if (opts.importGh) {
+        p.followGh = true;
+        config = upsertProfile(config, p);
+        saveConfig(config);
         await importAndStoreToken(p);
-        console.log("Token imported into OS keychain");
+        console.log("Token imported into OS keychain (follows gh auth token --user)");
         return;
       }
       if (opts.stdin) {
@@ -341,8 +344,11 @@ export async function runCli(argv: string[]): Promise<void> {
         for await (const c of process.stdin) {
           chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
         }
+        p.followGh = false;
+        config = upsertProfile(config, p);
+        saveConfig(config);
         await setProfileToken(p, Buffer.concat(chunks).toString("utf8"));
-        console.log("Token stored in OS keychain");
+        console.log("Token stored in OS keychain (follow-gh off — will not overwrite from gh)");
         return;
       }
       throw new Error("Specify --import-gh or --stdin");

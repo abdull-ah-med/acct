@@ -2,27 +2,12 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type { Profile } from "../types.js";
 import {
-  getProfileToken,
   isGithubDotComFamily,
   setProfileToken,
 } from "../secrets/store.js";
+import { importTokenFromGh, resolveProfileToken } from "./token.js";
 
-export function importTokenFromGh(profile: Profile): string {
-  const args = [
-    "auth",
-    "token",
-    "--hostname",
-    profile.host,
-    "--user",
-    profile.githubUser,
-  ];
-  const token = execFileSync("gh", args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
-  if (!token) throw new Error("gh auth token returned empty");
-  return token;
-}
+export { importTokenFromGh } from "./token.js";
 
 export async function importAndStoreToken(profile: Profile): Promise<void> {
   const token = importTokenFromGh(profile);
@@ -39,7 +24,7 @@ export async function envForProfile(
 ): Promise<NodeJS.ProcessEnv> {
   const env: NodeJS.ProcessEnv = { ...base };
   env.ACCT_PROFILE = profile.id;
-  const token = await getProfileToken(profile);
+  const token = await resolveProfileToken(profile, base);
   if (token) {
     if (isGithubDotComFamily(profile.host)) {
       env.GH_TOKEN = token;

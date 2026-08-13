@@ -35,11 +35,11 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 | Topic | URL | last_verified |
 |-------|-----|---------------|
 | gh environment | https://cli.github.com/manual/gh_help_environment | 2026-08-08 (re-fetched for I18 sticky-token unset / shell obfuscation round 2) |
-| gh auth login | https://cli.github.com/manual/gh_auth_login | 2026-08-08 (re-fetched for I18 shell obfuscation) |
-| gh auth logout | https://cli.github.com/manual/gh_auth_logout | 2026-08-08 |
-| gh auth refresh | https://cli.github.com/manual/gh_auth_refresh | 2026-08-08 (re-fetched: env token blocks refresh until cleared) |
-| gh auth switch | https://cli.github.com/manual/gh_auth_switch | 2026-08-08 (re-fetched for I18 shell obfuscation) |
-| gh auth token | https://cli.github.com/manual/gh_auth_token | 2026-08-08 (re-fetched for I18 shell obfuscation round 2) |
+| gh auth login | https://cli.github.com/manual/gh_auth_login | 2026-08-13 (no `--user`; `--hostname` `--web` `--with-token`) |
+| gh auth logout | https://cli.github.com/manual/gh_auth_logout | 2026-08-13 (`--hostname` `--user`) |
+| gh auth refresh | https://cli.github.com/manual/gh_auth_refresh | 2026-08-13 (no `--user`; refreshes **active** account only — switch first) |
+| gh auth switch | https://cli.github.com/manual/gh_auth_switch | 2026-08-13 (`--hostname` `--user`) |
+| gh auth token | https://cli.github.com/manual/gh_auth_token | 2026-08-13 (`--hostname` `--user`; used by `acct profile token --import-gh`) |
 | gh auth setup-git | https://cli.github.com/manual/gh_auth_setup-git | 2026-08-08 |
 | GH_TOKEN blocks auth mutation (cli#2922) | https://github.com/cli/cli/issues/2922 | 2026-08-08 |
 | Clear env token to mutate stored creds (discussion#9647) | https://github.com/cli/cli/discussions/9647 | 2026-08-08 |

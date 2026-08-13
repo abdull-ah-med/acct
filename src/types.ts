@@ -10,6 +10,12 @@ export interface Profile {
   protocol: Protocol;
   sshKeyPath?: string;
   enforce?: EnforceMode;
+  /**
+   * When true/undefined, acct refreshes the keychain copy from
+   * `gh auth token --hostname --user` (no `gh auth switch`).
+   * Set false for `--stdin` PATs that must not be overwritten by gh.
+   */
+  followGh?: boolean;
 }
 
 export interface Binding {

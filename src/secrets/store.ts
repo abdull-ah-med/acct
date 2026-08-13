@@ -123,6 +123,10 @@ export function setSecretStoreForTests(store: SecretStore | null): void {
   overrideStore = store;
 }
 
+export function secretStoreOverriddenForTests(): boolean {
+  return overrideStore !== null;
+}
+
 function fileStorePath(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(acctConfigDir(env), "secrets.json");
 }

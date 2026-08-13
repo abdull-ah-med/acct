@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- HTTPS / `GH_TOKEN` follow `gh auth token --hostname --user` automatically (no `gh auth switch`). After `gh auth refresh`, `acct status`, the shell hook, and git HTTPS pick up the new token without `acct profile token --import-gh`. `--stdin` PATs set `followGh: false` so they are not overwritten. Disable with `ACCT_FOLLOW_GH=0` or `ACCT_SECRET_BACKEND=file`. Tests force follow-gh on the file backend with `ACCT_FOLLOW_GH=1`. Cite: [gh auth token](https://cli.github.com/manual/gh_auth_token).
+- Testing strategy: behavior tests spawn real bins against a fake `gh` on `PATH`; diagnosis flags are checked against `tests/fixtures/gh-auth-flags.json` (GitHub CLI manuals), not against `src/`. See [docs/testing.md](docs/testing.md).
+
+### Fixed
+
+- Diagnosis fix commands match current `gh` flags: `switch --hostname --user`, `refresh --hostname` (no `--user`; active account only), `login --hostname --web` (no `--user`). Never `gh auth login --user` ([gh auth login](https://cli.github.com/manual/gh_auth_login); [switch](https://cli.github.com/manual/gh_auth_switch); [refresh](https://cli.github.com/manual/gh_auth_refresh)).
+
 ## [0.1.10] - 2026-08-13
 
 ### Added

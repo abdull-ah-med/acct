@@ -29,6 +29,8 @@ Tokens never in config files, fixtures, or logs. Use the secrets module / OS key
 
 ## Tests
 
+See [docs/testing.md](docs/testing.md). Tests live at public seams (CLI, credential helper, fake `gh` on `PATH`). Expected values come from independent sources (git/gh manuals, fake-gh state files) — not from copying the implementation. Do not mock `src/` internals.
+
 Contract tests for the credential helper protocol must match [git-credential](https://git-scm.com/docs/git-credential). Write failing contract/acceptance tests before implementation (TDD). See `.cursor/rules/testing-contracts.mdc`.
 
 ## Research

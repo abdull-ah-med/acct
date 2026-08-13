@@ -1,0 +1,28 @@
+{
+  "source": "https://cli.github.com/manual/gh_auth_login|switch|refresh|token|logout",
+  "verified": "2026-08-13",
+  "note": "Independent of acct source. Update only after re-fetching the manuals. Do not copy flags from src/status/explain.ts.",
+  "commands": {
+    "login": [
+      "clipboard",
+      "git-protocol",
+      "hostname",
+      "insecure-storage",
+      "scopes",
+      "skip-ssh-key",
+      "web",
+      "with-token"
+    ],
+    "switch": ["hostname", "user"],
+    "refresh": [
+      "clipboard",
+      "hostname",
+      "insecure-storage",
+      "remove-scopes",
+      "reset-scopes",
+      "scopes"
+    ],
+    "token": ["hostname", "user"],
+    "logout": ["hostname", "user"]
+  }
+}

@@ -2,6 +2,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { timingSafeEqual } from "node:crypto";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { getProfileToken, deleteProfileToken } from "../secrets/store.js";
+import { resolveProfileToken } from "../gh/token.js";
 import {
   parseCredentialInput,
   formatCredentialOutput,
@@ -93,7 +94,7 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
       return;
     }
 
-    const token = await getProfileToken(profile);
+    const token = await resolveProfileToken(profile, process.env);
     if (!token) {
       debugLog(`credential get: no token for ${profile.id}`);
       if (enforce === "strict") {

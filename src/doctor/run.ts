@@ -116,17 +116,25 @@ async function checkCwdProfile(
 }
 
 function findingsFromDiagnose(report: DiagnoseReport): DoctorFinding[] {
-  const importFix = report.fixes.find(
-    (c) => c.includes("profile token") && c.includes("--import-gh"),
+  const refreshFix = report.fixes.find((c) =>
+    c.startsWith("gh auth refresh"),
   );
-  const loginFix = report.fixes.find((c) => c.startsWith("gh auth login"));
+  const importFix = report.fixes.find(
+    (c) =>
+      !c.startsWith("#") &&
+      c.includes("profile token") &&
+      c.includes("--import-gh"),
+  );
+  const loginFix = report.fixes.find(
+    (c) => c.startsWith("gh auth switch") || c.startsWith("gh auth refresh"),
+  );
   const installFix = report.fixes.find((c) => c === "acct install");
   const onlineFix = report.fixes.find((c) => c.includes("doctor --online"));
   return report.issues.map((issue) => {
     let fix: string | undefined;
     if (issue.code === "commit-identity-mismatch") fix = installFix;
     else if (issue.code === "principal-unknown") fix = onlineFix;
-    else fix = importFix ?? loginFix;
+    else fix = refreshFix ?? importFix ?? loginFix;
     return {
       severity: issue.severity,
       code: ISSUE_CODE[issue.code],
