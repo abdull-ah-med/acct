@@ -19,6 +19,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="MIT" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg?style=flat-square" alt="Node >= 20" /></a>
   <a href="https://acct-web.vercel.app/"><img src="https://img.shields.io/badge/website-acct--web.vercel.app-black.svg?style=flat-square" alt="Website" /></a>
+  <a href="https://acct-web.vercel.app/docs"><img src="https://img.shields.io/badge/docs-commands-black.svg?style=flat-square" alt="Command reference" /></a>
 </p>
 
 <p align="center">
@@ -29,6 +30,8 @@
 
 <p align="center">
   <a href="https://acct-web.vercel.app/"><strong>acct-web.vercel.app</strong></a>
+  ·
+  <a href="https://acct-web.vercel.app/docs"><strong>command reference</strong></a>
 </p>
 
 ---
@@ -123,6 +126,8 @@ Doctor also reports credential-helper competition, missing install blocks, orpha
 Local always beats global. Ambient `ACCT_PROFILE` does **not** override git credential helper or hooks — directory wins.
 
 ## Commands
+
+Full reference (every command, flag, and example): **[acct-web.vercel.app/docs](https://acct-web.vercel.app/docs)**
 
 ```bash
 acct --help
