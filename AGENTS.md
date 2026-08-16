@@ -29,9 +29,14 @@ Tokens never in config files, fixtures, or logs. Use the secrets module / OS key
 
 ## Tests
 
-See [docs/testing.md](docs/testing.md). Tests live at public seams (CLI, credential helper, fake `gh` on `PATH`). Expected values come from independent sources (git/gh manuals, fake-gh state files) — not from copying the implementation. Do not mock `src/` internals.
+See [docs/testing.md](docs/testing.md) and `.cursor/rules/testing-architecture.mdc`.
 
-Contract tests for the credential helper protocol must match [git-credential](https://git-scm.com/docs/git-credential). Write failing contract/acceptance tests before implementation (TDD). See `.cursor/rules/testing-contracts.mdc`.
+- **Oracle:** `docs/invariants.md`, `docs/sources/SOURCE_OF_TRUTH.md`, `tests/fixtures/` — never the implementation you just wrote.
+- **Loop:** skill `test-driven-development` — failing test first; watch it fail; then minimal code. Skill `acct-implement-subsystem` for the product loop.
+- **Contract:** `.cursor/rules/no-change-detector-tests.mdc` and `.cursor/rules/testing-contracts.mdc`. Hardcoded expected values. Drive `bin/acct.js`, `bin/git-credential-acct.js`, or a fake `gh` on `PATH`. Do not mock `src/` internals.
+- **Evidence:** skill `verification-before-completion` — no “tests pass” / “done” without a fresh `npm test` in this turn.
+
+Credential helper protocol must match [git-credential](https://git-scm.com/docs/git-credential). Change-detector tests (encode what the code currently does) have negative value — rewrite or delete.
 
 ## Research
 

@@ -2,6 +2,10 @@
 
 Tests exist to catch **wrong behavior**, not to freeze today’s source text.
 
+Agent loop (required): skill `test-driven-development` → `.cursor/rules/no-change-detector-tests.mdc` → skill `verification-before-completion`. Architecture: `.cursor/rules/testing-architecture.mdc`.
+
+A test written by reading the implementation encodes what the code currently does. Google calls that a **change-detector** and classifies it as negative value ([TotT, 2015](https://testing.googleblog.com/2015/01/testing-on-toilet-change-detector-tests.html); [SWE at Google ch. 12](https://abseil.io/resources/swe-book/html/ch12.html)). Oracles come from invariants and primary docs, not from `src/`.
+
 ## Seams
 
 Only these boundaries are worth tests. Everything else is implementation.
@@ -40,3 +44,18 @@ Expected values come from outside the module under test:
 3. If you need `gh`, use `tests/harness/fake-gh.ts` (a `.cjs` binary — this package is ESM, so a shebang `.js` file under the repo would crash). If the fake was never invoked, the test failed.
 
 A test that still passes after you delete the assertion’s corresponding production line is not a test.
+
+## CI evidence gate
+
+CI (`.github/workflows/ci.yml`) is the same gate as `verification-before-completion`. It must not skip jobs or weaken assertions.
+
+| Job | Command | What it proves |
+|-----|---------|----------------|
+| Lint | `npm run lint` | Types compile (`tsc --noEmit`) |
+| Test | `npm run build` then `npm test` | Seam tests on Node 20/22 × Linux/macOS/Windows. `passWithNoTests` is off. |
+| Package | `npm run pack:check` then `npm run pack:smoke` | The **published tarball** (not the checkout) runs `acct --version` and helper `capability` |
+| Security | `npm run test:security` | Synthetic I4/I6/I18 regressions |
+| E2E | `npm run test:e2e` | Broader synthetic harness |
+| Gate | all of the above | The only allowed “CI passed” signal |
+
+Do not add `--passWithNoTests`, skip matrices, or treat lint as a substitute for `npm test`. Live dual-account e2e stays optional and off the default gate.

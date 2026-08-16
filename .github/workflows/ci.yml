@@ -1,5 +1,9 @@
 name: CI
 
+# Evidence gate — docs/testing.md. Lint, seam tests, packed-tarball smoke,
+# security, e2e. The gate job is the only allowed "CI passed" signal.
+# Do not skip jobs, drop OS/Node cells, or pass with zero tests.
+
 on:
   push:
   pull_request:
@@ -75,7 +79,14 @@ jobs:
             echo "Published package must not include src/ or tests/" >&2
             exit 1
           fi
-          rm -f "$tgz"
+          echo "tgz=$tgz" >> "$GITHUB_ENV"
+      - run: npm run pack:smoke
+      - name: Upload npm tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: acct-sh-npm-pack
+          path: "*.tgz"
+          if-no-files-found: error
 
   security:
     name: Security regression
@@ -117,3 +128,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI jobs passed"
+
