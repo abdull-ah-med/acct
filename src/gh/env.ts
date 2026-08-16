@@ -680,6 +680,32 @@ function shellFlagTakesScript(flag: string): boolean {
 }
 
 /**
+ * pwsh/powershell flags whose script body is not inspectable in argv:
+ * EncodedCommand (UTF-16LE Base64), -File, -CommandWithArgs, stdin `-`.
+ * Fail-closed — same rationale as xargs stdin (I18).
+ * Cite: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_pwsh
+ */
+function pwshArgvHidesScript(argv: string[]): boolean {
+  for (let i = 1; i < argv.length; i++) {
+    const raw = argv[i]!;
+    const f = raw.replace(/^\/+/, "-").toLowerCase();
+    const flag = f.split(":", 1)[0]!;
+    // EncodedCommand: -e, -ec, -enc… (not -ex/-ep ExecutionPolicy)
+    if (flag === "-e" || flag === "-ec") return true;
+    if (flag.startsWith("-enc")) return true;
+    if (flag === "-file" || flag === "-f") return true;
+    if (flag === "-commandwithargs" || flag === "-cwa") return true;
+    if (
+      (flag === "-command" || flag === "-c") &&
+      argv[i + 1] === "-"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * After `shell -c SCRIPT`, remaining argv are `$0` then `$1…`. Deny when
  * positionals can complete a dangerous gh auth invocation.
  * Cite: Bash §3.7.1 Positional Parameters; REMEDIATION_PLAN.md P1.1
@@ -875,9 +901,14 @@ function shellArgvHasDangerousGhAuth(argv: string[]): boolean {
 
     // cmd /c joins the rest of argv as the command line
     if (base === "cmd" && a.toLowerCase() === "/c") {
-      const cmdLine = argv.slice(i + 1).join(" ");
+      const restCmd = argv.slice(i + 1);
+      const cmdLine = restCmd.join(" ");
       if (cmdLine && shellScriptHasDangerousGhAuth(cmdLine)) return true;
-      if (argvHasGhAuthDangerSubsequence(argv.slice(i + 1))) return true;
+      if (argvHasGhAuthDangerSubsequence(restCmd)) return true;
+      // Nested `pwsh -EncodedCommand` / `-File` — body not in the cmd string.
+      if (restCmd.length && isDangerousGhArgv(restCmd)) return true;
+      const tokens = cmdLine.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length && isDangerousGhArgv(tokens)) return true;
       continue;
     }
 
@@ -920,6 +951,13 @@ export function isDangerousGhArgv(argv: string[]): boolean {
       !!rest[2] &&
       DANGEROUS_GH_AUTH.has(rest[2]!.toLowerCase())
     );
+  }
+
+  if (
+    (base === "pwsh" || base === "powershell") &&
+    pwshArgvHidesScript(rest)
+  ) {
+    return true;
   }
 
   if (SHELL_BASENAMES.has(base)) {

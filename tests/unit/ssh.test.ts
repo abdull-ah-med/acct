@@ -30,6 +30,21 @@ describe("ssh host + command", () => {
     );
   });
 
+  it("strips :443 from HostName (ssh_config HostName is a hostname)", () => {
+    const profile: Profile = {
+      id: "work",
+      githubUser: "u",
+      host: "github.com:443",
+      name: "N",
+      email: "e@x.com",
+      protocol: "https",
+      sshKeyPath: "/tmp/id",
+    };
+    expect(sshCommandFor(profile)).toBe(
+      "ssh -i '/tmp/id' -o IdentitiesOnly=yes -o HostName=github.com",
+    );
+  });
+
   it("builds sshCommand for https profiles with attached keys (I8b)", () => {
     const profile: Profile = {
       id: "personal",

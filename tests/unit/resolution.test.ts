@@ -163,4 +163,24 @@ describe("resolution (invariants I1–I5)", () => {
     expect(r.profile?.id).toBe("work");
     expect(r.reason).toBe("binding");
   });
+
+  it("I3/I4 forced profile matches id only, not githubUser", () => {
+    const r = resolveProfile({
+      cwd: "/tmp",
+      config: base,
+      forcedProfileId: "work-user",
+    });
+    expect(r.profile).toBeNull();
+    expect(r.reason).toBe("cli");
+  });
+
+  it("I3 .acct profile matches id only, not githubUser", () => {
+    const r = resolveProfile({
+      cwd: "/Users/x/Work/repo",
+      localAcct: { profile: "work-user" },
+      config: base,
+    });
+    expect(r.profile).toBeNull();
+    expect(r.reason).toBe("local");
+  });
 });

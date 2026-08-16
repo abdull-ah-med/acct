@@ -1,4 +1,6 @@
 import { describe, expect, it, beforeAll } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import type { Profile } from "../../src/types.js";
 import { ensureDistBuild, installFakeGh } from "../harness/fake-gh.js";
 import { helperGet, makeWorkspace } from "../harness/workspace.js";
@@ -14,6 +16,12 @@ const work: Profile = {
 
 function tokenCalls(gh: ReturnType<typeof installFakeGh>) {
   return gh.calls().filter((c) => c.argv[0] === "auth" && c.argv[1] === "token");
+}
+
+function storedTokens(configDir: string): Record<string, string> {
+  const file = path.join(configDir, "secrets.json");
+  if (!fs.existsSync(file)) return {};
+  return JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string>;
 }
 
 describe("follow-gh at the credential-helper seam", () => {
@@ -75,6 +83,24 @@ describe("follow-gh at the credential-helper seam", () => {
       expect(r.stdout).toContain("password=gho_TEST_ONLY_from_gh");
       expect(tokenCalls(gh).length).toBeGreaterThan(0);
       expect(gh.calls().some((c) => c.argv[1] === "switch")).toBe(false);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("I17 HTTPS get returns the live token without writing secrets.json", () => {
+    const ws = makeWorkspace(work);
+    const gh = installFakeGh(ws.root, {
+      tokens: { "github.com::user-a": "gho_TEST_ONLY_live_unpersisted" },
+    });
+    const env = gh.env({ ...ws.env, ACCT_FOLLOW_GH: "1" });
+    try {
+      expect(storedTokens(ws.configDir)).toEqual({});
+      const r = helperGet(ws.workDir, env);
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain("username=user-a");
+      expect(r.stdout).toContain("password=gho_TEST_ONLY_live_unpersisted");
+      expect(storedTokens(ws.configDir)).toEqual({});
     } finally {
       ws.close();
     }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hookScript, shellEnvExports } from "../../src/shell/hooks.js";
+import { resolveAcctCliPaths } from "../../src/enforce/hooks.js";
+import { posixShellSingleQuote } from "../../src/util/paths.js";
 
 describe("shell hooks", () => {
   it("emits hooks for all supported shells", () => {
@@ -33,6 +35,16 @@ describe("shell hooks", () => {
     expect(script).toContain('*":acct_chpwd;"*)');
     // cwd-change gate
     expect(script).toContain('[ "$PWD" = "${_ACCT_LAST_PWD-}" ] && return');
+  });
+
+  it("invokes shell-env via absolute node + acct.js, not PATH acct (I11b)", () => {
+    const script = hookScript("zsh");
+    const { node, acctJs } = resolveAcctCliPaths();
+    expect(script).toContain(
+      `${posixShellSingleQuote(node)} ${posixShellSingleQuote(acctJs)} shell-env`,
+    );
+    expect(script).not.toContain("$(acct shell-env)");
+    expect(script).not.toContain("`acct shell-env`");
   });
 
   it("powershell hook guards against re-wrapping prompt", () => {

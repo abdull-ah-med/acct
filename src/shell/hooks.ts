@@ -1,6 +1,25 @@
+import { posixShellSingleQuote } from "../util/paths.js";
+import { resolveAcctCliPaths } from "../enforce/hooks.js";
+
 export type ShellKind = "bash" | "zsh" | "fish" | "powershell";
 
-export function hookScript(shell: ShellKind): string {
+function acctShellEnvCmd(
+  extraArgs: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { node: string; acctJs: string; posix: string; pwsh: string } {
+  const { node, acctJs } = resolveAcctCliPaths(env);
+  const posix = `${posixShellSingleQuote(node)} ${posixShellSingleQuote(acctJs)} shell-env${extraArgs}`;
+  const pwshNode = node.replace(/'/g, "''");
+  const pwshJs = acctJs.replace(/'/g, "''");
+  const pwsh = `& '${pwshNode}' '${pwshJs}' shell-env${extraArgs}`;
+  return { node, acctJs, posix, pwsh };
+}
+
+export function hookScript(
+  shell: ShellKind,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const cmd = acctShellEnvCmd(shell === "powershell" ? " --powershell" : "", env);
   switch (shell) {
     case "bash":
     case "zsh":
@@ -9,7 +28,7 @@ export function hookScript(shell: ShellKind): string {
 acct_chpwd() {
   [ "$PWD" = "\${_ACCT_LAST_PWD-}" ] && return
   _ACCT_LAST_PWD=$PWD
-  eval "$(acct shell-env)"
+  eval "$(${cmd.posix})"
 }
 if [[ -n "$ZSH_VERSION" ]]; then
   autoload -U add-zsh-hook 2>/dev/null
@@ -27,15 +46,15 @@ acct_chpwd
       return `# acct shell hook (fish)
 # Add to config.fish: acct hook fish | source
 function acct_chpwd --on-variable PWD
-  acct shell-env | source
+  ${cmd.posix} | source
 end
-acct shell-env | source
+${cmd.posix} | source
 `;
     case "powershell":
       return `# acct shell hook (powershell)
 # Add to $PROFILE: Invoke-Expression (acct hook powershell)
 function acct_ApplyEnv {
-  Invoke-Expression (acct shell-env --powershell | Out-String)
+  Invoke-Expression (${cmd.pwsh} | Out-String)
 }
 # Preserve an existing prompt if present; append acct env refresh once
 if (-not (Test-Path variable:acct__prevPrompt)) {

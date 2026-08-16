@@ -176,6 +176,14 @@ export function hostAllowed(
   if (req.hostname.toLowerCase() !== prof.hostname.toLowerCase()) return false;
 
   if (prof.port !== undefined) {
+    // git-credential includes the port only when the URL specified it
+    // (`https://github.com/` → host=github.com, not :443).
+    // Pinning :443 is the HTTPS default — treat like hostname-only so a
+    // profile host of github.com:443 still matches ordinary clones.
+    // Cite: https://git-scm.com/docs/git-credential
+    if (prof.port === DEFAULT_HTTPS_PORT) {
+      return req.port === undefined || req.port === DEFAULT_HTTPS_PORT;
+    }
     return req.port === prof.port;
   }
   // Hostname-only profile (e.g. github.com): default HTTPS port only.

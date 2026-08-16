@@ -1,5 +1,5 @@
 import { stdin as input, stdout as output } from "node:process";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { getProfileToken, deleteProfileToken } from "../secrets/store.js";
 import { resolveProfileToken } from "../gh/token.js";
@@ -11,11 +11,20 @@ import {
 } from "./protocol.js";
 import { debugLog } from "../util/paths.js";
 
+/**
+ * Compare secrets without leaking length via early return or throwing.
+ * Node `timingSafeEqual` requires equal byte length and throws otherwise;
+ * it is documented as suitable for HMAC digests. HMAC both sides with a
+ * process-local key so the compared buffers are always 32 bytes.
+ * Cite: https://nodejs.org/api/crypto.html#cryptotimingsafeequala-b
+ * Cite: https://nodejs.org/api/crypto.html#cryptocreatehmacalgorithm-key-options
+ */
+const COMPARE_KEY = randomBytes(32);
+
 function passwordsEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
+  const ha = createHmac("sha256", COMPARE_KEY).update(a).digest();
+  const hb = createHmac("sha256", COMPARE_KEY).update(b).digest();
+  return timingSafeEqual(ha, hb);
 }
 
 async function readStdin(): Promise<string> {
@@ -94,7 +103,12 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
       return;
     }
 
-    const token = await resolveProfileToken(profile, process.env);
+    // Follow live gh for this get, but do not write the keychain here (I17).
+    // Persist happens from status / shell-env / exec after principal check.
+    // Cite: https://git-scm.com/docs/gitcredentials (read-only store)
+    const token = await resolveProfileToken(profile, process.env, {
+      persist: false,
+    });
     if (!token) {
       debugLog(`credential get: no token for ${profile.id}`);
       if (enforce === "strict") {

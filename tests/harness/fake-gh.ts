@@ -33,7 +33,18 @@ if (argv[0] === "auth" && argv[1] === "token") {
 }
 
 if (argv[0] === "api" && argv[1] === "user") {
-  const login = state.apiUser || "";
+  // GH_TOKEN wins over stored creds (https://cli.github.com/manual/gh_help_environment).
+  const envToken = process.env.GH_TOKEN || process.env.GH_ENTERPRISE_TOKEN || "";
+  let login = state.apiUser || "";
+  if (envToken && state.tokens) {
+    for (const [k, v] of Object.entries(state.tokens)) {
+      if (v === envToken) {
+        const parts = String(k).split("::");
+        login = parts[1] || login;
+        break;
+      }
+    }
+  }
   if (!login) process.exit(1);
   process.stdout.write(login + "\\n");
   process.exit(0);
@@ -142,24 +153,52 @@ function newestMtime(dir: string): number {
   return newest;
 }
 
-/** Rebuild dist when missing or older than src (helper bins load dist/). */
-export function ensureDistBuild(): void {
+function distIsCurrent(): boolean {
   const dist = path.resolve("dist");
   const srcM = newestMtime(path.resolve("src"));
   const distM = newestMtime(dist);
-  if (
+  return (
     fs.existsSync(path.join(dist, "credential/helper.js")) &&
     fs.existsSync(path.join(dist, "gh/token.js")) &&
     distM >= srcM
-  ) {
-    return;
+  );
+}
+
+function sleepMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Rebuild dist when missing or older than src (helper bins load dist/). */
+export function ensureDistBuild(): void {
+  if (distIsCurrent()) return;
+
+  // Parallel vitest files can otherwise run `tsc` over the same dist/.
+  const lockDir = path.resolve(".tmp-dist-build.lock");
+  const deadline = Date.now() + 60_000;
+  while (true) {
+    try {
+      fs.mkdirSync(lockDir);
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      if (distIsCurrent()) return;
+      if (Date.now() > deadline) {
+        throw new Error("timed out waiting for dist build lock");
+      }
+      sleepMs(100);
+    }
   }
-  const b = spawnSync("npm", ["run", "build"], {
-    encoding: "utf8",
-    cwd: process.cwd(),
-  });
-  if (b.status !== 0) {
-    throw new Error(`npm run build failed: ${b.stderr || b.stdout}`);
+  try {
+    if (distIsCurrent()) return;
+    const b = spawnSync("npm", ["run", "build"], {
+      encoding: "utf8",
+      cwd: process.cwd(),
+    });
+    if (b.status !== 0) {
+      throw new Error(`npm run build failed: ${b.stderr || b.stdout}`);
+    }
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
   }
 }
 

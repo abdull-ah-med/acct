@@ -1,17 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { AcctConfig, Profile } from "../types.js";
 import { gitIncDir, backupDir, acctConfigDir } from "../config/store.js";
 import { assertSafeSshHost } from "../ssh/keys.js";
+import { splitHostPort } from "../credential/protocol.js";
 import { homeDir, normalizePath, posixShellSingleQuote } from "../util/paths.js";
+import {
+  assertSafeBindPath,
+  assertSafeProfileFields,
+} from "../util/profile-fields.js";
 import {
   atomicWriteFileSync,
   ensureAcctDir,
   withFileLock,
 } from "../util/fs-safe.js";
-import { cmdEscapePath } from "../util/cmd-escape.js";
+import { renderCmdNodeInvoke } from "../util/cmd-escape.js";
 
 const BEGIN = "# >>> acct managed begin >>>";
 const END = "# <<< acct managed end <<<";
@@ -32,6 +36,12 @@ export function renderProfileInclude(
   profile: Profile,
   helperCommand: string,
 ): string {
+  assertSafeProfileFields({
+    name: profile.name,
+    email: profile.email,
+    host: profile.host,
+    user: profile.githubUser,
+  });
   const helperValue = quoteHelper(helperCommand);
   const lines: string[] = [
     `# acct profile ${profile.id} — do not edit by hand`,
@@ -49,7 +59,7 @@ export function renderProfileInclude(
 
   if (profile.sshKeyPath) {
     const key = profile.sshKeyPath.replace(/\\/g, "/");
-    const host = assertSafeSshHost(profile.host);
+    const host = assertSafeSshHost(splitHostPort(profile.host).hostname);
     lines.push(
       "[core]",
       // IdentitiesOnly: https://man.openbsd.org/ssh_config.5
@@ -127,7 +137,9 @@ function resolveHelperConfigValue(env: NodeJS.ProcessEnv): string {
 }
 
 /**
- * Write ~/.config/acct/bin/git-credential-acct → exec's the real package bin.
+ * Write ~/.config/acct/bin/git-credential-acct → exec's the real package bin
+ * with process.execPath (I11b). Git runs helpers via the shell.
+ * Cite: https://git-scm.com/docs/gitcredentials ; https://nodejs.org/api/process.html#processexecpath
  */
 export function ensureCredentialShim(
   env: NodeJS.ProcessEnv = process.env,
@@ -138,34 +150,18 @@ export function ensureCredentialShim(
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const realJs = path.resolve(here, "..", "..", "bin", "git-credential-acct.js");
-  const target = fs.existsSync(realJs)
-    ? realJs
-    : (() => {
-        try {
-          const cmd = process.platform === "win32" ? "where" : "which";
-          return execFileSync(cmd, ["git-credential-acct"], {
-            encoding: "utf8",
-            env,
-          })
-            .trim()
-            .split(/\r?\n/)[0]!;
-        } catch {
-          return realJs;
-        }
-      })();
+  // Fail closed if the packaged bin is missing — never PATH-search (I11b).
+  const target = realJs;
+  const node = env.ACCT_NODE_PATH?.trim() || process.execPath;
 
   if (process.platform === "win32") {
     const cmdPath = shim + ".cmd";
-    const escaped = cmdEscapePath(target);
-    fs.writeFileSync(
-      cmdPath,
-      `@echo off\r\nnode "${escaped}" %*\r\n`,
-    );
+    fs.writeFileSync(cmdPath, renderCmdNodeInvoke(node, target));
     return cmdPath.replace(/\\/g, "/");
   }
 
   const script = `#!/bin/sh
-exec node ${posixShellSingleQuote(target)} "$@"
+exec ${posixShellSingleQuote(node)} ${posixShellSingleQuote(target)} "$@"
 `;
   fs.writeFileSync(shim, script, { mode: 0o755 });
   return shim.replace(/\\/g, "/");
@@ -200,6 +196,7 @@ export function buildIncludeIfBlock(
   for (const binding of config.bindings) {
     const profile = config.profiles.find((p) => p.id === binding.profileId);
     if (!profile) continue;
+    assertSafeBindPath(binding.path);
     const inc = profileIncPath(profile, env).replace(/\\/g, "/");
     const gitdir = normalizePath(binding.path).replace(/\/+$/, "") + "/";
     lines.push(`[includeIf "${keyword}:${gitdir}"]`);

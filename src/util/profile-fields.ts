@@ -65,3 +65,24 @@ export function assertSafeProfileFields(opts: {
   assertSafeProfileHost(opts.host);
   assertSafeGithubUser(opts.user);
 }
+
+/**
+ * Bind paths are interpolated into `includeIf "gitdir:…"` subsection names.
+ * Newline/NUL are illegal in gitconfig subsections; `"` / `\` / `[` / `]`
+ * break out of the quoted header. `*` / `?` / `[` are gitdir glob metacharacters.
+ * Reject rather than escape (fail closed).
+ * Cite: https://git-scm.com/docs/git-config (SYNTAX; Conditional includes)
+ * Cite: https://git-scm.com/docs/gitignore
+ */
+const BIND_UNSAFE = /[\r\n\0\\"\[\]*?]/;
+
+export function assertSafeBindPath(dir: string): void {
+  if (dir.length === 0) {
+    throw new Error("Invalid bind path: must not be empty");
+  }
+  if (BIND_UNSAFE.test(dir)) {
+    throw new Error(
+      "Invalid bind path: must not contain CR, LF, NUL, backslash, double-quote, brackets, or gitdir glob metacharacters * ?",
+    );
+  }
+}

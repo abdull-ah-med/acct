@@ -160,6 +160,22 @@ describe("credential helper security planes (I4/I6)", () => {
     expect(ok443.stdout).toContain("gho_TEST_ONLY_work_token");
   });
 
+  it("I7 profile host github.com:443 still fills git's default host=github.com", async () => {
+    const pinned: Profile = { ...work, host: "github.com:443" };
+    let config = defaultConfig();
+    config = upsertProfile(config, pinned);
+    config = upsertBinding(config, { path: workDir, profileId: "work" });
+    saveConfig(config);
+    await setProfileToken(pinned, "gho_TEST_ONLY_work_token");
+    const r = helperGet(
+      workDir,
+      { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" },
+      "protocol=https\nhost=github.com\n\n",
+    );
+    expect(r.stdout).toContain("password=gho_TEST_ONLY_work_token");
+    expect(r.stdout).not.toContain("quit=1");
+  });
+
   it("I7 duplicate host lines fail closed", () => {
     const r = helperGet(
       workDir,

@@ -1,5 +1,5 @@
 import type { ResolveInput, ResolveResult, EnforceMode, Profile } from "../types.js";
-import { getProfile } from "../config/store.js";
+import { findProfileById } from "../config/store.js";
 import { normalizePath, pathIsPrefix } from "../util/paths.js";
 
 function enforceFor(
@@ -25,7 +25,7 @@ export function resolveProfile(input: ResolveInput): ResolveResult {
 
   const forced = input.forcedProfileId?.trim();
   if (forced) {
-    const profile = getProfile(input.config, forced);
+    const profile = findProfileById(input.config, forced);
     if (!profile) {
       return {
         profile: null,
@@ -43,7 +43,7 @@ export function resolveProfile(input: ResolveInput): ResolveResult {
   if (input.allowEnvProfile) {
     const envName = env.ACCT_PROFILE?.trim();
     if (envName) {
-      const profile = getProfile(input.config, envName);
+      const profile = findProfileById(input.config, envName);
       if (!profile) {
         return {
           profile: null,
@@ -70,7 +70,7 @@ export function resolveProfile(input: ResolveInput): ResolveResult {
         enforce: defaultEnforce,
       };
     }
-    const profile = getProfile(input.config, localId);
+    const profile = findProfileById(input.config, localId);
     return {
       profile: profile ?? null,
       reason: "local",
@@ -86,7 +86,7 @@ export function resolveProfile(input: ResolveInput): ResolveResult {
 
   if (matches.length > 0) {
     const best = matches[0]!;
-    const profile = getProfile(input.config, best.profileId) ?? null;
+    const profile = findProfileById(input.config, best.profileId) ?? null;
     return {
       profile,
       reason: "binding",

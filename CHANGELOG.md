@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Credential shim and generated shell/wrap shims bake `process.execPath` (I11b). Git executes helpers via the shell ([gitcredentials](https://git-scm.com/docs/gitcredentials)).
+- Bind paths and profile fields are rejected on install if they contain gitconfig metacharacters (`"` / CR/LF / brackets) or gitdir glob `*` / `?`. Cite: [git-config SYNTAX](https://git-scm.com/docs/git-config); [gitignore](https://git-scm.com/docs/gitignore).
+- Follow-gh does not persist a live token from credential-helper `get`. Status / shell-env / exec persist only after `gh api user --jq .login` matches the profile ([gh api](https://cli.github.com/manual/gh_api)).
+- I18 fail-closed for `pwsh -EncodedCommand` / `-enc` / `-File` / `-Command -`, including nested `cmd /c pwsh …` ([about_Pwsh](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_pwsh)).
+- `acct clone` strips `GIT_CONFIG_COUNT`/`KEY`/`VALUE` like `acct exec`.
+- `acct uninstall` unsets local `core.hooksPath` in **bound** git toplevels (and cwd), and only when the value is acct's hooks dir — not a third-party or unrelated global hooksPath ([git-config FILES](https://git-scm.com/docs/git-config)).
+- Helper `erase` compares HMAC-SHA256 digests with `timingSafeEqual` ([crypto.timingSafeEqual](https://nodejs.org/api/crypto.html#cryptotimingsafeequala-b); [createHmac](https://nodejs.org/api/crypto.html#cryptocreatehmacalgorithm-key-options)).
+
+### Fixed
+
+- `hostAllowed`: `profile.host` of `hostname:443` accepts git's default `host=hostname` (port omitted) ([git-credential](https://git-scm.com/docs/git-credential)).
+- `acct doctor` cwd `gh api user` only with `--online` (status/hooks still always query).
+- Resolution matches **profile id** only (not `githubUser`) for `--profile` / `.acct` / env (I3/I4).
+- SSH `HostName=` uses hostname only when `profile.host` includes a port.
+
+### Changed
+
+- `fromCwd` no longer spawns `git rev-parse --show-toplevel` on every helper/hook invoke (bindings match cwd).
+
 ## [0.1.11] - 2026-08-13
 
 ### Added

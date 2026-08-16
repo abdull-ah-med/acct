@@ -80,7 +80,9 @@ export async function runDoctor(
   findings.push(...checkCredentialShim(env));
   findings.push(...checkStaleHookNodePath(env));
 
-  const cwdReport = await checkCwdProfile(cwd, env);
+  const cwdReport = await checkCwdProfile(cwd, env, {
+    queryPrincipal: !!opts.online,
+  });
   findings.push(...cwdReport.findings);
 
   if (findings.every((f) => f.severity === "ok") || findings.length === 0) {
@@ -97,6 +99,7 @@ export async function runDoctor(
 async function checkCwdProfile(
   cwd: string,
   env: NodeJS.ProcessEnv,
+  opts: { queryPrincipal?: boolean } = {},
 ): Promise<{ findings: DoctorFinding[]; explain?: string }> {
   const resolved = resolveFromCwd(cwd, env, { allowEnvProfile: false });
   if (!resolved.profile) return { findings: [] };
@@ -106,7 +109,7 @@ async function checkCwdProfile(
     resolved.enforce,
     cwd,
     env,
-    { queryPrincipal: true },
+    { queryPrincipal: !!opts.queryPrincipal },
   );
   return {
     findings: findingsFromDiagnose(report),

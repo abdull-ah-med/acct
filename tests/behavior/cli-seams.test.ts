@@ -1,4 +1,6 @@
 import { describe, expect, it, beforeAll } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import type { Profile } from "../../src/types.js";
 import { ensureDistBuild, installFakeGh } from "../harness/fake-gh.js";
 import {
@@ -95,6 +97,65 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
       expect(r.stdout).toContain("gho_TEST_ONLY_live");
       expect(r.stdout).not.toContain("sticky");
       expect(r.stdout).toMatch(/ACCT_PROFILE.*work/);
+      const secrets = path.join(ws.configDir, "secrets.json");
+      expect(JSON.parse(fs.readFileSync(secrets, "utf8"))).toEqual({
+        "github.com::user-a": "gho_TEST_ONLY_live",
+      });
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("doctor does not call gh api user unless --online", () => {
+    const ws = makeWorkspace(work);
+    ws.putToken("gho_TEST_ONLY_file");
+    const gh = installFakeGh(ws.root, { apiUser: "user-a" });
+    const env = gh.env({ ...ws.env });
+    try {
+      acct(["doctor"], env, ws.workDir);
+      expect(gh.calls().some((c) => c.argv[0] === "api")).toBe(false);
+
+      acct(["doctor", "--online"], env, ws.workDir);
+      expect(
+        gh.calls().some(
+          (c) => c.argv[0] === "api" && c.argv[1] === "user",
+        ),
+      ).toBe(true);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("clone child does not receive GIT_CONFIG_COUNT/KEY/VALUE (I18)", () => {
+    const ws = makeWorkspace(work);
+    const binDir = path.join(ws.root, "fake-git");
+    fs.mkdirSync(binDir, { recursive: true });
+    const dump = path.join(ws.root, "git-env.txt");
+    fs.writeFileSync(
+      path.join(binDir, "git"),
+      `#!/bin/sh\nenv | grep '^GIT_CONFIG' > "${dump}"\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    const env = {
+      ...ws.env,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "alias.p",
+      GIT_CONFIG_VALUE_0: "!gh auth token",
+      GIT_CONFIG_NOSYSTEM: "1",
+    };
+    try {
+      const r = acct(
+        ["clone", "https://github.com/example/repo.git"],
+        env,
+        ws.workDir,
+      );
+      expect(r.status, r.stderr).toBe(0);
+      const dumped = fs.existsSync(dump) ? fs.readFileSync(dump, "utf8") : "";
+      expect(dumped).toContain("GIT_CONFIG_NOSYSTEM=1");
+      expect(dumped).not.toMatch(/^GIT_CONFIG_COUNT=/m);
+      expect(dumped).not.toMatch(/^GIT_CONFIG_KEY_0=/m);
+      expect(dumped).not.toMatch(/^GIT_CONFIG_VALUE_0=/m);
     } finally {
       ws.close();
     }

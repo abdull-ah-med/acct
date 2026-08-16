@@ -20,7 +20,7 @@ import {
   assertValidProfileId,
   assertNoProfileIdCaseCollision,
 } from "../util/profile-id.js";
-import { assertSafeProfileFields } from "../util/profile-fields.js";
+import { assertSafeProfileFields, assertSafeBindPath } from "../util/profile-fields.js";
 import {
   installIncludeIf,
   uninstallIncludeIf,
@@ -155,6 +155,93 @@ function isAcctHooksDir(dir: string): boolean {
   }
 }
 
+/**
+ * Unset core.hooksPath when it points at acct hooks.
+ * Local and global are separate git config files — unsetting --global does
+ * not clear a per-repo hooksPath.
+ * Cite: https://git-scm.com/docs/git-config#Documentation/git-config.txt-corehooksPath
+ */
+export function unsetAcctHooksPath(
+  opts: { global?: boolean; bindDir?: string } = {},
+): void {
+  if (opts.global) {
+    let existing = "";
+    try {
+      existing = execFileSync("git", ["config", "--global", "--get", "core.hooksPath"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    } catch {
+      existing = "";
+    }
+    if (!existing) return;
+    if (!isAcctHooksDir(path.resolve(existing))) {
+      console.error(
+        `warning: global core.hooksPath=${existing} is not acct-managed; left in place.`,
+      );
+      return;
+    }
+    try {
+      execFileSync("git", ["config", "--global", "--unset", "core.hooksPath"]);
+    } catch {
+      // not set
+    }
+    return;
+  }
+
+  const targetDir = path.resolve(opts.bindDir ?? process.cwd());
+  let toplevel = "";
+  try {
+    toplevel = execFileSync(
+      "git",
+      ["-C", targetDir, "rev-parse", "--show-toplevel"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim();
+  } catch {
+    console.error(
+      "warning: not a git repo — if you installed hooks without --global, run `acct uninstall` from that repo, or: git config --unset core.hooksPath",
+    );
+    return;
+  }
+  if (path.resolve(toplevel) !== targetDir) {
+    console.error(
+      `warning: ${targetDir} is not a git toplevel — skipped local core.hooksPath unset.`,
+    );
+    return;
+  }
+
+  let existing = "";
+  try {
+    existing = execFileSync(
+      "git",
+      ["-C", targetDir, "config", "--local", "--get", "core.hooksPath"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim();
+  } catch {
+    existing = "";
+  }
+  if (!existing) return;
+  if (!isAcctHooksDir(path.resolve(existing))) {
+    console.error(
+      `warning: local core.hooksPath=${existing} is not acct-managed; left in place.`,
+    );
+    return;
+  }
+  try {
+    execFileSync("git", [
+      "-C",
+      targetDir,
+      "config",
+      "--local",
+      "--unset",
+      "core.hooksPath",
+    ]);
+    console.log(`Unset local core.hooksPath (${existing})`);
+  } catch {
+    // ignore
+  }
+}
+
 export async function runCli(argv: string[]): Promise<void> {
   const program = new Command();
   program
@@ -202,6 +289,7 @@ export async function runCli(argv: string[]): Promise<void> {
       // Cite: https://git-scm.com/docs/git-config (gitdir/i, core.ignoreCase)
       // Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
       assertNoProfileIdCaseCollision(config.profiles, opts.id);
+      assertSafeBindPath(path.resolve(opts.bind));
       const profile: Profile = {
         id: opts.id,
         githubUser: opts.user,
@@ -414,8 +502,10 @@ export async function runCli(argv: string[]): Promise<void> {
       if (!findProfileById(config, profileId)) {
         throw new Error(`Unknown profile: ${profileId}`);
       }
+      const bindPath = path.resolve(dir);
+      assertSafeBindPath(bindPath);
       config = upsertBinding(config, {
-        path: path.resolve(dir),
+        path: bindPath,
         profileId,
         enforce: opts.enforce as EnforceMode | undefined,
       });
@@ -644,9 +734,11 @@ export async function runCli(argv: string[]): Promise<void> {
         forcedProfileId: opts.profile,
         allowEnvProfile: false,
       });
-      const env = resolved.profile
-        ? await envForProfile(resolved.profile)
-        : process.env;
+      const env = stripGitConfigEnvOverrides(
+        resolved.profile
+          ? await envForProfile(resolved.profile)
+          : { ...process.env },
+      );
       const args = ["clone", url];
       if (dir) args.push(dir);
       const result = spawnSync("git", args, { stdio: "inherit", env });
@@ -740,11 +832,12 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--restore-backup", "Restore pre-acct gitconfig backup")
     .action((opts) => {
       uninstallIncludeIf();
-      try {
-        execFileSync("git", ["config", "--global", "--unset", "core.hooksPath"]);
-      } catch {
-        // ignore
+      unsetAcctHooksPath({ global: true });
+      const configForHooks = loadConfig();
+      for (const binding of configForHooks.bindings) {
+        unsetAcctHooksPath({ bindDir: binding.path });
       }
+      unsetAcctHooksPath({ global: false });
       if (opts.restoreBackup) {
         if (restoreGitconfigBackup()) console.log("Restored gitconfig backup");
         else console.log("No backup found");
@@ -764,6 +857,9 @@ export async function runCli(argv: string[]): Promise<void> {
       );
       console.error(
         "warning: Re-run `acct install` to restore fail-closed unbound HTTPS, or `acct doctor` to inspect helpers.",
+      );
+      console.error(
+        "warning: Local core.hooksPath was unset in bound git toplevels that pointed at acct hooks. Other clones: git config --unset core.hooksPath",
       );
     });
 

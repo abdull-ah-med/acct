@@ -5,7 +5,9 @@ import {
   renderProfileInclude,
   stripManagedBlock,
   buildIncludeIfBlock,
+  ensureCredentialShim,
 } from "../../src/identity/includeIf.js";
+import { posixShellSingleQuote } from "../../src/util/paths.js";
 import type { AcctConfig, Profile } from "../../src/types.js";
 
 const profile: Profile = {
@@ -79,7 +81,7 @@ describe("identity includeIf", () => {
       host: "github.com -o ProxyCommand=evil",
       sshKeyPath: "/tmp/id_work",
     };
-    expect(() => renderProfileInclude(ssh, "acct")).toThrow(/Invalid SSH host/);
+    expect(() => renderProfileInclude(ssh, "acct")).toThrow(/Invalid host/);
   });
 
   it("strips managed block cleanly", () => {
@@ -111,6 +113,81 @@ describe("identity includeIf", () => {
       expect(includeIdx).toBeGreaterThan(resetIdx);
       expect(block).toContain("/Users/x/Work/");
       expect(block).toContain("work.inc");
+      expect(block).not.toContain("osxkeychain");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("credential shim execs process.execPath, not PATH node (I11b)", () => {
+    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-shim-"));
+    try {
+      const shim = ensureCredentialShim({ ACCT_CONFIG_DIR: tmp });
+      const body = fs.readFileSync(shim, "utf8");
+      expect(body).toContain(process.execPath);
+      expect(body).not.toMatch(/\bexec node\b/);
+      expect(body).not.toMatch(/^node /m);
+      if (process.platform !== "win32") {
+        expect(body).toContain(
+          `exec ${posixShellSingleQuote(process.execPath)}`,
+        );
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a bind path whose only illegal character is a double-quote", () => {
+    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+    try {
+      const config: AcctConfig = {
+        version: 1,
+        defaultEnforce: "strict",
+        profiles: [profile],
+        bindings: [{ path: '/tmp/work"', profileId: "work" }],
+      };
+      expect(() =>
+        buildIncludeIfBlock(config, { HOME: "/tmp", ACCT_CONFIG_DIR: tmp }),
+      ).toThrow(/Invalid bind path/);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects bind paths that would break out of includeIf quotes", () => {
+    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+    try {
+      const config: AcctConfig = {
+        version: 1,
+        defaultEnforce: "strict",
+        profiles: [profile],
+        bindings: [
+          {
+            path: '/tmp/x"]\n[credential]\n\thelper = osxkeychain\n#',
+            profileId: "work",
+          },
+        ],
+      };
+      expect(() =>
+        buildIncludeIfBlock(config, { HOME: "/tmp", ACCT_CONFIG_DIR: tmp }),
+      ).toThrow(/Invalid bind path/);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects bind paths with gitdir glob metacharacters", () => {
+    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+    try {
+      const config: AcctConfig = {
+        version: 1,
+        defaultEnforce: "strict",
+        profiles: [profile],
+        bindings: [{ path: "/tmp/work*", profileId: "work" }],
+      };
+      expect(() =>
+        buildIncludeIfBlock(config, { HOME: "/tmp", ACCT_CONFIG_DIR: tmp }),
+      ).toThrow(/Invalid bind path/);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

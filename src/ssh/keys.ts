@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { acctConfigDir } from "../config/store.js";
 import type { Profile } from "../types.js";
 import { posixShellSingleQuote } from "../util/paths.js";
+import { splitHostPort } from "../credential/protocol.js";
 import { ensureAcctDir } from "../util/fs-safe.js";
 
 export function defaultKeyPath(
@@ -33,7 +34,7 @@ export function assertSafeSshHost(host: string): string {
 export function sshCommandFor(profile: Profile): string | null {
   if (!profile.sshKeyPath) return null;
   const key = profile.sshKeyPath.replace(/\\/g, "/");
-  const host = assertSafeSshHost(profile.host);
+  const host = assertSafeSshHost(splitHostPort(profile.host).hostname);
   return `ssh -i ${posixShellSingleQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`;
 }
 

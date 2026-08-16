@@ -10,9 +10,9 @@ import {
   globalGitconfigPath,
 } from "../../src/identity/includeIf.js";
 import { cmdEscapePath, renderCmdNodeInvoke } from "../../src/util/cmd-escape.js";
-import { assertSafeProfileFields } from "../../src/util/profile-fields.js";
-import { renderGitCmd } from "../../src/shell/wrap.js";
-import { configureHooksPath } from "../../src/cli/index.js";
+import { assertSafeProfileFields, assertSafeBindPath } from "../../src/util/profile-fields.js";
+import { renderGitCmd, installWrapShims } from "../../src/shell/wrap.js";
+import { configureHooksPath, unsetAcctHooksPath } from "../../src/cli/index.js";
 import type { AcctConfig, Profile } from "../../src/types.js";
 
 const profile: Profile = {
@@ -182,6 +182,14 @@ describe("profile field validation", () => {
       }),
     ).not.toThrow();
   });
+
+  it("rejects bind paths with gitconfig / gitdir metacharacters", () => {
+    expect(() => assertSafeBindPath('/tmp/work"')).toThrow(/Invalid bind path/);
+    expect(() => assertSafeBindPath("/tmp/work*")).toThrow(/Invalid bind path/);
+    expect(() => assertSafeBindPath("/tmp/work?")).toThrow(/Invalid bind path/);
+    expect(() => assertSafeBindPath("/tmp/work[a]")).toThrow(/Invalid bind path/);
+    expect(() => assertSafeBindPath("/tmp/work")).not.toThrow();
+  });
 });
 
 describe("renderGitCmd", () => {
@@ -191,6 +199,23 @@ describe("renderGitCmd", () => {
     expect(body).toContain("findstr");
     expect(body).toContain("where git");
     expect(body).not.toMatch(/set REALGIT=%%i &/);
+  });
+});
+
+describe("wrap shims (I11b)", () => {
+  it("gh wrap shim execs process.execPath, not PATH node", () => {
+    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-wrap-"));
+    try {
+      const dir = installWrapShims({ ACCT_CONFIG_DIR: tmp });
+      const shim = process.platform === "win32"
+        ? path.join(dir, "gh.cmd")
+        : path.join(dir, "gh");
+      const body = fs.readFileSync(shim, "utf8");
+      expect(body).toContain(process.execPath);
+      expect(body).not.toMatch(/\bexec node\b/);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
@@ -287,5 +312,61 @@ describe("configureHooksPath", () => {
       encoding: "utf8",
     }).trim();
     expect(path.resolve(v)).toBe(path.resolve(hooks));
+  });
+});
+
+describe("unsetAcctHooksPath (I14)", () => {
+  let repo: string;
+  let hooks: string;
+
+  beforeEach(() => {
+    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-hooks-unset-"));
+    repo = path.join(tmp, "repo");
+    hooks = path.join(tmp, "acct-hooks");
+    fs.mkdirSync(repo, { recursive: true });
+    fs.mkdirSync(hooks, { recursive: true });
+    execFileSync("git", ["init"], { cwd: repo, stdio: "ignore" });
+    fs.writeFileSync(
+      path.join(hooks, "pre-commit"),
+      "#!/bin/sh\nexec /usr/bin/node /tmp/acct.js hook-run pre-commit\n",
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  });
+
+  it("unsets local core.hooksPath when it points at acct hooks", () => {
+    execFileSync("git", ["config", "core.hooksPath", hooks], {
+      cwd: repo,
+      stdio: "ignore",
+    });
+    unsetAcctHooksPath({ bindDir: repo });
+    let v = "";
+    try {
+      v = execFileSync("git", ["config", "--local", "--get", "core.hooksPath"], {
+        cwd: repo,
+        encoding: "utf8",
+      }).trim();
+    } catch {
+      v = "";
+    }
+    expect(v).toBe("");
+  });
+
+  it("leaves a third-party local core.hooksPath in place", () => {
+    const other = path.join(path.dirname(repo), "other-hooks");
+    fs.mkdirSync(other, { recursive: true });
+    fs.writeFileSync(path.join(other, "pre-commit"), "#!/bin/sh\necho hi\n");
+    execFileSync("git", ["config", "core.hooksPath", other], {
+      cwd: repo,
+      stdio: "ignore",
+    });
+    unsetAcctHooksPath({ bindDir: repo });
+    const v = execFileSync("git", ["config", "--local", "--get", "core.hooksPath"], {
+      cwd: repo,
+      encoding: "utf8",
+    }).trim();
+    expect(path.resolve(v)).toBe(path.resolve(other));
   });
 });

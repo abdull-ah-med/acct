@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { acctConfigDir } from "../config/store.js";
 import { ensureAcctDir } from "../util/fs-safe.js";
+import { posixShellSingleQuote } from "../util/paths.js";
+import { resolveAcctCliPaths } from "../enforce/hooks.js";
+import { renderCmdNodeInvoke } from "../util/cmd-escape.js";
 
 /**
  * Optional strongest guarantee: shims on PATH that route git/gh through acct exec.
@@ -45,14 +48,20 @@ export function installWrapShims(env: NodeJS.ProcessEnv = process.env): string {
   ensureAcctDir(dir);
 
   if (process.platform === "win32") {
-    fs.writeFileSync(path.join(dir, "gh.cmd"), `@echo off\r\nacct exec gh %*\r\n`);
+    const { node, acctJs } = resolveAcctCliPaths(env);
+    fs.writeFileSync(
+      path.join(dir, "gh.cmd"),
+      renderCmdNodeInvoke(node, acctJs, "exec gh %*"),
+    );
     fs.writeFileSync(path.join(dir, "git.cmd"), renderGitCmd());
   } else {
-    const gh = `#!/bin/sh\nexec acct exec gh "$@"\n`;
+    const { node, acctJs } = resolveAcctCliPaths(env);
+    const invoke = `${posixShellSingleQuote(node)} ${posixShellSingleQuote(acctJs)}`;
+    const gh = `#!/bin/sh\nexec ${invoke} exec gh "$@"\n`;
     fs.writeFileSync(path.join(dir, "gh"), gh, { mode: 0o755 });
     // Do not shadow git by default — credential helper + hooks are enough.
     // Provide acct-git for explicit wrapping.
-    const acctGit = `#!/bin/sh\nexec acct exec git "$@"\n`;
+    const acctGit = `#!/bin/sh\nexec ${invoke} exec git "$@"\n`;
     fs.writeFileSync(path.join(dir, "acct-git"), acctGit, { mode: 0o755 });
   }
 

@@ -254,6 +254,26 @@ describe("secrets + gh env", () => {
     expect(isDangerousGhArgv(["pwsh", "-c", "gh pr list"])).toBe(false);
   });
 
+  it("I18: pwsh EncodedCommand / -File / stdin are fail-closed (body not in argv)", () => {
+    // about_Pwsh: -EncodedCommand is Base64 UTF-16LE; -File runs a script;
+    // -Command - reads stdin. None of those bodies are in argv, so deny even
+    // when the opaque payload is not the string "gh auth token".
+    expect(isDangerousGhArgv(["pwsh", "-EncodedCommand", "AAAA"])).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-enc", "AAAA"])).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-e", "AAAA"])).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-ec", "AAAA"])).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-File", "hello.ps1"])).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-f", "hello.ps1"])).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-Command", "-"])).toBe(true);
+    expect(
+      isDangerousGhArgv(["cmd", "/c", "pwsh", "-EncodedCommand", "AAAA"]),
+    ).toBe(true);
+    expect(
+      isDangerousGhArgv(["cmd", "/c", "pwsh -EncodedCommand AAAA"]),
+    ).toBe(true);
+    expect(isDangerousGhArgv(["pwsh", "-c", "gh pr list"])).toBe(false);
+  });
+
   it("I18 P1.3: ANSI-C $'\\xNN' / octal escapes decode before deny match", () => {
     expect(
       shellScriptHasDangerousGhAuth("$'\\x67h' auth $'\\x74oken'"),

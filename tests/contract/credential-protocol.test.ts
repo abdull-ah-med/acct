@@ -50,7 +50,13 @@ describe("credential protocol (git-scm.com/docs/git-credential)", () => {
     expect(hostAllowed("evil.com", "github.com")).toBe(false);
   });
 
-  it("I7 pinned profile.port requires exact port match", () => {
+  it("I7 pinned :443 is treated as hostname-only (git omits default port)", () => {
+    expect(hostAllowed("github.com", "github.com:443")).toBe(true);
+    expect(hostAllowed("github.com:443", "github.com:443")).toBe(true);
+    expect(hostAllowed("github.com:8443", "github.com:443")).toBe(false);
+  });
+
+  it("I7 non-default pinned port still exact-matches", () => {
     expect(hostAllowed("ghe.example.com:8443", "ghe.example.com:8443")).toBe(
       true,
     );
