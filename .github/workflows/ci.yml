@@ -68,7 +68,7 @@ jobs:
           grep -q '^package/LICENSE$' /tmp/acct-pack.list
           grep -q '^package/README.md$' /tmp/acct-pack.list
           grep -q '^package/CHANGELOG.md$' /tmp/acct-pack.list
-          grep -q '^package/website.jpg$' /tmp/acct-pack.list
+          grep -q '^package/og.jpeg$' /tmp/acct-pack.list
           grep -q '^package/logo.svg$' /tmp/acct-pack.list
           # Source and tests must stay out of the published tarball
           if grep -E '^package/(src|tests)/' /tmp/acct-pack.list; then

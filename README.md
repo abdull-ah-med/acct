@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="https://acct-web.vercel.app/">
-    <img src="website.jpg" alt="acct website homepage" width="800" />
+    <img src="og.jpeg" alt="acct website homepage" width="800" />
   </a>
 </p>
 
