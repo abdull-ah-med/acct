@@ -95,6 +95,81 @@ describe("diagnose: commit/push/gh outlook (product rules)", () => {
     expect(report.push.outlook).toBe("blocked");
     expect(report.gh.outlook).toBe("risk");
   });
+
+  it("outside a git repo: unset identity is not a commit error and does not suggest acct install", () => {
+    // includeIf gitdir only matches when $GIT_DIR matches the glob
+    // (git-config Conditional includes). Binding-root status must not
+    // treat expected-unset identity as I11.
+    const report = diagnose(
+      scenario({
+        hasToken: true,
+        authPrincipal: "user-a",
+        commitName: "",
+        commitEmail: "",
+        inGitRepo: false,
+      }),
+    );
+    expect(report.issues.map((i) => i.code)).not.toContain(
+      "commit-identity-mismatch",
+    );
+    expect(report.ok).toBe(true);
+    expect(report.fixes).not.toContain("acct install");
+    expect(report.commit.outlook).toBe("n/a");
+    expect(report.push.outlook).toBe("n/a");
+  });
+
+  it("local user.* override: fix unsets local config, not only acct install", () => {
+    // git-config FILES: local last-wins. includeIf cannot override
+    // $GIT_DIR/config user.name / user.email.
+    const report = diagnose(
+      scenario({
+        hasToken: true,
+        authPrincipal: "user-a",
+        commitName: "Other",
+        commitEmail: "other@example.com",
+        inGitRepo: true,
+        localIdentityOverride: true,
+      }),
+    );
+    expect(report.commit.outlook).toBe("blocked");
+    expect(report.issues.some((i) => i.code === "commit-identity-mismatch")).toBe(
+      true,
+    );
+    expect(report.fixes).toContain(
+      "git config --local --unset-all user.name",
+    );
+    expect(report.fixes).toContain(
+      "git config --local --unset-all user.email",
+    );
+    expect(report.fixes.indexOf("git config --local --unset-all user.email")).toBeLessThan(
+      report.fixes.indexOf("acct install") === -1
+        ? Number.POSITIVE_INFINITY
+        : report.fixes.indexOf("acct install"),
+    );
+  });
+
+  it("gh stored active account ≠ profile: warn + switch path; do not treat raw gh as the profile user", () => {
+    // I10: acct injects GH_TOKEN and does not call gh auth switch.
+    // authPrincipal can still be the profile user. Raw gh without the
+    // hook follows the stored active account
+    // (https://cli.github.com/manual/gh_auth_status).
+    const report = diagnose(
+      scenario({
+        hasToken: true,
+        authPrincipal: "user-a",
+        ghActiveUser: "user-b",
+        ghActiveChecked: true,
+      }),
+    );
+    expect(report.ok).toBe(true);
+    expect(report.issues.map((i) => i.code)).toEqual(["gh-active-mismatch"]);
+    expect(report.gh.outlook).toBe("risk");
+    expect(report.gh.explanation).toContain("user-b");
+    expect(report.fixes).toContain(
+      "gh auth switch --hostname github.com --user user-a",
+    );
+    expect(report.fixes.some((c) => c.startsWith("acct exec"))).toBe(true);
+  });
 });
 
 describe("diagnose: emitted gh commands vs GitHub CLI manuals", () => {

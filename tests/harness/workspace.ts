@@ -74,7 +74,9 @@ export function initGitIdentity(
   name: string,
   email: string,
 ): void {
-  const r = spawnSync("git", ["init"], {
+  const template = path.join(dir, ".acct-empty-git-template");
+  fs.mkdirSync(template, { recursive: true });
+  const r = spawnSync("git", ["init", "--template", template], {
     cwd: dir,
     encoding: "utf8",
     env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
@@ -109,10 +111,16 @@ export function helperGet(
   });
 }
 
-export function acct(args: string[], env: NodeJS.ProcessEnv, cwd: string) {
+export function acct(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  opts: { input?: string } = {},
+) {
   return spawnSync(process.execPath, [ACCT, ...args], {
     cwd,
     env,
     encoding: "utf8",
+    input: opts.input,
   });
 }

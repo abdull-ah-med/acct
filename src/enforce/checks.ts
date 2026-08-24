@@ -2,6 +2,7 @@ import type { EnforceMode, Profile } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { envForProfile, ghApiLogin } from "../gh/env.js";
 import { execFileSync } from "node:child_process";
+import { pathIsPrefix } from "../util/paths.js";
 
 export interface CheckResult {
   ok: boolean;
@@ -21,6 +22,59 @@ export function defaultGitConfigReader(key: string, cwd: string): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * Working-tree toplevel, or null if cwd is not inside a work tree.
+ * Cite: https://git-scm.com/docs/git-rev-parse (`--show-toplevel`)
+ */
+export function gitShowToplevel(cwd: string): string | null {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether includeIf `gitdir:binding/` can apply: cwd's work-tree toplevel
+ * must be the binding directory or a repo inside it. A parent git repo
+ * discovered by walking up does not match that glob.
+ * Cite: https://git-scm.com/docs/git-config (Conditional includes gitdir)
+ */
+export function includeIfGitdirApplies(
+  cwd: string,
+  bindingPath?: string,
+): boolean {
+  const toplevel = gitShowToplevel(cwd);
+  if (!toplevel) return false;
+  if (!bindingPath) return true;
+  return pathIsPrefix(bindingPath, toplevel);
+}
+
+/**
+ * True when `$GIT_DIR/config` sets user.name or user.email (overrides includeIf).
+ * Cite: https://git-scm.com/docs/git-config (`--local`; FILES last-wins)
+ */
+export function hasLocalIdentityOverride(cwd: string): boolean {
+  for (const key of ["user.name", "user.email"] as const) {
+    try {
+      execFileSync("git", ["config", "--local", "--get", key], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return true;
+    } catch {
+      // unset, or not a git repo
+    }
+  }
+  return false;
 }
 
 export async function checkCommitIdentity(

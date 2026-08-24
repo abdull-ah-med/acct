@@ -29,13 +29,8 @@ export function formatWelcomeBanner(color = useBannerColor()): string {
   ${c.bold("acct")}  ${c.dim("one folder · one account · no leaks")}
 
   ${c.dim("Next:")}
-    acct init \\
-      --id work \\
-      --user <github-user> \\
-      --email you@example.com \\
-      --name "Your Name" \\
-      --bind ~/Work \\
-      --import-gh
+    acct                 ${c.dim("# terminal: one field at a time, then confirm")}
+    acct init            ${c.dim("# same wizard")}
 
   ${c.dim("Then add a shell hook (so gh follows the directory):")}
     eval "$(acct hook zsh)"   ${c.dim("# or: bash | fish | powershell")}

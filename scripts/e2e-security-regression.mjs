@@ -51,10 +51,11 @@ function helper(op, body, cwd, env) {
 const base = fs.mkdtempSync(path.join(ROOT, ".tmp-sec-"));
 const configDir = path.join(base, "config");
 const gitconfig = path.join(base, "gitconfig");
+const ghConfigDir = path.join(base, "gh-config");
 const personal = path.join(base, "personal");
 const work = path.join(base, "work");
 const unbound = path.join(base, "unbound");
-for (const d of [personal, work, unbound]) fs.mkdirSync(d, { recursive: true });
+for (const d of [personal, work, unbound, ghConfigDir]) fs.mkdirSync(d, { recursive: true });
 fs.writeFileSync(
   gitconfig,
   "[user]\n\tname = G\n\temail = g@e.com\n[credential]\n\thelper = osxkeychain\n",
@@ -69,6 +70,8 @@ const env = {
   ACCT_CONFIG_DIR: configDir,
   GIT_CONFIG_GLOBAL: gitconfig,
   GIT_CONFIG_NOSYSTEM: "1",
+  // Isolate gh hosts from the developer machine. Cite: https://cli.github.com/manual/gh_help_environment
+  GH_CONFIG_DIR: ghConfigDir,
   ACCT_SECRET_BACKEND: "file",
 };
 delete env.GH_TOKEN;

@@ -15,4 +15,8 @@ Primary-source research captured during product design. Prefer [../sources/SOURC
 | [i18-shell-bypass-round2-cites-2026-08-08.md](i18-shell-bypass-round2-cites-2026-08-08.md) | I18 round-2: `$a$b`, `$IFS`, printf escapes, decoder\|shell; profile id allowlist |
 | [i18-xargs-stdin-bypass-cites-2026-08-08.md](i18-xargs-stdin-bypass-cites-2026-08-08.md) | I18 fail-closed: `xargs` stdin append / `-I{}` → `gh`\|shell |
 | [i18-profile-case-round3-cites-2026-08-08.md](i18-profile-case-round3-cites-2026-08-08.md) | Profile id case-fold + I18 `$a$b` / awk / osascript / git alias |
-| [e2e-security-fix-cites-2026-08-08.md](e2e-security-fix-cites-2026-08-08.md) | E2E security regression cites |
+| [fix-round-gh-powershell-i18-2026-08-16.md](fix-round-gh-powershell-i18-2026-08-16.md) | Follow-gh PATH `gh` principal check; PowerShell EncodedCommand/`-File` I18 |
+| [fix-round-git-credential-includeif-hooks-2026-08-16.md](fix-round-git-credential-includeif-hooks-2026-08-16.md) | gitcredentials shell helpers, includeIf quoting, hooksPath local vs global, host port |
+| [fix-round-node-execpath-timing-2026-08-16.md](fix-round-node-execpath-timing-2026-08-16.md) | process.execPath; timingSafeEqual equal-length buffers |
+| [fix-round-nextjs-headers-og-2026-08-16.md](fix-round-nextjs-headers-og-2026-08-16.md) | Next.js headers/CSP, ogp.me dimensions, JSON-LD script escape |
+| [fix-round-security-hardening-2026-08-16.md](fix-round-security-hardening-2026-08-16.md) | Combined design for this fix round |

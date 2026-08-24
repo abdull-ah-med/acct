@@ -42,6 +42,7 @@ const ISSUE_CODE: Record<DiagnoseIssueCode, string> = {
   "principal-mismatch": "auth-principal-mismatch",
   "principal-unknown": "auth-principal-unverified",
   "commit-identity-mismatch": "commit-identity-mismatch",
+  "gh-active-mismatch": "gh-active-mismatch",
 };
 
 export async function runDoctor(
@@ -109,7 +110,10 @@ async function checkCwdProfile(
     resolved.enforce,
     cwd,
     env,
-    { queryPrincipal: !!opts.queryPrincipal },
+    {
+      queryPrincipal: !!opts.queryPrincipal,
+      bindingPath: resolved.bindingPath,
+    },
   );
   return {
     findings: findingsFromDiagnose(report),
@@ -132,11 +136,17 @@ function findingsFromDiagnose(report: DiagnoseReport): DoctorFinding[] {
     (c) => c.startsWith("gh auth switch") || c.startsWith("gh auth refresh"),
   );
   const installFix = report.fixes.find((c) => c === "acct install");
+  const unsetLocalFix = report.fixes.find((c) =>
+    c.startsWith("git config --local --unset-all"),
+  );
+  const switchFix = report.fixes.find((c) => c.startsWith("gh auth switch"));
   const onlineFix = report.fixes.find((c) => c.includes("doctor --online"));
   return report.issues.map((issue) => {
     let fix: string | undefined;
-    if (issue.code === "commit-identity-mismatch") fix = installFix;
-    else if (issue.code === "principal-unknown") fix = onlineFix;
+    if (issue.code === "commit-identity-mismatch") {
+      fix = unsetLocalFix ?? installFix;
+    } else if (issue.code === "principal-unknown") fix = onlineFix;
+    else if (issue.code === "gh-active-mismatch") fix = switchFix;
     else fix = refreshFix ?? importFix ?? loginFix;
     return {
       severity: issue.severity,

@@ -66,14 +66,9 @@ Also on [GitHub Packages](https://github.com/abdull-ah-med/acct/pkgs/npm/acct-sh
 ## Quick start
 
 ```bash
-# Profile + bind a tree (imports token from gh)
-acct init \
-  --id work \
-  --user your-work-user \
-  --email you@company.com \
-  --name "Your Name" \
-  --bind ~/Work \
-  --import-gh
+# In this folder: step-by-step (echoes each field, confirms at the end)
+acct
+# or: acct init
 
 # Shell hook (zsh)
 eval "$(acct hook zsh)"
@@ -90,11 +85,13 @@ Walk out → that identity is gone.
 
 ## Trust check: `acct doctor` / `acct status`
 
-When something is off (`token: missing`, `LEAK RISK`, identity mismatch), `acct status` and `acct doctor` explain:
+When something is off (`token: missing`, `LEAK RISK`, identity mismatch, wrong `gh` active account), `acct status` and `acct doctor` explain:
 
-1. **What's wrong**
-2. **Commands to run** (`gh auth switch --hostname … --user …`, `gh auth refresh --hostname …`, `acct profile token <id> --import-gh`, …)
+1. **What's wrong** — the specific cause, not a generic guess
+2. **Commands to run** (cause-specific: `cd` into a repo, `git config --local --unset-all user.*`, `acct install`, `gh auth switch --hostname … --user …`, `gh auth refresh --hostname …`, …)
 3. **Whether commit / push will go through** — and whether they would use the wrong GitHub account
+
+Standing in a binding directory that is **not a git repo** is not an identity error (`includeIf gitdir` only matches inside repos). `acct` does **not** run `gh auth switch` (that is global). Status prints `gh active` from stored gh config separately from the profile principal; use `acct exec` / the shell hook, or switch only if you want raw `gh` to follow that account everywhere.
 
 In `strict` mode a missing profile token or a mismatched `gh` principal **blocks push**. A commit still uses `includeIf` `user.name` / `user.email` (not `gh`), so it will not pick up the other GitHub login. Raw `gh` without `acct exec` *can* still be the wrong user — that's the leak risk.
 

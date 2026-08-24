@@ -77,6 +77,48 @@ export function ghApiLogin(
 }
 
 /**
+ * Stored gh active account for this host. Strips GH_TOKEN* so an injected
+ * profile token cannot mask the global active user.
+ * Uses `--json` so a dead token on another account is not fatal.
+ * Cite: https://cli.github.com/manual/gh_auth_status (`--active` `--hostname` `--json hosts`)
+ * Cite: https://cli.github.com/manual/gh_help_environment (GH_TOKEN precedence)
+ */
+export function ghActiveLogin(
+  host: string,
+  base: NodeJS.ProcessEnv = process.env,
+  opts: { timeoutMs?: number } = {},
+): string | null {
+  const env: NodeJS.ProcessEnv = { ...base };
+  delete env.GH_TOKEN;
+  delete env.GITHUB_TOKEN;
+  delete env.GH_ENTERPRISE_TOKEN;
+  delete env.GITHUB_ENTERPRISE_TOKEN;
+  try {
+    const out = execFileSync(
+      "gh",
+      ["auth", "status", "--hostname", host, "--active", "--json", "hosts"],
+      {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: opts.timeoutMs ?? 3000,
+      },
+    );
+    const parsed = JSON.parse(out) as {
+      hosts?: Record<string, Array<{ login?: unknown; active?: unknown }>>;
+    };
+    const entries = parsed.hosts?.[host] ?? [];
+    const active =
+      entries.find((e) => e.active === true) ?? entries[0];
+    return typeof active?.login === "string" && active.login.trim()
+      ? active.login.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * gh auth subcommands that mutate global gh/git auth state or dump tokens.
  * Cite: https://cli.github.com/manual/gh_auth_login (and logout/refresh/token/switch/setup-git)
  * Cite: docs/research/local-acct-exec-deny-cites-2026-08-08.md

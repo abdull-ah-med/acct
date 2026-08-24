@@ -1,13 +1,14 @@
 import type { EnforceMode, Protocol } from "../types.js";
 
 export type IssueSeverity = "error" | "warn";
-export type Outlook = "allowed" | "blocked" | "risk" | "leak";
+export type Outlook = "allowed" | "blocked" | "risk" | "leak" | "n/a";
 
 export type DiagnoseIssueCode =
   | "token-missing"
   | "principal-mismatch"
   | "principal-unknown"
-  | "commit-identity-mismatch";
+  | "commit-identity-mismatch"
+  | "gh-active-mismatch";
 
 export interface DiagnoseInput {
   profileId: string;
@@ -24,6 +25,26 @@ export interface DiagnoseInput {
   principalChecked: boolean;
   commitName: string;
   commitEmail: string;
+  /**
+   * includeIf gitdir matches this cwd (repo is the binding or inside it).
+   * Default true when omitted (identity mismatch is a real commit problem).
+   * Cite: https://git-scm.com/docs/git-config Conditional includes;
+   * https://git-scm.com/docs/git-rev-parse `--show-toplevel`
+   */
+  inGitRepo?: boolean;
+  /**
+   * This repo's `$GIT_DIR/config` sets user.name and/or user.email
+   * (git-config --local; local last-wins over includeIf).
+   */
+  localIdentityOverride?: boolean;
+  /**
+   * gh's stored active account for this host, with GH_TOKEN stripped.
+   * Distinct from authPrincipal (which is `gh api user` under profile env).
+   * Cite: https://cli.github.com/manual/gh_auth_status (`--active` `--json hosts`)
+   */
+  ghActiveUser?: string | null;
+  /** False when the caller skipped `gh auth status` (doctor without --online). */
+  ghActiveChecked?: boolean;
 }
 
 export interface DiagnoseIssue {
@@ -53,6 +74,18 @@ function identityMatches(input: DiagnoseInput): boolean {
 
 function principalMatches(input: DiagnoseInput): boolean {
   return !!input.authPrincipal && input.authPrincipal === input.githubUser;
+}
+
+function isGitRepo(input: DiagnoseInput): boolean {
+  return input.inGitRepo !== false;
+}
+
+function storedActiveMismatches(input: DiagnoseInput): boolean {
+  return (
+    !!input.ghActiveChecked &&
+    !!input.ghActiveUser &&
+    input.ghActiveUser !== input.githubUser
+  );
 }
 
 /**
@@ -91,14 +124,29 @@ export function diagnose(input: DiagnoseInput): DiagnoseReport {
     });
   }
 
-  if (!identityMatches(input)) {
+  if (storedActiveMismatches(input)) {
+    issues.push({
+      code: "gh-active-mismatch",
+      severity: "warn",
+      summary: `gh's global active account is ${input.ghActiveUser}, but this folder expects ${input.githubUser}`,
+      detail:
+        `acct does not run gh auth switch (it is global). acct exec / the shell hook injects ${input.githubUser}'s token. ` +
+        `Raw gh without GH_TOKEN uses ${input.ghActiveUser}.`,
+    });
+  }
+
+  // includeIf gitdir only matches when cwd is inside a work tree
+  // (https://git-scm.com/docs/git-config Conditional includes).
+  if (!identityMatches(input) && isGitRepo(input)) {
     const seen = `${input.commitName || "(unset)"} <${input.commitEmail || "(unset)"}>`;
     const want = `${input.name} <${input.email}>`;
     issues.push({
       code: "commit-identity-mismatch",
       severity: input.enforce === "off" ? "warn" : "error",
       summary: `git identity is ${seen}, but profile "${input.profileId}" requires ${want}`,
-      detail: "includeIf is missing, stale, or this repo overrides user.name / user.email.",
+      detail: input.localIdentityOverride
+        ? "this repo's .git/config sets user.name / user.email, which overrides includeIf (git-config FILES last-wins)."
+        : "includeIf is missing, stale, or this repo overrides user.name / user.email.",
     });
   }
 
@@ -116,6 +164,12 @@ function buildFixes(input: DiagnoseInput, issues: DiagnoseIssue[]): string[] {
   const fixes: string[] = [];
 
   if (codes.has("commit-identity-mismatch")) {
+    if (input.localIdentityOverride) {
+      // Local last-wins; includeIf cannot override $GIT_DIR/config.
+      // Cite: https://git-scm.com/docs/git-config (FILES; --local; --unset-all)
+      fixes.push("git config --local --unset-all user.name");
+      fixes.push("git config --local --unset-all user.email");
+    }
     fixes.push("acct install");
   }
 
@@ -141,6 +195,19 @@ function buildFixes(input: DiagnoseInput, issues: DiagnoseIssue[]): string[] {
     );
   }
 
+  if (codes.has("gh-active-mismatch") && !codes.has("principal-mismatch") && !codes.has("token-missing")) {
+    // I10: prefer injection over a global switch. Switch is optional and global.
+    // Cite: https://cli.github.com/manual/gh_auth_switch
+    fixes.push("acct exec -- gh …");
+    fixes.push('# shell hook (injects token, no switch): eval "$(acct hook zsh)"');
+    fixes.push(
+      `gh auth switch --hostname ${input.host} --user ${input.githubUser}`,
+    );
+    fixes.push(
+      "# switch is global — other directories will then see this account as gh's active user",
+    );
+  }
+
   if (codes.has("principal-unknown")) {
     fixes.push(`acct doctor --online`);
   }
@@ -153,6 +220,13 @@ function buildFixes(input: DiagnoseInput, issues: DiagnoseIssue[]): string[] {
 }
 
 function commitOutlook(input: DiagnoseInput): PlaneOutlook {
+  if (!isGitRepo(input)) {
+    return {
+      outlook: "n/a",
+      explanation:
+        "not a git repository. includeIf identity applies inside repos under this binding.",
+    };
+  }
   if (identityMatches(input)) {
     return {
       outlook: "allowed",
@@ -183,6 +257,12 @@ function commitOutlook(input: DiagnoseInput): PlaneOutlook {
 }
 
 function pushOutlook(input: DiagnoseInput): PlaneOutlook {
+  if (!isGitRepo(input)) {
+    return {
+      outlook: "n/a",
+      explanation: "not a git repository.",
+    };
+  }
   const wrongPrincipal =
     input.principalChecked &&
     input.authPrincipal &&
@@ -263,6 +343,14 @@ function ghOutlook(input: DiagnoseInput): PlaneOutlook {
         : "no profile token — raw gh uses your default gh login. Pass --online to see which user.",
     };
   }
+  if (storedActiveMismatches(input)) {
+    return {
+      outlook: "risk",
+      explanation:
+        `raw \`gh\` without acct exec / the shell hook uses stored active account ${input.ghActiveUser}. ` +
+        `acct exec injects ${input.githubUser}'s token (no gh auth switch).`,
+    };
+  }
   if (principalMatches(input) && input.hasToken) {
     return {
       outlook: "allowed",
@@ -301,6 +389,8 @@ function outlookLabel(outlook: Outlook): string {
       return "risk   ";
     case "leak":
       return "leak   ";
+    case "n/a":
+      return "n/a    ";
   }
 }
 

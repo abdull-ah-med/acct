@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-24
+
 ### Security
 
 - Credential shim and generated shell/wrap shims bake `process.execPath` (I11b). Git executes helpers via the shell ([gitcredentials](https://git-scm.com/docs/gitcredentials)).
@@ -17,7 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `acct uninstall` unsets local `core.hooksPath` in **bound** git toplevels (and cwd), and only when the value is acct's hooks dir — not a third-party or unrelated global hooksPath ([git-config FILES](https://git-scm.com/docs/git-config)).
 - Helper `erase` compares HMAC-SHA256 digests with `timingSafeEqual` ([crypto.timingSafeEqual](https://nodejs.org/api/crypto.html#cryptotimingsafeequala-b); [createHmac](https://nodejs.org/api/crypto.html#cryptocreatehmacalgorithm-key-options)).
 
+### Added
+
+- Bare `acct` (TTY) and `acct init` without flags run a step-by-step wizard: reuse this folder's git/gh identity or enter id / GitHub username / email / name one at a time (echoed), print a summary, confirm, then create the profile, bind cwd, and import the gh token. Flag `acct init --id … --user … --email … --name …` stays non-interactive. Non-TTY `acct` still prints the tip sheet so scripts do not hang.
+
 ### Fixed
+
+- `acct status` / `acct doctor` no longer treat unset git identity at a binding root that is **not a git repo** as an I11 failure. `includeIf gitdir` only matches inside a work tree ([git-config](https://git-scm.com/docs/git-config) Conditional includes; [git-rev-parse `--is-inside-work-tree`](https://git-scm.com/docs/git-rev-parse)). Fix path is `cd` into a repo, not `acct install`.
+- Local `$GIT_DIR/config` `user.name` / `user.email` (which override includeIf) get `git config --local --unset-all` as the fix, then `acct install` ([git-config FILES](https://git-scm.com/docs/git-config) last-wins).
+- Status reports gh's **stored** active account (`gh auth status --active --json hosts`, GH_TOKEN stripped) separately from the profile principal. A mismatch is a warn with `acct exec` / shell hook first, then optional `gh auth switch` (global; I10). `--json` so a dead token on another account is not fatal ([gh auth status](https://cli.github.com/manual/gh_auth_status)).
 
 - `hostAllowed`: `profile.host` of `hostname:443` accepts git's default `host=hostname` (port omitted) ([git-credential](https://git-scm.com/docs/git-credential)).
 - `acct doctor` cwd `gh api user` only with `--online` (status/hooks still always query).
@@ -206,6 +216,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI matrix (Ubuntu / macOS / Windows × Node 20 / 22) with lint, test, package, and e2e gates
 - Tagged npm publish with provenance
 
+[0.1.12]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.12
 [0.1.11]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.11
 [0.1.10]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.10
 [0.1.9]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.9

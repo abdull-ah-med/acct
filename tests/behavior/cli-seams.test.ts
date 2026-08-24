@@ -65,6 +65,65 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
     }
   });
 
+  it("status at binding root (not a git repo): healthy token is not an identity error", () => {
+    // includeIf gitdir does not apply outside a work tree
+    // (https://git-scm.com/docs/git-config Conditional includes).
+    const ws = makeWorkspace(work);
+    ws.putToken("gho_TEST_ONLY_file");
+    const gh = installFakeGh(ws.root, {
+      tokens: { "github.com::user-a": "gho_TEST_ONLY_file" },
+      apiUser: "user-a",
+      activeUser: "user-a",
+    });
+    const env = gh.env({ ...ws.env, ACCT_FOLLOW_GH: "1" });
+    try {
+      const r = acct(["status"], env, ws.workDir);
+      const out = `${r.stdout}\n${r.stderr}`;
+      expect(r.status, out).toBe(0);
+      expect(out).not.toMatch(/includeIf is missing/i);
+      expect(out).not.toMatch(/commit\s+blocked/);
+      expect(out).toMatch(/not a git repository/i);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it("status: profile token matches, gh stored active account does not → switch path, no silent allow", () => {
+    // I10: no gh auth switch. Raw gh follows stored active account
+    // (https://cli.github.com/manual/gh_auth_status).
+    const ws = makeWorkspace(work);
+    ws.putToken("gho_TEST_ONLY_file");
+    const gh = installFakeGh(ws.root, {
+      tokens: { "github.com::user-a": "gho_TEST_ONLY_file" },
+      apiUser: "user-a",
+      activeUser: "user-b",
+    });
+    const env = gh.env({ ...ws.env, ACCT_FOLLOW_GH: "1" });
+    try {
+      const r = acct(["status"], env, ws.workDir);
+      const out = `${r.stdout}\n${r.stderr}`;
+      expect(out).toMatch(/gh's global active account is user-b/);
+      expect(out).toMatch(
+        /gh auth switch --hostname github\.com --user user-a/,
+      );
+      expect(out).toMatch(/gh\s+risk/);
+      expect(illegalGhFlags(parseGhAuthInvocations(out.split("\n")))).toEqual(
+        [],
+      );
+      const statusCall = gh
+        .calls()
+        .find((c) => c.argv[0] === "auth" && c.argv[1] === "status");
+      expect(statusCall).toBeDefined();
+      expect(statusCall?.hasGhToken).toBe(false);
+      expect(statusCall?.argv).toContain("--json");
+      expect(statusCall?.argv).toContain("hosts");
+      expect(statusCall?.argv).toContain("--active");
+      expect(gh.calls().some((c) => c.argv[1] === "switch")).toBe(false);
+    } finally {
+      ws.close();
+    }
+  });
+
   it("whoami prints expected vs actual and exits 1 on mismatch", () => {
     const ws = makeWorkspace(work);
     const gh = installFakeGh(ws.root, { apiUser: "user-b" });

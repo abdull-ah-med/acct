@@ -50,6 +50,26 @@ if (argv[0] === "api" && argv[1] === "user") {
   process.exit(0);
 }
 
+if (argv[0] === "auth" && argv[1] === "status") {
+  // https://cli.github.com/manual/gh_auth_status — --json hosts always exits 0
+  const host = flag(argv, "--hostname") || "github.com";
+  const activeUser = state.activeUser || "";
+  const hosts = {};
+  if (activeUser) {
+    hosts[host] = [{
+      active: true,
+      host: host,
+      login: activeUser,
+      state: "success",
+      gitProtocol: "https",
+    }];
+  } else {
+    hosts[host] = [];
+  }
+  process.stdout.write(JSON.stringify({ hosts: hosts }) + "\\n");
+  process.exit(0);
+}
+
 process.stderr.write("fake-gh: unexpected " + argv.join(" ") + "\\n");
 process.exit(2);
 
@@ -69,6 +89,7 @@ export interface FakeGhState {
   tokens: Record<string, string>;
   log: string;
   apiUser?: string;
+  activeUser?: string;
 }
 
 export interface FakeGhCall {
@@ -90,6 +111,8 @@ export interface FakeGh {
 export interface FakeGhOptions {
   tokens?: Record<string, string>;
   apiUser?: string;
+  /** Stored gh active account (auth status --json), independent of GH_TOKEN. */
+  activeUser?: string;
 }
 
 export function installFakeGh(dir: string, opts: FakeGhOptions = {}): FakeGh {
@@ -99,9 +122,10 @@ export function installFakeGh(dir: string, opts: FakeGhOptions = {}): FakeGh {
   const statePath = path.join(dir, "fake-gh-state.json");
   let tokens = { ...(opts.tokens ?? {}) };
   let apiUser = opts.apiUser ?? "";
+  let activeUser = opts.activeUser ?? "";
 
   const writeState = () => {
-    const state: FakeGhState = { tokens, log: logPath, apiUser };
+    const state: FakeGhState = { tokens, log: logPath, apiUser, activeUser };
     fs.writeFileSync(statePath, JSON.stringify(state));
   };
   writeState();

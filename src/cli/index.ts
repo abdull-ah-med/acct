@@ -29,16 +29,22 @@ import {
   removeProfileArtifacts,
 } from "../identity/includeIf.js";
 import { setProfileToken, deleteProfileToken } from "../secrets/store.js";
-import { importAndStoreToken, envForProfile, isDangerousGhArgv, ghApiLogin, stripGitConfigEnvOverrides } from "../gh/env.js";
+import { importAndStoreToken, envForProfile, isDangerousGhArgv, ghApiLogin, ghActiveLogin, stripGitConfigEnvOverrides } from "../gh/env.js";
 import { generateSshKey, readPublicKey, testSshAuth } from "../ssh/keys.js";
 import {
   checkCommitIdentity,
   checkPushAuth,
   formatBlockMessage,
+  defaultGitConfigReader,
 } from "../enforce/checks.js";
 import { installHooks } from "../enforce/hooks.js";
 import { hookScript, shellEnvExports, type ShellKind } from "../shell/hooks.js";
 import { formatWelcomeBanner } from "./banner.js";
+import {
+  collectInitPlan,
+  createStdioWizardIO,
+  type InitPlan,
+} from "./wizard.js";
 import { buildShellEnvExports } from "../shell/env.js";
 import { installWrapShims, wrapPathExport } from "../shell/wrap.js";
 import { runDoctor } from "../doctor/run.js";
@@ -242,6 +248,82 @@ export function unsetAcctHooksPath(
   }
 }
 
+async function performInit(plan: InitPlan): Promise<void> {
+  assertValidProfileId(plan.id);
+  assertSafeProfileFields({
+    name: plan.name,
+    email: plan.email,
+    host: plan.host,
+    user: plan.githubUser,
+  });
+  const bindPath = path.resolve(plan.bind);
+  assertSafeBindPath(bindPath);
+
+  let config = loadConfig();
+  assertNoProfileIdCaseCollision(config.profiles, plan.id);
+  const profile: Profile = {
+    id: plan.id,
+    githubUser: plan.githubUser,
+    host: plan.host,
+    name: plan.name,
+    email: plan.email,
+    protocol: plan.protocol,
+    enforce: "strict",
+  };
+  config = upsertProfile(config, profile);
+  config = upsertBinding(config, {
+    path: bindPath,
+    profileId: profile.id,
+  });
+  assertNoSecretsInConfig(config);
+  saveConfig(config);
+  if (plan.importGh) {
+    await importAndStoreToken(profile);
+    console.log(`Imported token for ${profile.githubUser} into OS keychain`);
+  }
+  installIncludeIf(config);
+  const hooks = installHooks();
+  try {
+    configureHooksPath(hooks, {
+      bindDir: bindPath,
+      global: !!plan.globalHooks,
+      force: !!plan.force,
+    });
+  } catch (e) {
+    console.warn(`Could not set core.hooksPath: ${e}`);
+    throw e;
+  }
+  config.installed = true;
+  saveConfig(config);
+  console.log(
+    `Initialized profile "${profile.id}" bound to ${normalizePath(plan.bind)}`,
+  );
+  console.log(
+    'Add shell hook: eval "$(acct hook zsh)"  # or bash/fish/powershell',
+  );
+}
+
+async function runWizardAndInit(cwd: string): Promise<void> {
+  const io = createStdioWizardIO();
+  try {
+    const plan = await collectInitPlan(io, {
+      cwd,
+      current: {
+        name: defaultGitConfigReader("user.name", cwd),
+        email: defaultGitConfigReader("user.email", cwd),
+        githubUser: ghActiveLogin("github.com"),
+      },
+    });
+    if (!plan) {
+      process.exitCode = 1;
+      return;
+    }
+    await performInit(plan);
+  } finally {
+    io.close();
+  }
+}
+
 export async function runCli(argv: string[]): Promise<void> {
   const program = new Command();
   program
@@ -251,19 +333,24 @@ export async function runCli(argv: string[]): Promise<void> {
     )
     .version(CLI_VERSION);
 
-  // Bare `acct` — npm hides postinstall stdout (npm ≥7), so welcome lives here.
-  program.action(() => {
+  // Bare `acct` in a TTY starts the setup wizard. Non-TTY keeps the tip sheet
+  // so scripts/CI do not hang on prompts.
+  program.action(async () => {
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      await runWizardAndInit(process.cwd());
+      return;
+    }
     console.log(formatWelcomeBanner());
     console.log("  Run acct --help for all commands.\n");
   });
 
   program
     .command("init")
-    .description("Interactive-ish setup: create a profile and bind a directory")
-    .requiredOption("--id <id>", "Profile id (e.g. work)")
-    .requiredOption("--user <githubUser>", "GitHub username")
-    .requiredOption("--email <email>", "Commit email")
-    .requiredOption("--name <name>", "Commit name")
+    .description("Create a profile and bind a directory (interactive if flags omitted)")
+    .option("--id <id>", "Profile id (e.g. work)")
+    .option("--user <githubUser>", "GitHub username")
+    .option("--email <email>", "Commit email")
+    .option("--name <name>", "Commit name")
     .option("--host <host>", "GitHub host", "github.com")
     .option("--protocol <protocol>", "https|ssh", "https")
     .option("--bind <dir>", "Directory to bind", process.cwd())
@@ -277,55 +364,22 @@ export async function runCli(argv: string[]): Promise<void> {
       "Overwrite an existing non-acct core.hooksPath in the bind/target repo",
     )
     .action(async (opts) => {
-      assertValidProfileId(opts.id);
-      assertSafeProfileFields({
-        name: opts.name,
-        email: opts.email,
-        host: opts.host,
-        user: opts.user,
-      });
-      let config = loadConfig();
-      // Case-fold uniqueness: work vs WORK share git/work.inc on macOS/Windows.
-      // Cite: https://git-scm.com/docs/git-config (gitdir/i, core.ignoreCase)
-      // Cite: docs/research/i18-profile-case-round3-cites-2026-08-08.md
-      assertNoProfileIdCaseCollision(config.profiles, opts.id);
-      assertSafeBindPath(path.resolve(opts.bind));
-      const profile: Profile = {
+      if (!(opts.id && opts.user && opts.email && opts.name)) {
+        await runWizardAndInit(path.resolve(String(opts.bind || process.cwd())));
+        return;
+      }
+      await performInit({
         id: opts.id,
         githubUser: opts.user,
-        host: opts.host,
-        name: opts.name,
         email: opts.email,
+        name: opts.name,
+        host: opts.host,
         protocol: opts.protocol as Protocol,
-        enforce: "strict",
-      };
-      config = upsertProfile(config, profile);
-      config = upsertBinding(config, {
-        path: path.resolve(opts.bind),
-        profileId: profile.id,
+        bind: opts.bind,
+        importGh: !!opts.importGh,
+        globalHooks: !!opts.globalHooks,
+        force: !!opts.force,
       });
-      assertNoSecretsInConfig(config);
-      saveConfig(config);
-      if (opts.importGh) {
-        await importAndStoreToken(profile);
-        console.log(`Imported token for ${profile.githubUser} into OS keychain`);
-      }
-      installIncludeIf(config);
-      const hooks = installHooks();
-      try {
-        configureHooksPath(hooks, {
-          global: !!opts.globalHooks,
-          force: !!opts.force,
-          bindDir: path.resolve(opts.bind),
-        });
-      } catch (e) {
-        console.warn(`Could not set core.hooksPath: ${e}`);
-        throw e;
-      }
-      config.installed = true;
-      saveConfig(config);
-      console.log(`Initialized profile "${profile.id}" bound to ${normalizePath(opts.bind)}`);
-      console.log("Add shell hook: eval \"$(acct hook zsh)\"  # or bash/fish/powershell");
     });
 
   const profileCmd = program.command("profile").description("Manage profiles");
@@ -567,12 +621,22 @@ export async function runCli(argv: string[]): Promise<void> {
         resolved.enforce,
         process.cwd(),
         process.env,
-        { queryPrincipal: true },
+        { queryPrincipal: true, bindingPath: resolved.bindingPath },
       );
       console.log(`token: ${input.hasToken ? "present (keychain)" : "missing"}`);
       console.log(
         `auth principal: ${input.authPrincipal ?? "(could not query)"}`,
       );
+      if (input.ghActiveChecked) {
+        console.log(
+          `gh active: ${input.ghActiveUser ?? "(could not query)"}`,
+        );
+      }
+      if (input.inGitRepo === false) {
+        console.log(
+          "note: not a git repository under this binding — includeIf identity applies inside repos here",
+        );
+      }
       if (
         input.authPrincipal &&
         input.authPrincipal !== p.githubUser
@@ -881,6 +945,7 @@ export async function runCli(argv: string[]): Promise<void> {
               resolved.enforce,
               process.cwd(),
               process.env,
+              { bindingPath: resolved.bindingPath },
             );
             if (report.issues.length > 0) {
               console.error("");
@@ -904,6 +969,7 @@ export async function runCli(argv: string[]): Promise<void> {
               resolved.enforce,
               process.cwd(),
               process.env,
+              { bindingPath: resolved.bindingPath },
             );
             if (report.issues.length > 0) {
               console.error("");
