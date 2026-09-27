@@ -124,11 +124,21 @@ jobs:
         run: |
           set -euo pipefail
           owner="$(printf '%s' "$PACKAGE_OWNER" | tr '[:upper:]' '[:lower:]')"
-          npm_version="$(npm view "acct-sh@$RELEASE_VERSION" version --registry=https://registry.npmjs.org)"
-          github_version="$(npm view "@$owner/acct-sh@$RELEASE_VERSION" version --registry=https://npm.pkg.github.com)"
-          test "$npm_version" = "$RELEASE_VERSION"
-          test "$github_version" = "$RELEASE_VERSION"
-          echo "Verified acct-sh@$npm_version on npm and @$owner/acct-sh@$github_version on GitHub Packages"
+          # Newly published versions can take time to become visible. Revalidate
+          # cached metadata and retry within a bounded window; never accept a
+          # different version or mark a failed lookup as verified.
+          for attempt in 1 2 3 4 5 6; do
+            npm_version="$(npm view "acct-sh@$RELEASE_VERSION" version --registry=https://registry.npmjs.org --prefer-online)" || npm_version=""
+            github_version="$(npm view "@$owner/acct-sh@$RELEASE_VERSION" version --registry=https://npm.pkg.github.com --prefer-online)" || github_version=""
+            if [ "$npm_version" = "$RELEASE_VERSION" ] && [ "$github_version" = "$RELEASE_VERSION" ]; then
+              echo "Verified acct-sh@$npm_version on npm and @$owner/acct-sh@$github_version on GitHub Packages"
+              exit 0
+            fi
+            echo "Registry metadata not ready (attempt $attempt/6)"
+            if [ "$attempt" -lt 6 ]; then sleep 10; fi
+          done
+          echo "Could not verify both registry versions within the retry window" >&2
+          exit 1
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
