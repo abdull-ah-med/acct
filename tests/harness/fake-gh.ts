@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { installNativeCommand } from "./native-command.js";
 
 // .cjs so Node treats this as CommonJS even though acct's package.json is "type": "module".
 const FAKE_GH_CJS = `"use strict";
@@ -80,11 +81,6 @@ function flag(argv, name) {
 }
 `;
 
-const FAKE_GH_SH = `#!/bin/sh
-dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec node "$dir/gh.cjs" "$@"
-`;
-
 export interface FakeGhState {
   tokens: Record<string, string>;
   log: string;
@@ -131,12 +127,7 @@ export function installFakeGh(dir: string, opts: FakeGhOptions = {}): FakeGh {
   writeState();
   fs.writeFileSync(logPath, "");
 
-  fs.writeFileSync(path.join(binDir, "gh.cjs"), FAKE_GH_CJS);
-  fs.writeFileSync(path.join(binDir, "gh"), FAKE_GH_SH, { mode: 0o755 });
-  fs.writeFileSync(
-    path.join(binDir, "gh.cmd"),
-    `@echo off\r\nnode "%~dp0gh.cjs" %*\r\n`,
-  );
+  const native = installNativeCommand(binDir, "gh", FAKE_GH_CJS);
 
   return {
     binDir,
@@ -146,6 +137,7 @@ export function installFakeGh(dir: string, opts: FakeGhOptions = {}): FakeGh {
       return {
         ...process.env,
         ...extra,
+        ...native.env,
         PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
         ACCT_FAKE_GH_STATE: statePath,
       };

@@ -1,3 +1,5 @@
+import path from "node:path";
+
 /**
  * Validate profile fields before they are written into gitconfig includes.
  * Newlines / quotes / backslashes enable INI section breakout (credential.helper, core.sshCommand).
@@ -80,7 +82,13 @@ export function assertSafeBindPath(dir: string): void {
   if (dir.length === 0) {
     throw new Error("Invalid bind path: must not be empty");
   }
-  if (BIND_UNSAFE.test(dir)) {
+  // Recognized absolute Windows paths use backslashes as separators. Validate
+  // their Git slash representation; keep literal POSIX/relative backslashes
+  // forbidden. https://git-scm.com/docs/git-config (Conditional includes)
+  const gitPath = path.win32.isAbsolute(dir) && !dir.startsWith("/")
+    ? dir.replace(/\\/g, "/")
+    : dir;
+  if (BIND_UNSAFE.test(gitPath)) {
     throw new Error(
       "Invalid bind path: must not contain CR, LF, NUL, backslash, double-quote, brackets, or gitdir glob metacharacters * ?",
     );

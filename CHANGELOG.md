@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-09-27
+
+### Fixed
+
+- Accept native absolute Windows drive and UNC binding paths during initialization,
+  binding, and include installation. Path validation still rejects configuration
+  control characters, quotes, brackets, and wildcard patterns; Git includes use
+  normalized forward-slash paths.
+- Replace shell-only fake gh/git commands in behavioral tests with native
+  executable fixtures so Windows tests exercise the same CLI seams without
+  falling through to real tools or enabling shell execution in production.
+
+### Changed
+
+- Release tags are passed to the workflow through environment variables and
+  validated as version tags before publication.
+- Releases use versioned, reviewed notes and verify that the requested version
+  is available from both npm and GitHub Packages before creating the release.
+
+### Scope
+
+- This is a Windows compatibility and release-verification patch. The separate
+  project-wide review findings remain open; this release does not claim to
+  resolve those issues or provide a complete security audit.
+
 ## [0.1.12] - 2026-08-24
 
 ### Security

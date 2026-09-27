@@ -48,23 +48,26 @@ jobs:
 
       - name: Resolve release tag
         id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.tag }}" ]; then
-            tag="${{ inputs.tag }}"
+          if [ -n "$REQUESTED_TAG" ]; then
+            tag="$REQUESTED_TAG"
           else
             tag="${GITHUB_REF_NAME}"
           fi
-          case "$tag" in
-            v*) ;;
-            *) echo "Tag must look like vX.Y.Z (got: $tag)" >&2; exit 1 ;;
-          esac
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must look like vX.Y.Z (got: $tag)" >&2
+            exit 1
+          fi
           version="${tag#v}"
           pkg="$(node -p "require('./package.json').version")"
           if [ "$version" != "$pkg" ]; then
             echo "Tag $tag does not match package.json version $pkg" >&2
             exit 1
           fi
+          test -s "docs/releases/$tag.md"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -113,22 +116,24 @@ jobs:
           # Already built + tested above; avoid re-running prepublishOnly
           npm publish --registry=https://npm.pkg.github.com --access public --ignore-scripts
 
+      - name: Verify both registry versions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+          PACKAGE_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$PACKAGE_OWNER" | tr '[:upper:]' '[:lower:]')"
+          npm_version="$(npm view "acct-sh@$RELEASE_VERSION" version --registry=https://registry.npmjs.org)"
+          github_version="$(npm view "@$owner/acct-sh@$RELEASE_VERSION" version --registry=https://npm.pkg.github.com)"
+          test "$npm_version" = "$RELEASE_VERSION"
+          test "$github_version" = "$RELEASE_VERSION"
+          echo "Verified acct-sh@$npm_version on npm and @$owner/acct-sh@$github_version on GitHub Packages"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: ${{ steps.tag.outputs.tag }}
-          generate_release_notes: true
-          body: |
-            ## acct-sh ${{ steps.tag.outputs.version }}
-
-            **Install (npmjs):** `npm install -g acct-sh@${{ steps.tag.outputs.version }}`
-
-            **Install (GitHub Packages):** `npm install -g @${{ github.repository_owner }}/acct-sh@${{ steps.tag.outputs.version }}`
-
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/v${{ steps.tag.outputs.version }}/CHANGELOG.md) for details.
-
-            - npmjs: https://www.npmjs.com/package/acct-sh
-            - GitHub Packages: https://github.com/${{ github.repository }}/pkgs/npm/acct-sh
-
-            CLI bins: `acct`, `git-credential-acct`
+          name: acct-sh ${{ steps.tag.outputs.tag }}
+          generate_release_notes: false
+          body_path: docs/releases/${{ steps.tag.outputs.tag }}.md

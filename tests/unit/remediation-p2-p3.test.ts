@@ -24,6 +24,25 @@ const profile: Profile = {
   protocol: "https",
 };
 
+describe("native Windows binding paths", () => {
+  it("accepts absolute drive and UNC paths without allowing config metacharacters", () => {
+    expect(() => assertSafeBindPath("C:\\Users\\Example\\Work")).not.toThrow();
+    expect(() => assertSafeBindPath("\\\\server\\share\\Work")).not.toThrow();
+    for (const unsafe of [
+      'C:\\Work\\bad"name',
+      "C:\\Work\\bad\nname",
+      "C:\\Work\\bad\0name",
+      "C:\\Work\\glob*",
+      "C:\\Work\\glob?",
+      "C:\\Work\\[glob]",
+      "/tmp/literal\\backslash",
+      "relative\\path",
+    ]) {
+      expect(() => assertSafeBindPath(unsafe)).toThrow(/Invalid bind path/);
+    }
+  });
+});
+
 describe("installIncludeIf locking / cleanup", () => {
   let tmp: string;
   let prevConfig: string | undefined;

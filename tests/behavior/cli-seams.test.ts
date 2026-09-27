@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Profile } from "../../src/types.js";
 import { ensureDistBuild, installFakeGh } from "../harness/fake-gh.js";
+import { installNativeCommand } from "../harness/native-command.js";
 import {
   acct,
   initGitIdentity,
@@ -190,13 +191,16 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
     const binDir = path.join(ws.root, "fake-git");
     fs.mkdirSync(binDir, { recursive: true });
     const dump = path.join(ws.root, "git-env.txt");
-    fs.writeFileSync(
-      path.join(binDir, "git"),
-      `#!/bin/sh\nenv | grep '^GIT_CONFIG' > "${dump}"\nexit 0\n`,
-      { mode: 0o755 },
-    );
+    const fakeGit = installNativeCommand(binDir, "git", `
+const fs = require("node:fs");
+const lines = Object.entries(process.env)
+  .filter(([key]) => key.startsWith("GIT_CONFIG"))
+  .map(([key, value]) => key + "=" + value);
+fs.writeFileSync(${JSON.stringify(dump)}, lines.join("\\n"));
+`);
     const env = {
       ...ws.env,
+      ...fakeGit.env,
       PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
       GIT_CONFIG_COUNT: "1",
       GIT_CONFIG_KEY_0: "alias.p",
