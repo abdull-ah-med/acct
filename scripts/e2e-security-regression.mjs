@@ -49,14 +49,17 @@ function helper(op, body, cwd, env) {
   });
 }
 
-const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-sec-")));
+const base = fs.realpathSync.native(
+  fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-sec-")),
+);
 const configDir = path.join(base, "config");
 const gitconfig = path.join(base, "gitconfig");
 const ghConfigDir = path.join(base, "gh-config");
 const personal = path.join(base, "personal");
 const work = path.join(base, "work");
 const unbound = path.join(base, "unbound");
-for (const d of [personal, work, unbound, ghConfigDir]) fs.mkdirSync(d, { recursive: true });
+for (const d of [personal, work, unbound, ghConfigDir])
+  fs.mkdirSync(d, { recursive: true });
 fs.writeFileSync(
   gitconfig,
   "[user]\n\tname = G\n\temail = g@e.com\n[credential]\n\thelper = osxkeychain\n",
@@ -133,12 +136,10 @@ run(process.execPath, [ACCT, "profile", "token", SECONDARY.id, "--stdin"], {
 acct(["install"], env, personal);
 
 {
-  const r = helper(
-    "get",
-    "protocol=https\nhost=github.com\n\n",
-    work,
-    { ...env, ACCT_PROFILE: PRIMARY.id },
-  );
+  const r = helper("get", "protocol=https\nhost=github.com\n\n", work, {
+    ...env,
+    ACCT_PROFILE: PRIMARY.id,
+  });
   if (
     r.stdout.includes(`username=${SECONDARY.githubUser}`) &&
     r.stdout.includes("gho_TEST_ONLY_USER_B_") &&
@@ -159,16 +160,28 @@ acct(["install"], env, personal);
   const gc = fs.readFileSync(gitconfig, "utf8");
   const begin = gc.indexOf("acct managed begin");
   const inc = gc.indexOf("includeIf", begin);
-  const managed = fs.readFileSync(path.join(configDir,"git","_managed.inc"),"utf8");
+  const managed = fs.readFileSync(
+    path.join(configDir, "git", "_managed.inc"),
+    "utf8",
+  );
   const reset = managed.indexOf('helper = ""');
-  if (reset >= 0 && gc.indexOf("_managed.inc",begin) < inc && !managed.includes("[credential]")) ok("scoped helper reset include before includeIf (I8)");
+  if (
+    reset >= 0 &&
+    gc.indexOf("_managed.inc", begin) < inc &&
+    !managed.includes("[credential]")
+  )
+    ok("scoped helper reset include before includeIf (I8)");
   else fail("I8 global reset", gc.slice(0, 400));
 }
 
 {
   const hooks = path.join(configDir, "hooks", "pre-commit");
   const body = fs.readFileSync(hooks, "utf8");
-  if (body.includes("exec ") && body.includes("hook-run") && !/^acct /m.test(body))
+  if (
+    body.includes("exec ") &&
+    body.includes("hook-run") &&
+    !/^acct /m.test(body)
+  )
     ok("hooks absolute path (I11b)");
   else fail("I11b hooks", body);
 }
@@ -180,18 +193,26 @@ acct(["install"], env, personal);
       "ssh-key",
       SECONDARY.id,
       "--path",
-      SECONDARY.sshKey || path.join(process.env.HOME || "/tmp", ".ssh/secondary_github"),
+      SECONDARY.sshKey ||
+        path.join(process.env.HOME || "/tmp", ".ssh/secondary_github"),
     ],
     env,
   );
-  const inc = fs.readFileSync(path.join(configDir, "git", `${SECONDARY.id}.inc`), "utf8");
+  const inc = fs.readFileSync(
+    path.join(configDir, "git", `${SECONDARY.id}.inc`),
+    "utf8",
+  );
   if (inc.includes('helper = ""') && inc.includes("IdentitiesOnly=yes"))
     ok("ssh-key keeps HTTPS helper (I8b)");
   else fail("I8b dual", inc);
 }
 
 {
-  const r = acct(["hook-run", "pre-push"], { ...env, ACCT_PROFILE: PRIMARY.id }, work);
+  const r = acct(
+    ["hook-run", "pre-push"],
+    { ...env, ACCT_PROFILE: PRIMARY.id },
+    work,
+  );
   const repo = path.join(work, "repo");
   fs.mkdirSync(repo, { recursive: true });
   run("git", ["init"], { cwd: repo, env });
@@ -264,7 +285,10 @@ acct(["install"], env, personal);
   ) {
     ok("I7 port allowlist + duplicate host fail-closed");
   } else {
-    fail("I7 port/dup", JSON.stringify({ bad: bad.stdout, ok443: ok443.stdout, dup: dup.stdout }));
+    fail(
+      "I7 port/dup",
+      JSON.stringify({ bad: bad.stdout, ok443: ok443.stdout, dup: dup.stdout }),
+    );
   }
 }
 
@@ -316,7 +340,8 @@ acct(["install"], env, personal);
   r = acct(["status"], env, pkg);
   if (
     new RegExp(`profile: ${escapeRe(PRIMARY.id)}`).test(r.stdout) &&
-    /reason: local/.test(r.stdout) && /ignored/.test(r.stdout)
+    /reason: local/.test(r.stdout) &&
+    /ignored/.test(r.stdout)
   )
     ok("I3 repository root marker wins; nested marker ignored");
   else fail("I3 nested .acct", r.stdout);
@@ -441,7 +466,9 @@ acct(["install"], env, personal);
   );
   if (
     r.status !== 0 &&
-    /collides with existing "work"|case.?fold|already exists/i.test(r.stderr + r.stdout)
+    /collides with existing "work"|case.?fold|already exists/i.test(
+      r.stderr + r.stdout,
+    )
   )
     ok("I19 rejects --id WORK when work exists");
   else fail("I19 case-fold WORK", r.stderr + r.stdout);

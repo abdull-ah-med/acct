@@ -26,12 +26,21 @@ export function canonicalPath(p: string): string {
   let ancestor = path.resolve(p);
   const suffix: string[] = [];
   for (;;) {
-    try { return path.join(fs.realpathSync.native(ancestor), ...suffix).replace(/\\/g, "/"); }
-    catch (error) {
-      if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    try {
+      return path
+        .join(fs.realpathSync.native(ancestor), ...suffix)
+        .replace(/\\/g, "/");
+    } catch (error) {
+      if (
+        !["ENOENT", "ENOTDIR"].includes(
+          (error as NodeJS.ErrnoException).code ?? "",
+        )
+      )
+        throw error;
       const parent = path.dirname(ancestor);
       if (parent === ancestor) throw error;
-      suffix.unshift(path.basename(ancestor)); ancestor = parent;
+      suffix.unshift(path.basename(ancestor));
+      ancestor = parent;
     }
   }
 }
@@ -39,9 +48,12 @@ export const normalizePath = canonicalPath;
 export function pathIsPrefix(prefix: string, candidate: string): boolean {
   const fold = (p: string) => {
     const value = canonicalPath(p).replace(/\/+$/, "");
-    return process.platform === "darwin" || process.platform === "win32" ? value.toLowerCase() : value;
+    return process.platform === "darwin" || process.platform === "win32"
+      ? value.toLowerCase()
+      : value;
   };
-  const a = fold(prefix), b = fold(candidate);
+  const a = fold(prefix),
+    b = fold(candidate);
   return a === b || b.startsWith(a + "/");
 }
 
@@ -68,10 +80,7 @@ export function sanitizeDebugMessage(message: string): string {
       /\b(Authorization|authorization)\s*:\s*Bearer\s+\S+/gi,
       "$1: Bearer [REDACTED]",
     )
-    .replace(
-      /\bx-access-token:[^@\s]+@/gi,
-      "x-access-token:[REDACTED]@",
-    )
+    .replace(/\bx-access-token:[^@\s]+@/gi, "x-access-token:[REDACTED]@")
     .replace(
       /\b(password|token|secret|authorization)\s*=\s*([^\s]+)/gi,
       "$1=[REDACTED]",

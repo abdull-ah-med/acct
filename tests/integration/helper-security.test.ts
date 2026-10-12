@@ -54,9 +54,7 @@ describe("credential helper security planes (I4/I6)", () => {
 
   beforeEach(async () => {
     // bin/git-credential-acct.js loads dist/ (gitignored) — ensure build exists
-    const built = fs.existsSync(
-      path.resolve("dist/credential/helper.js"),
-    );
+    const built = fs.existsSync(path.resolve("dist/credential/helper.js"));
     if (!built) {
       const b = spawnSync("npm", ["run", "build"], {
         encoding: "utf8",
@@ -67,7 +65,9 @@ describe("credential helper security planes (I4/I6)", () => {
       }
     }
 
-    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-helper-sec-")));
+    tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-helper-sec-")),
+    );
     workDir = path.join(tmp, "work");
     unboundDir = path.join(tmp, "unbound");
     configDir = path.join(tmp, "config");
@@ -189,17 +189,13 @@ describe("credential helper security planes (I4/I6)", () => {
 
   it("I17 store is ignored (no cross-account poison)", async () => {
     const env = { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" };
-    spawnSync(
-      process.execPath,
-      [HELPER, "store"],
-      {
-        cwd: workDir,
-        env: { ...process.env, ...env },
-        input:
-          "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_TEST_ONLY_personal_token\n\n",
-        encoding: "utf8",
-      },
-    );
+    spawnSync(process.execPath, [HELPER, "store"], {
+      cwd: workDir,
+      env: { ...process.env, ...env },
+      input:
+        "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_TEST_ONLY_personal_token\n\n",
+      encoding: "utf8",
+    });
     const r = helperGet(workDir, env);
     expect(r.stdout).toContain("gho_TEST_ONLY_work_token");
     expect(r.stdout).not.toContain("personal_token");
@@ -207,31 +203,23 @@ describe("credential helper security planes (I4/I6)", () => {
 
   it("I17 erase only when password matches stored token", async () => {
     const env = { ACCT_CONFIG_DIR: configDir, ACCT_SECRET_BACKEND: "file" };
-    spawnSync(
-      process.execPath,
-      [HELPER, "erase"],
-      {
-        cwd: workDir,
-        env: { ...process.env, ...env },
-        input:
-          "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_WRONG\n\n",
-        encoding: "utf8",
-      },
-    );
+    spawnSync(process.execPath, [HELPER, "erase"], {
+      cwd: workDir,
+      env: { ...process.env, ...env },
+      input:
+        "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_WRONG\n\n",
+      encoding: "utf8",
+    });
     let r = helperGet(workDir, env);
     expect(r.stdout).toContain("gho_TEST_ONLY_work_token");
 
-    spawnSync(
-      process.execPath,
-      [HELPER, "erase"],
-      {
-        cwd: workDir,
-        env: { ...process.env, ...env },
-        input:
-          "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_TEST_ONLY_work_token\n\n",
-        encoding: "utf8",
-      },
-    );
+    spawnSync(process.execPath, [HELPER, "erase"], {
+      cwd: workDir,
+      env: { ...process.env, ...env },
+      input:
+        "protocol=https\nhost=github.com\nusername=work-user\npassword=gho_TEST_ONLY_work_token\n\n",
+      encoding: "utf8",
+    });
     r = helperGet(workDir, env);
     expect(r.stdout).toContain("quit=1");
     expect(r.stdout).not.toContain("password=");

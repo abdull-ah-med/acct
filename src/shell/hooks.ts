@@ -19,7 +19,14 @@ export function hookScript(
   shell: ShellKind,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const cmd = acctShellEnvCmd(shell === "powershell" ? " --powershell" : shell === "fish" ? " --fish":"", env);
+  const cmd = acctShellEnvCmd(
+    shell === "powershell"
+      ? " --powershell"
+      : shell === "fish"
+        ? " --fish"
+        : "",
+    env,
+  );
   switch (shell) {
     case "bash":
     case "zsh":
@@ -125,7 +132,7 @@ export function shellEnvExports(
   // T5: sticky GH_TOKEN after manual `acct shell-env` without a cd/prompt hook.
   // Cite: https://cli.github.com/manual/gh_help_environment
   // Cite: docs/research/xargs-sticky-uninstall-delete-cites-2026-08-08.md
-  if(fish) {
+  if (fish) {
     lines.push("# acct: persist the Fish hook with acct hook fish | source");
   } else if (powershell) {
     lines.push(
@@ -137,11 +144,12 @@ export function shellEnvExports(
     );
   }
   for (const [key, value] of Object.entries(exports)) {
-    if(fish) {
-      if(value === null)lines.push(`set -e ${key}`);
+    if (fish) {
+      if (value === null) lines.push(`set -e ${key}`);
       else lines.push(`set -gx ${key} ${fishQuote(value)}`);
     } else if (powershell) {
-      if (value === null) lines.push(`Remove-Item Env:${key} -ErrorAction SilentlyContinue`);
+      if (value === null)
+        lines.push(`Remove-Item Env:${key} -ErrorAction SilentlyContinue`);
       else lines.push(`$env:${key} = '${value.replace(/'/g, "''")}'`);
     } else {
       if (value === null) lines.push(`unset ${key}`);
@@ -156,4 +164,6 @@ function shellQuote(s: string): string {
 }
 
 /** https://fishshell.com/docs/current/language.html#quotes */
-export function fishQuote(value:string):string {return "'"+value.replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";}
+export function fishQuote(value: string): string {
+  return "'" + value.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+}

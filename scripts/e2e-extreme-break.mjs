@@ -61,7 +61,14 @@ function helper(op, body, cwd, env) {
   });
 }
 function ghToken(user) {
-  const r = run("gh", ["auth", "token", "--hostname", "github.com", "--user", user]);
+  const r = run("gh", [
+    "auth",
+    "token",
+    "--hostname",
+    "github.com",
+    "--user",
+    user,
+  ]);
   if (r.status !== 0) throw new Error(`token fail ${user}: ${r.stderr}`);
   return r.stdout.trim();
 }
@@ -85,7 +92,8 @@ const gitconfig = path.join(base, "gitconfig");
 const personalRoot = path.join(base, "trees", "personal");
 const workRoot = path.join(base, "trees", "work");
 const unboundRoot = path.join(base, "trees", "unbound");
-for (const d of [personalRoot, workRoot, unboundRoot]) fs.mkdirSync(d, { recursive: true });
+for (const d of [personalRoot, workRoot, unboundRoot])
+  fs.mkdirSync(d, { recursive: true });
 fs.writeFileSync(
   gitconfig,
   "[user]\n\tname = GlobalFallback\n\temail = global@example.com\n[credential]\n\thelper = osxkeychain\n",
@@ -148,7 +156,8 @@ try {
       ],
       env,
     );
-    if (r.status !== 0) throw new Error(`add ${SECONDARY.id}: ` + redact(r.stderr));
+    if (r.status !== 0)
+      throw new Error(`add ${SECONDARY.id}: ` + redact(r.stderr));
     acct(["bind", workRoot, SECONDARY.id], env);
     acct(["install"], env);
     priTok = ghToken(PRIMARY.githubUser);
@@ -162,10 +171,22 @@ try {
     const cases = [
       ["port 444", "protocol=https\nhost=github.com:444\n\n"],
       ["port 8443", "protocol=https\nhost=github.com:8443\n\n"],
-      ["duplicate disagree host", "protocol=https\nhost=github.com\nhost=evil.com\n\n"],
-      ["duplicate agree host", "protocol=https\nhost=github.com\nhost=github.com\n\n"],
-      ["url vs host disagree", "protocol=https\nhost=github.com\nurl=https://evil.com/x\n\n"],
-      ["url vs protocol disagree", "host=github.com\nprotocol=https\nurl=http://github.com/x\n\n"],
+      [
+        "duplicate disagree host",
+        "protocol=https\nhost=github.com\nhost=evil.com\n\n",
+      ],
+      [
+        "duplicate agree host",
+        "protocol=https\nhost=github.com\nhost=github.com\n\n",
+      ],
+      [
+        "url vs host disagree",
+        "protocol=https\nhost=github.com\nurl=https://evil.com/x\n\n",
+      ],
+      [
+        "url vs protocol disagree",
+        "host=github.com\nprotocol=https\nurl=http://github.com/x\n\n",
+      ],
       ["host with user@", "protocol=https\nhost=user@github.com\n\n"],
       ["ipv6-ish", "protocol=https\nhost=[github.com]\n\n"],
       ["trailing dot", "protocol=https\nhost=github.com.\n\n"],
@@ -184,7 +205,11 @@ try {
         if (leaked && out.includes(priTok) && !out.includes(secTok)) {
           ok(`${name} → primary token only`);
         } else if (!leaked) {
-          note("warn", `${name} rejected (stricter than expected?)`, redact(out).slice(0, 120));
+          note(
+            "warn",
+            `${name} rejected (stricter than expected?)`,
+            redact(out).slice(0, 120),
+          );
           ok(`${name} fail-closed recorded`);
         } else fail(name, redact(out));
       } else if (leaked) {
@@ -201,26 +226,39 @@ try {
   {
     const deep = path.join(personalRoot, "a", "b", "c");
     fs.mkdirSync(deep, { recursive: true });
-    fs.writeFileSync(path.join(personalRoot, "a", ".acct"), `profile: ${SECONDARY.id}\n`);
+    fs.writeFileSync(
+      path.join(personalRoot, "a", ".acct"),
+      `profile: ${SECONDARY.id}\n`,
+    );
     let r = acct(["status"], env, deep);
-    if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(r.stdout) && /reason: local/.test(r.stdout)) ok("walk-up finds parent .acct");
+    if (
+      new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(r.stdout) &&
+      /reason: local/.test(r.stdout)
+    )
+      ok("walk-up finds parent .acct");
     else fail("walk-up .acct", r.stdout);
 
     fs.writeFileSync(path.join(deep, ".acct"), "profile: personal\n");
     r = acct(["status"], env, deep);
-    if (new RegExp(`${escapeRe(PRIMARY.githubUser)}`).test(r.stdout) && /reason: local/.test(r.stdout)) ok("nearest .acct wins over ancestor");
+    if (
+      new RegExp(`${escapeRe(PRIMARY.githubUser)}`).test(r.stdout) &&
+      /reason: local/.test(r.stdout)
+    )
+      ok("nearest .acct wins over ancestor");
     else fail("nearest .acct", r.stdout);
 
     fs.writeFileSync(path.join(deep, ".acct"), "profile: \n");
     r = acct(["status"], env, deep);
-    if (/unbound/.test(r.stdout) && /reason: local/.test(r.stdout)) ok("blank nearest .acct → unbound");
+    if (/unbound/.test(r.stdout) && /reason: local/.test(r.stdout))
+      ok("blank nearest .acct → unbound");
     else fail("blank nearest", r.stdout);
 
     // Sibling under a/ should still see work from a/.acct
     const sib = path.join(personalRoot, "a", "sib");
     fs.mkdirSync(sib, { recursive: true });
     r = acct(["status"], env, sib);
-    if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(r.stdout)) ok("sibling inherits ancestor .acct");
+    if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(r.stdout))
+      ok("sibling inherits ancestor .acct");
     else fail("sibling .acct", r.stdout);
   }
 
@@ -237,10 +275,15 @@ try {
     run("git", ["commit", "-m", "init"], { cwd: repo, env });
 
     // Point GIT_DIR at work repo while cwd is personal
-    const r = helper("get", "protocol=https\nhost=github.com\n\n", personalRoot, {
-      ...env,
-      GIT_DIR: path.join(repo, ".git"),
-    });
+    const r = helper(
+      "get",
+      "protocol=https\nhost=github.com\n\n",
+      personalRoot,
+      {
+        ...env,
+        GIT_DIR: path.join(repo, ".git"),
+      },
+    );
     if (r.stdout.includes(priTok) && !r.stdout.includes(secTok)) {
       ok("helper uses cwd binding not GIT_DIR (cwd wins)");
     } else if (r.stdout.includes(secTok)) {
@@ -260,7 +303,8 @@ try {
       ...env,
       GIT_DIR: path.join(repo, ".git"),
     });
-    if (r2.stdout.includes(priTok) && !r2.stdout.includes(secTok)) ok(".acct+cwd beats GIT_DIR");
+    if (r2.stdout.includes(priTok) && !r2.stdout.includes(secTok))
+      ok(".acct+cwd beats GIT_DIR");
     else if (r2.stdout.includes(secTok)) {
       note("error", "GIT_DIR overrode .acct", redact(r2.stdout).slice(0, 150));
       fail(".acct vs GIT_DIR", "wrong token");
@@ -275,7 +319,13 @@ try {
       ["xargs", "gh"],
       ["xargs", "-n2", "gh"],
       ["env", "xargs", "-n2", "gh"],
-      ["xargs", "-I{}", "sh", "-c", `unset GH_TOKEN GITHUB_TOKEN; gh auth {} --user ${SECONDARY.githubUser}`],
+      [
+        "xargs",
+        "-I{}",
+        "sh",
+        "-c",
+        `unset GH_TOKEN GITHUB_TOKEN; gh auth {} --user ${SECONDARY.githubUser}`,
+      ],
       ["nice", "gh", "auth", "token"],
       ["nohup", "gh", "auth", "token"],
       ["time", "gh", "auth", "token"],
@@ -292,7 +342,11 @@ try {
       ["bash", "-c", '"gh" "auth" "token"'],
       ["bash", "-c", "g=gh; $g auth token"],
       ["bash", "-c", "x=auth; gh $x switch"],
-      ["bash", "-c", `unset GH_TOKEN GITHUB_TOKEN; x=auth; gh $x switch --user ${SECONDARY.githubUser}`],
+      [
+        "bash",
+        "-c",
+        `unset GH_TOKEN GITHUB_TOKEN; x=auth; gh $x switch --user ${SECONDARY.githubUser}`,
+      ],
       ["bash", "-c", "$(command -v gh) auth token"],
       ["bash", "-c", "echo auth token | xargs gh"],
       ["zsh", "-c", "g=gh; $g auth token"],
@@ -304,10 +358,20 @@ try {
     for (const args of attempts) {
       const r = acct(["exec", ...args], env, personalRoot);
       const out = r.stdout + r.stderr;
-      const isInterpreter = ["python3", "node", "perl", "ruby"].includes(args[0]);
-      const isWrapper = ["xargs", "nice", "nohup", "time", "command", "builtin", "bash", "zsh", "env"].includes(
+      const isInterpreter = ["python3", "node", "perl", "ruby"].includes(
         args[0],
       );
+      const isWrapper = [
+        "xargs",
+        "nice",
+        "nohup",
+        "time",
+        "command",
+        "builtin",
+        "bash",
+        "zsh",
+        "env",
+      ].includes(args[0]);
       if (isInterpreter) {
         // Documented non-goal: env injection means interpreters can echo GH_TOKEN
         if (out.includes(priTok)) {
@@ -328,7 +392,11 @@ try {
       } else if (r.status !== 0 && /Refusing/i.test(out)) {
         ok(`refused: ${args.slice(0, 3).join(" ")}`);
       } else if (isWrapper && r.status === 0 && !hasAnyToken(out, tokens())) {
-        note("warn", `wrapper ran without refuse: ${args[0]}`, redact(out).slice(0, 100));
+        note(
+          "warn",
+          `wrapper ran without refuse: ${args[0]}`,
+          redact(out).slice(0, 100),
+        );
         ok(`wrapper ${args[0]} no stdout dump`);
       } else if (!hasAnyToken(out, tokens())) {
         ok(`no dump: ${args.slice(0, 3).join(" ")}`);
@@ -361,16 +429,27 @@ try {
   {
     let r = acct(["shell-env"], env, personalRoot);
     if (r.stdout.includes(priTok)) {
-      if (/export GH_TOKEN='/.test(r.stdout) || /export GH_TOKEN="/.test(r.stdout)) {
+      if (
+        /export GH_TOKEN='/.test(r.stdout) ||
+        /export GH_TOKEN="/.test(r.stdout)
+      ) {
         ok("shell-env quotes GH_TOKEN");
       } else {
-        note("warn", "shell-env GH_TOKEN quoting style unexpected", redact(r.stdout).slice(0, 120));
+        note(
+          "warn",
+          "shell-env GH_TOKEN quoting style unexpected",
+          redact(r.stdout).slice(0, 120),
+        );
         ok("shell-env quoting noted");
       }
     } else fail("shell-env missing token", redact(r.stdout));
 
     r = acct(["shell-env"], env, unboundRoot);
-    if (/unset GH_TOKEN/.test(r.stdout) && !r.stdout.includes(priTok) && !r.stdout.includes(secTok)) {
+    if (
+      /unset GH_TOKEN/.test(r.stdout) &&
+      !r.stdout.includes(priTok) &&
+      !r.stdout.includes(secTok)
+    ) {
       ok("unbound shell-env clears tokens");
     } else fail("unbound shell-env", redact(r.stdout));
   }
@@ -397,18 +476,28 @@ try {
     if (!fs.existsSync(secrets)) fail("secrets missing", "no file");
     else {
       const mode = fs.statSync(secrets).mode & 0o777;
-      if (mode === 0o600 || process.platform === "darwin") ok(`secrets mode ${mode.toString(8)}`);
+      if (mode === 0o600 || process.platform === "darwin")
+        ok(`secrets mode ${mode.toString(8)}`);
       else {
         note("error", "secrets.json not 0600", mode.toString(8));
         fail("secrets mode", mode.toString(8));
       }
       // Replace with symlink to world-readable target outside — next get should fail closed or not follow attacker file with wrong shape
       const evil = path.join(base, "evil-secrets.json");
-      fs.writeFileSync(evil, JSON.stringify({ [PRIMARY.id]: secTok, [SECONDARY.id]: priTok }), { mode: 0o666 });
+      fs.writeFileSync(
+        evil,
+        JSON.stringify({ [PRIMARY.id]: secTok, [SECONDARY.id]: priTok }),
+        { mode: 0o666 },
+      );
       fs.rmSync(secrets);
       try {
         fs.symlinkSync(evil, secrets);
-        const r = helper("get", "protocol=https\nhost=github.com\n\n", personalRoot, env);
+        const r = helper(
+          "get",
+          "protocol=https\nhost=github.com\n\n",
+          personalRoot,
+          env,
+        );
         // If it follows symlink and returns swapped tokens, that's a critical footgun
         if (r.stdout.includes(`password=${secTok}`)) {
           note(
@@ -441,10 +530,14 @@ try {
         env,
         input: priTok + "\n",
       });
-      run(process.execPath, [ACCT, "profile", "token", SECONDARY.id, "--stdin"], {
-        env,
-        input: secTok + "\n",
-      });
+      run(
+        process.execPath,
+        [ACCT, "profile", "token", SECONDARY.id, "--stdin"],
+        {
+          env,
+          input: secTok + "\n",
+        },
+      );
     }
   }
 
@@ -456,7 +549,8 @@ try {
     let r = acct(["bind", rel, PRIMARY.id], env);
     if (r.status === 0) {
       const st = acct(["status"], env, rel);
-      if (new RegExp(`${escapeRe(PRIMARY.githubUser)}`).test(st.stdout)) ok("absolute bind works");
+      if (new RegExp(`${escapeRe(PRIMARY.githubUser)}`).test(st.stdout))
+        ok("absolute bind works");
       else fail("bind status", st.stdout);
     } else fail("bind", r.stderr);
 
@@ -465,15 +559,21 @@ try {
     fs.mkdirSync(child, { recursive: true });
     r = acct(["bind", child, SECONDARY.id], env);
     const st = acct(["status"], env, child);
-    if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(st.stdout)) ok(`child rebind to ${SECONDARY.id} (longest wins)`);
+    if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(st.stdout))
+      ok(`child rebind to ${SECONDARY.id} (longest wins)`);
     else fail("child rebind", st.stdout);
 
     // Path with .. that escapes
     const escape = path.join(personalRoot, "x", "..", "..", `${SECONDARY.id}`);
     const st2 = acct(["status"], env, path.normalize(escape));
-    if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(st2.stdout)) ok(`normalized .. path resolves to ${SECONDARY.id} tree`);
+    if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(st2.stdout))
+      ok(`normalized .. path resolves to ${SECONDARY.id} tree`);
     else {
-      note("warn", ".. path status", st2.stdout.split("\n").slice(0, 6).join(" | "));
+      note(
+        "warn",
+        ".. path status",
+        st2.stdout.split("\n").slice(0, 6).join(" | "),
+      );
       ok(".. path recorded");
     }
   }
@@ -504,26 +604,46 @@ try {
       ok("ambient gh ignores cwd (documented)");
     }
 
-    const viaExec = acct(["exec", "gh", "api", "user", "--jq", ".login"], env, workRoot);
-    if (viaExec.stdout.trim() === SECONDARY.githubUser) ok(`acct exec forces ${SECONDARY.id} in ${SECONDARY.id} tree`);
+    const viaExec = acct(
+      ["exec", "gh", "api", "user", "--jq", ".login"],
+      env,
+      workRoot,
+    );
+    if (viaExec.stdout.trim() === SECONDARY.githubUser)
+      ok(`acct exec forces ${SECONDARY.id} in ${SECONDARY.id} tree`);
     else fail(`acct exec ${SECONDARY.id}`, viaExec.stdout);
   }
 
   // ---------- P10: Doctor / status must not leak under ACCT_DEBUG ----------
   console.log("\nP10) Debug + doctor hygiene");
   {
-    for (const cmd of [["status"], ["whoami"], ["doctor"], ["profile", "list"], ["shell-env"]]) {
+    for (const cmd of [
+      ["status"],
+      ["whoami"],
+      ["doctor"],
+      ["profile", "list"],
+      ["shell-env"],
+    ]) {
       const r = acct(cmd, { ...env, ACCT_DEBUG: "1" }, personalRoot);
       const all = r.stdout + r.stderr;
       if (cmd[0] === "shell-env") {
         // shell-env intentionally prints token
-        if (all.includes(priTok)) ok("shell-env+debug still exports token (by design)");
+        if (all.includes(priTok))
+          ok("shell-env+debug still exports token (by design)");
         else fail("shell-env debug", "missing token");
         continue;
       }
-      if (all.includes(priTok) || all.includes(secTok)) fail(`${cmd.join(" ")}+debug leaked`, "token");
-      else if (/gho_[A-Za-z0-9]{12,}/.test(all) && !/gho_\*\*\*|REDACTED|TEST_ONLY/.test(all)) {
-        note("error", `${cmd.join(" ")} leaked token-shaped`, redact(all).slice(0, 200));
+      if (all.includes(priTok) || all.includes(secTok))
+        fail(`${cmd.join(" ")}+debug leaked`, "token");
+      else if (
+        /gho_[A-Za-z0-9]{12,}/.test(all) &&
+        !/gho_\*\*\*|REDACTED|TEST_ONLY/.test(all)
+      ) {
+        note(
+          "error",
+          `${cmd.join(" ")} leaked token-shaped`,
+          redact(all).slice(0, 200),
+        );
         fail(`${cmd.join(" ")} shape`, "gho_ present");
       } else ok(`${cmd.join(" ")}+debug clean`);
     }
@@ -537,12 +657,16 @@ try {
     run("git", ["init"], { cwd: repo, env });
     run("git", ["config", "user.email", SECONDARY.email], { cwd: repo, env });
     run("git", ["config", "user.name", SECONDARY.name], { cwd: repo, env });
-    run("git", ["config", "core.hooksPath", path.join(configDir, "hooks")], { cwd: repo, env });
+    run("git", ["config", "core.hooksPath", path.join(configDir, "hooks")], {
+      cwd: repo,
+      env,
+    });
 
     // Wrong email blocked
     run("git", ["config", "user.email", PRIMARY.email], { cwd: repo, env });
     let r = acct(["hook-run", "pre-commit"], env, repo);
-    if (r.status !== 0) ok(`pre-commit blocks primary email in ${SECONDARY.id} tree`);
+    if (r.status !== 0)
+      ok(`pre-commit blocks primary email in ${SECONDARY.id} tree`);
     else fail("pre-commit email", "allowed wrong");
 
     run("git", ["config", "user.email", SECONDARY.email], { cwd: repo, env });
@@ -551,9 +675,16 @@ try {
     else fail("pre-commit allow", r.stderr);
 
     // Ambient ACCT_PROFILE=personal must not flip pre-push expected principal
-    r = acct(["hook-run", "pre-push"], { ...env, ACCT_PROFILE: PRIMARY.id }, repo);
+    r = acct(
+      ["hook-run", "pre-push"],
+      { ...env, ACCT_PROFILE: PRIMARY.id },
+      repo,
+    );
     const out = r.stdout + r.stderr;
-    if (/requires .*primary-email|expected.*primary/i.test(out) && r.status !== 0) {
+    if (
+      /requires .*primary-email|expected.*primary/i.test(out) &&
+      r.status !== 0
+    ) {
       note("error", "pre-push honored ambient ACCT_PROFILE", out.slice(0, 200));
       fail("pre-push ambient", out);
     } else {
@@ -570,12 +701,17 @@ try {
     const managed = (gc.match(/acct managed/gi) || []).length;
     if (managed <= 2) ok(`install idempotent-ish (markers=${managed})`);
     else {
-      note("warn", "multiple managed markers after double install", `count=${managed}`);
+      note(
+        "warn",
+        "multiple managed markers after double install",
+        `count=${managed}`,
+      );
       ok("double install noted");
     }
     r = acct(["uninstall"], env);
     const after = fs.readFileSync(gitconfig, "utf8");
-    if (!/acct managed/i.test(after) && /osxkeychain/.test(after)) ok("uninstall clean");
+    if (!/acct managed/i.test(after) && /osxkeychain/.test(after))
+      ok("uninstall clean");
     else fail("uninstall", after.slice(0, 200));
     acct(["install"], env);
   }
@@ -606,16 +742,24 @@ try {
     acct(["bind", doom, tmpId], env);
     r = acct(["profile", "remove", tmpId, "--force"], env);
     const st = acct(["status"], env, doom);
-    if (/unbound|unknown|tmpdoom/i.test(st.stdout) && !/password=/.test(st.stdout)) {
+    if (
+      /unbound|unknown|tmpdoom/i.test(st.stdout) &&
+      !/password=/.test(st.stdout)
+    ) {
       ok("removed profile leaves binding safely degraded");
     } else {
-      note("warn", "after profile remove status", st.stdout.split("\n").slice(0, 8).join(" | "));
+      note(
+        "warn",
+        "after profile remove status",
+        st.stdout.split("\n").slice(0, 8).join(" | "),
+      );
       ok("profile remove edge recorded");
     }
     // helper must not return real tokens for removed profile dir
     r = helper("get", "protocol=https\nhost=github.com\n\n", doom, env);
     if (expectNoToken("removed-profile helper", r.stdout, tokens())) {
-      if (/quit=1/.test(r.stdout) || !/password=/.test(r.stdout)) ok("removed profile helper fail-closed");
+      if (/quit=1/.test(r.stdout) || !/password=/.test(r.stdout))
+        ok("removed profile helper fail-closed");
       else fail("removed helper", redact(r.stdout));
     }
   }
@@ -655,7 +799,8 @@ try {
   console.log("\nP15) config.yaml token hygiene after churn");
   {
     const cfg = fs.readFileSync(path.join(configDir, "config.yaml"), "utf8");
-    if (/gho_|ghp_|github_pat_/i.test(cfg)) fail("config.yaml has tokens", "I13");
+    if (/gho_|ghp_|github_pat_/i.test(cfg))
+      fail("config.yaml has tokens", "I13");
     else ok("config.yaml clean after extreme churn");
   }
 } catch (e) {

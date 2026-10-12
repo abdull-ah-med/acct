@@ -130,7 +130,14 @@ export function installFakeGh(dir: string, opts: FakeGhOptions = {}): FakeGh {
   let activeUser = opts.activeUser ?? "";
 
   const writeState = () => {
-    const state: FakeGhState = { tokens, log: logPath, apiUser, activeUser, apiFailure: opts.apiFailure, passthrough: opts.passthrough };
+    const state: FakeGhState = {
+      tokens,
+      log: logPath,
+      apiUser,
+      activeUser,
+      apiFailure: opts.apiFailure,
+      passthrough: opts.passthrough,
+    };
     fs.writeFileSync(statePath, JSON.stringify(state));
   };
   writeState();
@@ -228,5 +235,7 @@ export function ensureDistBuild(): void {
 }
 
 export function tmpRoot(prefix = "acct-test-"): string {
-  return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), `.tmp-${prefix}`)));
+  return fs.realpathSync.native(
+    fs.mkdtempSync(path.join(os.tmpdir(), `.tmp-${prefix}`)),
+  );
 }

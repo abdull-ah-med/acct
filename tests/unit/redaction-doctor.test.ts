@@ -4,7 +4,10 @@ import {
   sanitizeDebugMessage,
   posixShellSingleQuote,
 } from "../../src/util/paths.js";
-import { effectiveCredentialHelpers, keyringBackendLabel } from "../../src/doctor/run.js";
+import {
+  effectiveCredentialHelpers,
+  keyringBackendLabel,
+} from "../../src/doctor/run.js";
 
 describe("debug redaction (I13)", () => {
   it("never returns token prefixes from redactSecret", () => {
@@ -60,9 +63,9 @@ describe("debug redaction (I13)", () => {
   });
 
   it("redacts token = with spaces", () => {
-    expect(
-      sanitizeDebugMessage("token = ghp_ABCDEFGHIJKLMNOPQRST"),
-    ).toMatch(/token\s*=\s*\[REDACTED\]/i);
+    expect(sanitizeDebugMessage("token = ghp_ABCDEFGHIJKLMNOPQRST")).toMatch(
+      /token\s*=\s*\[REDACTED\]/i,
+    );
   });
 });
 
@@ -91,7 +94,9 @@ describe("effectiveCredentialHelpers", () => {
 describe("keyringBackendLabel", () => {
   it("names the OS secret store for each platform", () => {
     expect(keyringBackendLabel("darwin")).toContain("macOS Keychain");
-    expect(keyringBackendLabel("win32")).toContain("Windows Credential Manager");
+    expect(keyringBackendLabel("win32")).toContain(
+      "Windows Credential Manager",
+    );
     expect(keyringBackendLabel("linux")).toMatch(/libsecret|KWallet/i);
   });
 });

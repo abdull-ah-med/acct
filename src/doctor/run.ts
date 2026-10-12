@@ -1,12 +1,17 @@
-import {checkShims} from "./shims.js";
-import {activeHook,shellHookWarning} from "../status/runtime.js";
-import {effectiveHelperChains} from "../identity/helpers.js";
+import { checkShims } from "./shims.js";
+import { activeHook, shellHookWarning } from "../status/runtime.js";
+import { effectiveHelperChains } from "../identity/helpers.js";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import type { AcctConfig } from "../types.js";
-import { loadConfig, hooksDir, acctConfigDir, gitIncDir } from "../config/store.js";
+import {
+  loadConfig,
+  hooksDir,
+  acctConfigDir,
+  gitIncDir,
+} from "../config/store.js";
 import { globalGitconfigPath } from "../identity/includeIf.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { secretsFilePath } from "../secrets/store.js";
@@ -64,7 +69,7 @@ export async function runDoctor(
     });
   }
 
-  findings.push(...checkCredentialHelpers(cwd,env));
+  findings.push(...checkCredentialHelpers(cwd, env));
   findings.push(...checkManagedBlock(env));
   findings.push(...checkProfileIdCaseCollisions(config));
   findings.push(...checkStaleGhToken(cwd, env, config, opts));
@@ -82,10 +87,36 @@ export async function runDoctor(
   findings.push(...checkPrePushHook(env));
   findings.push(...checkCredentialShim(env));
   findings.push(...checkShims(env));
-  const resolved=resolveFromCwd(cwd,env);
-  if(resolved.conflict)findings.push({severity:"error",code:"resolution-conflict",message:resolved.conflict.detail});
-  if(resolved.ignoredLocalAcct)findings.push({severity:"warn",code:"ignored-local-acct",message:`ignored .acct below repository root: ${resolved.ignoredLocalAcct}`});
-  if(resolved.profile){const warning=shellHookWarning(resolved.profile.host,env);if(warning)findings.push({severity:"warn",code:"shell-hook-missing",message:warning});const hook=activeHook(cwd,env);if(!hook.active && resolved.gitContext)findings.push({severity:"warn",code:"hooks-inactive",message:hook.reason,fix:"acct install --repo"});}
+  const resolved = resolveFromCwd(cwd, env);
+  if (resolved.conflict)
+    findings.push({
+      severity: "error",
+      code: "resolution-conflict",
+      message: resolved.conflict.detail,
+    });
+  if (resolved.ignoredLocalAcct)
+    findings.push({
+      severity: "warn",
+      code: "ignored-local-acct",
+      message: `ignored .acct below repository root: ${resolved.ignoredLocalAcct}`,
+    });
+  if (resolved.profile) {
+    const warning = shellHookWarning(resolved.profile.host, env);
+    if (warning)
+      findings.push({
+        severity: "warn",
+        code: "shell-hook-missing",
+        message: warning,
+      });
+    const hook = activeHook(cwd, env);
+    if (!hook.active && resolved.gitContext)
+      findings.push({
+        severity: "warn",
+        code: "hooks-inactive",
+        message: hook.reason,
+        fix: "acct install --repo",
+      });
+  }
 
   const cwdReport = await checkCwdProfile(cwd, env, {
     queryPrincipal: !!opts.online,
@@ -130,9 +161,7 @@ async function checkCwdProfile(
 }
 
 function findingsFromDiagnose(report: DiagnoseReport): DoctorFinding[] {
-  const refreshFix = report.fixes.find((c) =>
-    c.startsWith("gh auth refresh"),
-  );
+  const refreshFix = report.fixes.find((c) => c.startsWith("gh auth refresh"));
   const importFix = report.fixes.find(
     (c) =>
       !c.startsWith("#") &&
@@ -184,8 +213,16 @@ export function isAcctHelper(helper: string): boolean {
   return /git-credential-acct|credential-acct|\bacct\b/i.test(helper);
 }
 
-function checkCredentialHelpers(cwd:string,env:NodeJS.ProcessEnv):DoctorFinding[] {
-  return effectiveHelperChains(cwd,env).map(chain => ({severity:chain.ok ? "ok":"error",code:chain.ok ? "helper-acct-only":"helper-chain-mismatch",message:`Effective credential helper chain for ${chain.host}: ${chain.ok ? "acct-only" : "does not equal the acct shim"}`,fix:chain.ok ? undefined:"acct install"}));
+function checkCredentialHelpers(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): DoctorFinding[] {
+  return effectiveHelperChains(cwd, env).map((chain) => ({
+    severity: chain.ok ? "ok" : "error",
+    code: chain.ok ? "helper-acct-only" : "helper-chain-mismatch",
+    message: `Effective credential helper chain for ${chain.host}: ${chain.ok ? "acct-only" : "does not equal the acct shim"}`,
+    fix: chain.ok ? undefined : "acct install",
+  }));
 }
 
 function checkHooksBypassable(): DoctorFinding[] {
@@ -239,7 +276,8 @@ function checkManagedBlock(env: NodeJS.ProcessEnv): DoctorFinding[] {
     findings.push({
       severity: "error",
       code: "managed-helper-reset-missing",
-      message: "Managed gitconfig block lacks credential.helper reset + acct shim",
+      message:
+        "Managed gitconfig block lacks credential.helper reset + acct shim",
       fix: "acct install",
     });
   }
@@ -292,7 +330,8 @@ function checkAmbientProfile(
     {
       severity: "ok",
       code: "ambient-acct-profile",
-      message: "Ambient ACCT_PROFILE matches cwd resolution (still ignored by helper)",
+      message:
+        "Ambient ACCT_PROFILE matches cwd resolution (still ignored by helper)",
     },
   ];
 }
@@ -372,7 +411,10 @@ function checkStaleGhToken(
   // Compare ambient token principal to cwd profile (gh environment: GH_TOKEN wins).
   // Cite: https://cli.github.com/manual/gh_help_environment
   const login = ghApiLogin(env, { timeoutMs: 3000 });
-  if (login && login.toLowerCase() !== resolved.profile.githubUser.toLowerCase()) {
+  if (
+    login &&
+    login.toLowerCase() !== resolved.profile.githubUser.toLowerCase()
+  ) {
     return [
       {
         severity: "warn",
@@ -441,7 +483,8 @@ function checkSshKeys(
     findings.push({
       severity: "warn",
       code: "ssh-configured-keys",
-      message: "IdentitiesOnly stops agent keys; keys configured for that host in ~/.ssh/config are still offered — acct verifies the authenticated account on push.",
+      message:
+        "IdentitiesOnly stops agent keys; keys configured for that host in ~/.ssh/config are still offered — acct verifies the authenticated account on push.",
     });
     if (!fs.existsSync(p.sshKeyPath)) {
       findings.push({
@@ -472,7 +515,13 @@ function checkSshKeys(
 function checkBindings(config: AcctConfig): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
   for (const b of config.bindings) {
-    if(!fs.existsSync(b.path))findings.push({severity:"warn",code:"binding-path-missing",message:`binding path missing (moved or deleted?): ${b.path}`,fix:`acct rebind "${b.path}" <new> / acct unbind "${b.path}"`});
+    if (!fs.existsSync(b.path))
+      findings.push({
+        severity: "warn",
+        code: "binding-path-missing",
+        message: `binding path missing (moved or deleted?): ${b.path}`,
+        fix: `acct rebind "${b.path}" <new> / acct unbind "${b.path}"`,
+      });
     if (!config.profiles.some((p) => p.id === b.profileId)) {
       findings.push({
         severity: "error",
@@ -532,7 +581,10 @@ function checkKeyring(env: NodeJS.ProcessEnv): DoctorFinding[] {
   const label = keyringBackendLabel();
   try {
     const { Entry } = require("@napi-rs/keyring") as {
-      Entry: new (service: string, account: string) => {
+      Entry: new (
+        service: string,
+        account: string,
+      ) => {
         getPassword: () => string | null;
       };
     };
@@ -624,7 +676,8 @@ function checkOrphanIncFiles(
   const known = new Set(config.profiles.map((p) => `${p.id}.inc`));
   const orphans: string[] = [];
   for (const name of fs.readdirSync(gdir)) {
-    if (name.endsWith(".inc") && name !== "_managed.inc" && !known.has(name)) orphans.push(name);
+    if (name.endsWith(".inc") && name !== "_managed.inc" && !known.has(name))
+      orphans.push(name);
   }
   if (!orphans.length) return [];
   return [

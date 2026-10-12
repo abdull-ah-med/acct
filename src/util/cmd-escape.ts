@@ -10,7 +10,11 @@ export function cmdEscapePath(s: string): string {
 /**
  * Render `node "path" %*` style .cmd body with safe path quoting.
  */
-export function renderCmdNodeInvoke(nodePath: string, scriptPath: string, extraArgs = "%*"): string {
+export function renderCmdNodeInvoke(
+  nodePath: string,
+  scriptPath: string,
+  extraArgs = "%*",
+): string {
   const node = cmdEscapePath(nodePath);
   const script = cmdEscapePath(scriptPath);
   return `@echo off\r\n"${node}" "${script}" ${extraArgs}\r\n`;

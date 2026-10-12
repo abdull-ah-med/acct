@@ -16,18 +16,29 @@ export interface SecretStore {
   delete(account: string): Promise<void>;
 }
 
-export function canonicalHost(host: string): string { return host.toLowerCase().replace(/:443$/, ""); }
+export function canonicalHost(host: string): string {
+  return host.toLowerCase().replace(/:443$/, "");
+}
 export function accountKey(profile: Profile): string {
   return `${canonicalHost(profile.host)}::${profile.githubUser.toLowerCase()}`;
 }
 export class SecretStoreError extends Error {
-  constructor(readonly code: "NOT_FOUND" | "CORRUPT" | "DENIED" | "UNAVAILABLE") {
-    super(code === "CORRUPT" ? "Corrupt secrets.json; repair the secret store and re-import the token" : `Secret store ${code.toLowerCase()}`);
+  constructor(
+    readonly code: "NOT_FOUND" | "CORRUPT" | "DENIED" | "UNAVAILABLE",
+  ) {
+    super(
+      code === "CORRUPT"
+        ? "Corrupt secrets.json; repair the secret store and re-import the token"
+        : `Secret store ${code.toLowerCase()}`,
+    );
     this.name = "SecretStoreError";
   }
 }
 export function assertValidToken(token: unknown): asserts token is string {
-  if (typeof token !== "string" || !token || /[\s\0]/u.test(token)) throw new Error("Invalid token: expected a nonempty string without whitespace or NUL");
+  if (typeof token !== "string" || !token || /[\s\0]/u.test(token))
+    throw new Error(
+      "Invalid token: expected a nonempty string without whitespace or NUL",
+    );
 }
 
 /** In-memory store for tests */
@@ -75,15 +86,24 @@ export class FileSecretStore implements SecretStore {
       ) {
         throw new Error("not an object");
       }
-      for (const value of Object.values(parsed)) { try { assertValidToken(value); } catch { throw new SecretStoreError("CORRUPT"); } }
+      for (const value of Object.values(parsed)) {
+        try {
+          assertValidToken(value);
+        } catch {
+          throw new SecretStoreError("CORRUPT");
+        }
+      }
       return parsed as Record<string, string>;
-    } catch { throw new SecretStoreError("CORRUPT"); }
+    } catch {
+      throw new SecretStoreError("CORRUPT");
+    }
   }
 
   private writeUnlocked(data: Record<string, string>): void {
     ensureAcctDir(path.dirname(this.filePath));
-    fs.rmSync(this.backupPath(), {force: true});
-    if (Object.keys(data).length === 0) fs.rmSync(this.filePath, {force: true});
+    fs.rmSync(this.backupPath(), { force: true });
+    if (Object.keys(data).length === 0)
+      fs.rmSync(this.filePath, { force: true });
     else atomicWriteFileSync(this.filePath, JSON.stringify(data), 0o600);
   }
 
@@ -96,11 +116,17 @@ export class FileSecretStore implements SecretStore {
       const data = this.readUnlocked();
       for (const [legacy, secret] of Object.entries(data)) {
         const [host, user] = legacy.split("::");
-        const key = user ? `${canonicalHost(host!)}::${user.toLowerCase()}` : legacy;
+        const key = user
+          ? `${canonicalHost(host!)}::${user.toLowerCase()}`
+          : legacy;
         try {
-          if (await primary.get(key) == null) await primary.set(key, secret);
+          if ((await primary.get(key)) == null) await primary.set(key, secret);
           delete data[legacy];
-        } catch { console.error("acct warning: secret migration incomplete; run acct doctor"); }
+        } catch {
+          console.error(
+            "acct warning: secret migration incomplete; run acct doctor",
+          );
+        }
       }
       this.writeUnlocked(data);
     });
@@ -144,15 +170,42 @@ function fileStorePath(env: NodeJS.ProcessEnv = process.env): string {
 
 async function keyringStore(): Promise<SecretStore> {
   let Entry: typeof import("@napi-rs/keyring").Entry;
-  try { ({Entry} = await import("@napi-rs/keyring")); } catch { throw new SecretStoreError("UNAVAILABLE"); }
-  const failure = (e: unknown) => new SecretStoreError(/denied|permission|locked/i.test(e instanceof Error ? e.message : "") ? "DENIED" : "UNAVAILABLE");
+  try {
+    ({ Entry } = await import("@napi-rs/keyring"));
+  } catch {
+    throw new SecretStoreError("UNAVAILABLE");
+  }
+  const failure = (e: unknown) =>
+    new SecretStoreError(
+      /denied|permission|locked/i.test(e instanceof Error ? e.message : "")
+        ? "DENIED"
+        : "UNAVAILABLE",
+    );
   // Installed @napi-rs/keyring index.d.ts: getPassword returns null for absence;
   // deleteCredential returns false for absence. Other errors must propagate.
   // https://github.com/Brooooooklyn/keyring-node
   return {
-    async get(account) { try { return new Entry(SERVICE, account).getPassword(); } catch (e) { throw failure(e); } },
-    async set(account, secret) { try { new Entry(SERVICE, account).setPassword(secret); } catch (e) { throw failure(e); } },
-    async delete(account) { try { new Entry(SERVICE, account).deleteCredential(); } catch (e) { throw failure(e); } },
+    async get(account) {
+      try {
+        return new Entry(SERVICE, account).getPassword();
+      } catch (e) {
+        throw failure(e);
+      }
+    },
+    async set(account, secret) {
+      try {
+        new Entry(SERVICE, account).setPassword(secret);
+      } catch (e) {
+        throw failure(e);
+      }
+    },
+    async delete(account) {
+      try {
+        new Entry(SERVICE, account).deleteCredential();
+      } catch (e) {
+        throw failure(e);
+      }
+    },
   };
 }
 
@@ -163,19 +216,32 @@ async function keyringStore(): Promise<SecretStore> {
  */
 export class PreferKeyringStore implements SecretStore {
   private migration: Promise<void> | null = null;
-  constructor(private readonly primary: SecretStore, private readonly fileFallback: SecretStore) {}
+  constructor(
+    private readonly primary: SecretStore,
+    private readonly fileFallback: SecretStore,
+  ) {}
   private ready(): Promise<void> {
-    return this.migration ??= this.fileFallback instanceof FileSecretStore ? this.fileFallback.migrateTo(this.primary) : Promise.resolve();
+    return (this.migration ??=
+      this.fileFallback instanceof FileSecretStore
+        ? this.fileFallback.migrateTo(this.primary)
+        : Promise.resolve());
   }
   async get(account: string): Promise<string | null> {
     await this.ready();
-    return await this.primary.get(account) ?? await this.fileFallback.get(account);
+    return (
+      (await this.primary.get(account)) ??
+      (await this.fileFallback.get(account))
+    );
   }
   async set(account: string, secret: string): Promise<void> {
-    await this.ready(); await this.primary.set(account, secret); await this.fileFallback.delete(account);
+    await this.ready();
+    await this.primary.set(account, secret);
+    await this.fileFallback.delete(account);
   }
   async delete(account: string): Promise<void> {
-    await this.ready(); await this.primary.delete(account); await this.fileFallback.delete(account);
+    await this.ready();
+    await this.primary.delete(account);
+    await this.fileFallback.delete(account);
   }
 }
 const autoStores = new Map<string, Promise<SecretStore>>();
@@ -191,23 +257,32 @@ export async function getSecretStore(
   // One sweep on first access for this configuration directory in a process.
   const key = fileStorePath(env);
   let store = autoStores.get(key);
-  if (!store) { store = keyringStore().then(primary => new PreferKeyringStore(primary, file)); autoStores.set(key, store); }
+  if (!store) {
+    store = keyringStore().then(
+      (primary) => new PreferKeyringStore(primary, file),
+    );
+    autoStores.set(key, store);
+  }
   return store;
 }
 
-export async function getProfileToken(profile: Profile, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+export async function getProfileToken(
+  profile: Profile,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string | null> {
   const store = await getSecretStore(env);
   let token = await store.get(accountKey(profile));
   const legacy = `${profile.host}::${profile.githubUser}`;
   if (!token && legacy !== accountKey(profile)) {
     token = await store.get(legacy);
-    if (token) { await store.set(accountKey(profile), token); await store.delete(legacy); }
+    if (token) {
+      await store.set(accountKey(profile), token);
+      await store.delete(legacy);
+    }
   }
   if (token && process.env.ACCT_DEBUG) {
     // Never interpolate token material — even redacted prefixes are forbidden.
-    debugLog(
-      `loaded token for ${accountKey(profile)}=${redactSecret(token)}`,
-    );
+    debugLog(`loaded token for ${accountKey(profile)}=${redactSecret(token)}`);
   }
   return token;
 }

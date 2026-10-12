@@ -61,8 +61,14 @@ function normalizePerson(raw, fallbackId) {
 function loadJsonFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null;
   const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  const a = normalizePerson(parsed.a || parsed.primary || parsed.personal, "personal");
-  const b = normalizePerson(parsed.b || parsed.secondary || parsed.work, "work");
+  const a = normalizePerson(
+    parsed.a || parsed.primary || parsed.personal,
+    "personal",
+  );
+  const b = normalizePerson(
+    parsed.b || parsed.secondary || parsed.work,
+    "work",
+  );
   if (!a || !b) {
     throw new Error(
       `Invalid e2e identities file ${filePath}: need a/b (or primary/secondary) with githubUser, name, email, id`,

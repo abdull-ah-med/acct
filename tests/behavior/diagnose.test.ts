@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { diagnose, formatDiagnoseReport, type DiagnoseInput } from "../../src/status/explain.js";
+import {
+  diagnose,
+  formatDiagnoseReport,
+  type DiagnoseInput,
+} from "../../src/status/explain.js";
 import {
   illegalGhFlags,
   parseGhAuthInvocations,
@@ -7,8 +11,8 @@ import {
 
 function scenario(over: Partial<DiagnoseInput> = {}): DiagnoseInput {
   return {
-    hooksActive:true,
-    pushHooksActive:true,
+    hooksActive: true,
+    pushHooksActive: true,
     profileId: "work",
     githubUser: "user-a",
     host: "github.com",
@@ -67,9 +71,9 @@ describe("diagnose: commit/push/gh outlook (product rules)", () => {
       }),
     );
     expect(report.commit.outlook).toBe("blocked");
-    expect(report.issues.some((i) => i.code === "commit-identity-mismatch")).toBe(
-      true,
-    );
+    expect(
+      report.issues.some((i) => i.code === "commit-identity-mismatch"),
+    ).toBe(true);
   });
 
   it("strict + stored PAT for the other user: push blocked; --no-verify would leak", () => {
@@ -134,16 +138,14 @@ describe("diagnose: commit/push/gh outlook (product rules)", () => {
       }),
     );
     expect(report.commit.outlook).toBe("blocked");
-    expect(report.issues.some((i) => i.code === "commit-identity-mismatch")).toBe(
-      true,
-    );
-    expect(report.fixes).toContain(
-      "git config --local --unset-all user.name",
-    );
-    expect(report.fixes).toContain(
-      "git config --local --unset-all user.email",
-    );
-    expect(report.fixes.indexOf("git config --local --unset-all user.email")).toBeLessThan(
+    expect(
+      report.issues.some((i) => i.code === "commit-identity-mismatch"),
+    ).toBe(true);
+    expect(report.fixes).toContain("git config --local --unset-all user.name");
+    expect(report.fixes).toContain("git config --local --unset-all user.email");
+    expect(
+      report.fixes.indexOf("git config --local --unset-all user.email"),
+    ).toBeLessThan(
       report.fixes.indexOf("acct install") === -1
         ? Number.POSITIVE_INFINITY
         : report.fixes.indexOf("acct install"),
@@ -180,9 +182,9 @@ describe("diagnose: emitted gh commands vs GitHub CLI manuals", () => {
     const invocations = parseGhAuthInvocations(report.fixes);
     expect(invocations.length).toBeGreaterThan(0);
     expect(illegalGhFlags(invocations)).toEqual([]);
-    expect(invocations.some((i) => i.verb === "login" && i.flags.includes("user"))).toBe(
-      false,
-    );
+    expect(
+      invocations.some((i) => i.verb === "login" && i.flags.includes("user")),
+    ).toBe(false);
     expect(
       invocations.some((i) => i.verb === "refresh" && i.flags.includes("user")),
     ).toBe(false);

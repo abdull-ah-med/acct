@@ -30,7 +30,12 @@ export function parseGhAuthInvocations(lines: string[]): GhInvocation[] {
     const found: string[] = [];
     for (const token of rest.split(/\s+/).filter(Boolean)) {
       if (token.startsWith("--")) {
-        found.push(token.replace(/^--/, "").split("=")[0]!.replace(/[^a-z0-9-].*$/i, ""));
+        found.push(
+          token
+            .replace(/^--/, "")
+            .split("=")[0]!
+            .replace(/[^a-z0-9-].*$/i, ""),
+        );
       }
     }
     out.push({ verb, flags: found });

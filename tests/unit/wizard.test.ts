@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  collectInitPlan,
-  type WizardIO,
-} from "../../src/cli/wizard.js";
+import { collectInitPlan, type WizardIO } from "../../src/cli/wizard.js";
 
 function scriptedIo(answers: string[]): { io: WizardIO; log: string[] } {
   const log: string[] = [];

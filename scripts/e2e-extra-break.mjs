@@ -64,12 +64,22 @@ function helper(op, body, cwd, env) {
   });
 }
 function ghToken(user) {
-  const r = run("gh", ["auth", "token", "--hostname", "github.com", "--user", user]);
+  const r = run("gh", [
+    "auth",
+    "token",
+    "--hostname",
+    "github.com",
+    "--user",
+    user,
+  ]);
   if (r.status !== 0) throw new Error(`token fail ${user}: ${r.stderr}`);
   return r.stdout.trim();
 }
 function refused(r) {
-  return r.status !== 0 && /Refusing|refusing|mutates global/i.test(r.stderr + r.stdout);
+  return (
+    r.status !== 0 &&
+    /Refusing|refusing|mutates global/i.test(r.stderr + r.stdout)
+  );
 }
 function hasTok(out, toks) {
   return toks.some((t) => out.includes(t));
@@ -83,7 +93,8 @@ const gitconfig = path.join(base, "gitconfig");
 const personalRoot = path.join(base, "trees", "personal");
 const workRoot = path.join(base, "trees", "work");
 const unboundRoot = path.join(base, "trees", "unbound");
-for (const d of [personalRoot, workRoot, unboundRoot]) fs.mkdirSync(d, { recursive: true });
+for (const d of [personalRoot, workRoot, unboundRoot])
+  fs.mkdirSync(d, { recursive: true });
 fs.writeFileSync(
   gitconfig,
   "[user]\n\tname = GlobalFallback\n\temail = global@example.com\n[credential]\n\thelper = osxkeychain\n",
@@ -147,9 +158,11 @@ try {
       env,
       workRoot,
     );
-    if (r.status !== 0) throw new Error(`add ${SECONDARY.id}: ` + redact(r.stderr));
+    if (r.status !== 0)
+      throw new Error(`add ${SECONDARY.id}: ` + redact(r.stderr));
     r = acct(["bind", workRoot, SECONDARY.id], env);
-    if (r.status !== 0) throw new Error(`bind ${SECONDARY.id}: ` + redact(r.stderr));
+    if (r.status !== 0)
+      throw new Error(`bind ${SECONDARY.id}: ` + redact(r.stderr));
     r = acct(["install"], env);
     if (r.status !== 0) throw new Error("install: " + redact(r.stderr));
     priTok = ghToken(PRIMARY.githubUser);
@@ -277,8 +290,15 @@ try {
         else fail(c.name, redact(out));
       } else {
         if (!gotSec && (quit || !gotPri || gotPri)) {
-          if (gotPri && (c.expect === "quit-or-no-token" || c.expect === "quit-or-safe")) {
-            note("warn", `unexpected token for ${c.name}`, `may be ok if host normalized`);
+          if (
+            gotPri &&
+            (c.expect === "quit-or-no-token" || c.expect === "quit-or-safe")
+          ) {
+            note(
+              "warn",
+              `unexpected token for ${c.name}`,
+              `may be ok if host normalized`,
+            );
             ok(`${c.name} recorded`);
           } else ok(`${c.name} fail-closed-ish`);
         } else fail(c.name, redact(out));
@@ -287,7 +307,9 @@ try {
   }
 
   // ---------- B: username mismatch semantics ----------
-  console.log("\nB) Wrong username still returns cwd profile token (confusion risk?)");
+  console.log(
+    "\nB) Wrong username still returns cwd profile token (confusion risk?)",
+  );
   {
     const r = helper(
       "get",
@@ -296,7 +318,10 @@ try {
       env,
     );
     const out = r.stdout;
-    if (out.includes(priTok) && out.includes(`username=${PRIMARY.githubUser}`)) {
+    if (
+      out.includes(priTok) &&
+      out.includes(`username=${PRIMARY.githubUser}`)
+    ) {
       note(
         "warn",
         `Helper ignores requested username=${SECONDARY.githubUser} and returns primary (cwd profile)`,
@@ -322,33 +347,62 @@ try {
       ["bash", "-c", "source /dev/stdin <<<'gh auth token'"],
       ["bash", "-c", "bash <(echo gh auth token)"],
       ["bash", "-c", "coproc gh auth token; wait"],
-      ["bash", "-c", "function gh(){ command gh \"$@\"; }; gh auth token"],
+      ["bash", "-c", 'function gh(){ command gh "$@"; }; gh auth token'],
       ["bash", "-c", "alias g=gh; g auth token"],
       ["bash", "-c", "printf 'auth\\ntoken\\n' | xargs gh"],
       ["bash", "-c", "printf 'auth\\ntoken\\n' | xargs -n1 | xargs gh"],
       ["bash", "-c", "a=to; b=ken; gh auth $a$b"],
       ["bash", "-c", "gh auth $(printf token)"],
       ["bash", "-c", "IFS=; gh$IFS auth$IFS token"],
-      ["bash", "-c", "gh auth to\"\"ken"],
+      ["bash", "-c", 'gh auth to""ken'],
       ["bash", "-c", "gh auth refres''h"],
       ["bash", "-c", "echo Z2ggYXV0aCB0b2tlbgo= | base64 -d | sh"],
       ["bash", "-c", "echo Z2ggYXV0aCB0b2tlbgo= | base64 -D | sh"],
       ["bash", "-c", "eval $(echo Z2ggYXV0aCB0b2tlbgo= | base64 -d)"],
-      ["bash", "-c", "python3 -c \"import os,subprocess; subprocess.call(['gh','auth','token'], env=os.environ)\""],
-      ["bash", "-c", "node -e \"require('child_process').execSync('gh auth token',{stdio:'inherit'})\""],
+      [
+        "bash",
+        "-c",
+        "python3 -c \"import os,subprocess; subprocess.call(['gh','auth','token'], env=os.environ)\"",
+      ],
+      [
+        "bash",
+        "-c",
+        "node -e \"require('child_process').execSync('gh auth token',{stdio:'inherit'})\"",
+      ],
       ["perl", "-e", "exec 'gh','auth','token'"],
       ["ruby", "-e", "exec 'gh','auth','token'"],
-      ["python3", "-c", "import subprocess; subprocess.check_call(['gh','auth','token'])"],
+      [
+        "python3",
+        "-c",
+        "import subprocess; subprocess.check_call(['gh','auth','token'])",
+      ],
       ["env", "-u", "GH_TOKEN", "gh", "auth", "token"],
-      ["env", "-u", "GH_TOKEN", "-u", "GITHUB_TOKEN", "bash", "-c", "gh auth token"],
+      [
+        "env",
+        "-u",
+        "GH_TOKEN",
+        "-u",
+        "GITHUB_TOKEN",
+        "bash",
+        "-c",
+        "gh auth token",
+      ],
       ["xargs", "-n2", "gh"], // needs stdin — see below
       ["timeout", "5", "gh", "auth", "token"],
       ["nice", "gh", "auth", "token"],
       ["nohup", "gh", "auth", "token"],
       ["stdbuf", "-oL", "gh", "auth", "token"],
       ["command", "-p", "gh", "auth", "token"],
-      ["bash", "-c", `unset GH_TOKEN GITHUB_TOKEN; gh auth switch --user ${SECONDARY.githubUser}`],
-      ["bash", "-c", `export -n GH_TOKEN; unset GH_TOKEN; gh auth switch --hostname github.com --user ${SECONDARY.githubUser}`],
+      [
+        "bash",
+        "-c",
+        `unset GH_TOKEN GITHUB_TOKEN; gh auth switch --user ${SECONDARY.githubUser}`,
+      ],
+      [
+        "bash",
+        "-c",
+        `export -n GH_TOKEN; unset GH_TOKEN; gh auth switch --hostname github.com --user ${SECONDARY.githubUser}`,
+      ],
       // nested quote / unicode whitespace
       ["bash", "-c", "gh\u00a0auth\u00a0token"],
       ["bash", "-c", "gh\tauth\ttoken"],
@@ -372,12 +426,20 @@ try {
         note("info", `Non-goal interpreter dumped token: ${label}`, "");
         ok(`documented non-goal: ${label.slice(0, 40)}`);
       } else if (dumped) {
-        note("error", `I18 BYPASS dumped token: ${label}`, redact(out).slice(0, 200));
+        note(
+          "error",
+          `I18 BYPASS dumped token: ${label}`,
+          redact(out).slice(0, 200),
+        );
         fail(`bypass: ${label}`, "token dumped");
       } else if (r.status !== 0) {
         ok(`blocked/failed: ${label}`);
       } else {
-        note("warn", `exec exited 0 without clear refuse: ${label}`, redact(out).slice(0, 200));
+        note(
+          "warn",
+          `exec exited 0 without clear refuse: ${label}`,
+          redact(out).slice(0, 200),
+        );
         ok(`exit0 noted: ${label.slice(0, 50)}`);
       }
     }
@@ -390,7 +452,8 @@ try {
         input: "auth\ntoken\n",
       });
       const out = (r.stdout || "") + (r.stderr || "");
-      if (refused(r) || (!hasTok(out, tokens()) && r.status !== 0)) ok("refused: xargs stdin auth token");
+      if (refused(r) || (!hasTok(out, tokens()) && r.status !== 0))
+        ok("refused: xargs stdin auth token");
       else if (hasTok(out, tokens())) {
         note("error", "I18 BYPASS: xargs stdin", redact(out));
         fail("xargs stdin", "token");
@@ -403,18 +466,27 @@ try {
   {
     // Can`t easily change github user on same id without remove; test remove leaves secrets
     const secretsPath = path.join(configDir, "secrets.json");
-    const before = fs.existsSync(secretsPath) ? fs.readFileSync(secretsPath, "utf8") : "";
+    const before = fs.existsSync(secretsPath)
+      ? fs.readFileSync(secretsPath, "utf8")
+      : "";
     const r = acct(["profile", "remove", SECONDARY.id, "--force"], env);
     if (r.status !== 0) {
       // try without --force
       const r2 = acct(["profile", "remove", SECONDARY.id], env);
-      if (r2.status !== 0) note("warn", "profile remove failed", redact(r2.stderr));
+      if (r2.status !== 0)
+        note("warn", "profile remove failed", redact(r2.stderr));
       else ok(`removed ${SECONDARY.id} profile`);
     } else ok(`removed ${SECONDARY.id} profile --force`);
 
-    const after = fs.existsSync(secretsPath) ? fs.readFileSync(secretsPath, "utf8") : "";
+    const after = fs.existsSync(secretsPath)
+      ? fs.readFileSync(secretsPath, "utf8")
+      : "";
     if (after.includes(secTok)) {
-      note("error", `secrets.json still holds ${SECONDARY.id} token after profile remove`, "");
+      note(
+        "error",
+        `secrets.json still holds ${SECONDARY.id} token after profile remove`,
+        "",
+      );
       fail("orphan token after remove", "token remains");
     } else if (before.includes(`${SECONDARY.id}`) && after.includes(priTok)) {
       ok(`${SECONDARY.id} token purged from secrets on remove`);
@@ -426,7 +498,11 @@ try {
     // helper in ${SECONDARY.id} tree after profile gone
     const h = helper("get", `protocol=https\nhost=github.com\n`, workRoot, env);
     if (hasTok(h.stdout, [secTok])) {
-      note("error", `helper still returns ${SECONDARY.id} token after profile remove`, redact(h.stdout));
+      note(
+        "error",
+        `helper still returns ${SECONDARY.id} token after profile remove`,
+        redact(h.stdout),
+      );
       fail("stale token after remove", "leak");
     } else if (/quit=1/.test(h.stdout) || !h.stdout.trim()) {
       ok("helper fail-closed after profile remove");
@@ -470,23 +546,33 @@ try {
     fs.mkdirSync(nested, { recursive: true });
     fs.writeFileSync(path.join(nested, ".acct"), `${SECONDARY.id}\n`);
     let r = acct(["status"], env, nested);
-    if (new RegExp(`${SECONDARY.githubUser}|profile: ${SECONDARY.id}`).test(r.stdout)) ok("nested .acct overrides parent binding");
+    if (
+      new RegExp(`${SECONDARY.githubUser}|profile: ${SECONDARY.id}`).test(
+        r.stdout,
+      )
+    )
+      ok("nested .acct overrides parent binding");
     else fail("nested .acct", r.stdout);
 
     fs.writeFileSync(path.join(nested, ".acct"), "\n");
     r = acct(["status"], env, nested);
-    if (/unbound|no profile|reason:.*\.acct/i.test(r.stdout) && !new RegExp(PRIMARY.githubUser).test(r.stdout)) {
+    if (
+      /unbound|no profile|reason:.*\.acct/i.test(r.stdout) &&
+      !new RegExp(PRIMARY.githubUser).test(r.stdout)
+    ) {
       ok("empty nested .acct unbound (no parent fallthrough)");
     } else {
       note("warn", "empty .acct status", r.stdout.slice(0, 250));
-      if (new RegExp(PRIMARY.githubUser).test(r.stdout)) fail("empty .acct fell through to parent", r.stdout);
+      if (new RegExp(PRIMARY.githubUser).test(r.stdout))
+        fail("empty .acct fell through to parent", r.stdout);
       else ok("empty .acct status recorded");
     }
 
     // BOM / whitespace .acct
     fs.writeFileSync(path.join(nested, ".acct"), `\ufeff${SECONDARY.id}\n`);
     r = acct(["status"], env, nested);
-    if (new RegExp(SECONDARY.id).test(r.stdout)) ok(`BOM-prefixed .acct resolves ${SECONDARY.id}`);
+    if (new RegExp(SECONDARY.id).test(r.stdout))
+      ok(`BOM-prefixed .acct resolves ${SECONDARY.id}`);
     else {
       note("warn", "BOM .acct may fail parse", r.stdout.slice(0, 200));
       ok("BOM .acct recorded");
@@ -499,7 +585,8 @@ try {
 
     fs.writeFileSync(path.join(nested, ".acct"), "SECONDARY\n");
     r = acct(["status"], env, nested);
-    if (new RegExp(SECONDARY.id).test(r.stdout)) ok("case-insensitive .acct id");
+    if (new RegExp(SECONDARY.id).test(r.stdout))
+      ok("case-insensitive .acct id");
     else {
       note("info", "case-sensitive .acct id", r.stdout.slice(0, 200));
       ok("case .acct recorded");
@@ -510,9 +597,14 @@ try {
     try {
       fs.symlinkSync(workRoot, linkTree);
       r = helper("get", `protocol=https\nhost=github.com\n`, linkTree, env);
-      if (r.stdout.includes(secTok) && !r.stdout.includes(priTok)) ok(`symlink cwd resolves ${SECONDARY.id} token`);
+      if (r.stdout.includes(secTok) && !r.stdout.includes(priTok))
+        ok(`symlink cwd resolves ${SECONDARY.id} token`);
       else if (/quit=1/.test(r.stdout)) {
-        note("warn", "symlink cwd fail-closed (may not follow binding)", redact(r.stdout));
+        note(
+          "warn",
+          "symlink cwd fail-closed (may not follow binding)",
+          redact(r.stdout),
+        );
         ok("symlink fail-closed noted");
       } else fail("symlink cwd", redact(r.stdout));
     } catch (e) {
@@ -523,8 +615,15 @@ try {
     const evil = personalRoot + "-evil";
     fs.mkdirSync(evil, { recursive: true });
     r = acct(["status"], env, evil);
-    if (new RegExp(PRIMARY.githubUser).test(r.stdout) && /binding/.test(r.stdout)) {
-      note("error", "prefix collision: personalRoot-evil matched personal binding", r.stdout);
+    if (
+      new RegExp(PRIMARY.githubUser).test(r.stdout) &&
+      /binding/.test(r.stdout)
+    ) {
+      note(
+        "error",
+        "prefix collision: personalRoot-evil matched personal binding",
+        r.stdout,
+      );
       fail("path prefix", r.stdout);
     } else ok("personalRoot-evil not matched as personal binding");
   }
@@ -553,8 +652,14 @@ try {
       personalRoot,
       env,
     );
-    const stillPrimary = helper("get", `protocol=https\nhost=github.com\n`, personalRoot, env);
-    if (stillPrimary.stdout.includes(priTok)) ok("erase foreign token did not clear primary");
+    const stillPrimary = helper(
+      "get",
+      `protocol=https\nhost=github.com\n`,
+      personalRoot,
+      env,
+    );
+    if (stillPrimary.stdout.includes(priTok))
+      ok("erase foreign token did not clear primary");
     else fail("erase race cleared primary", redact(stillPrimary.stdout));
 
     if (bad === 0) ok(`20 alternating gets isolated`);
@@ -564,8 +669,17 @@ try {
   // ---------- G: Ambient env sticky / doctor ----------
   console.log("\nG) Sticky env / doctor mismatch");
   {
-    const sticky = { ...env, GH_TOKEN: secTok, ACCT_PROFILE: `${SECONDARY.id}` };
-    const r = helper("get", `protocol=https\nhost=github.com\n`, personalRoot, sticky);
+    const sticky = {
+      ...env,
+      GH_TOKEN: secTok,
+      ACCT_PROFILE: `${SECONDARY.id}`,
+    };
+    const r = helper(
+      "get",
+      `protocol=https\nhost=github.com\n`,
+      personalRoot,
+      sticky,
+    );
     if (r.stdout.includes(priTok) && !r.stdout.includes(secTok)) {
       ok("helper ignores sticky GH_TOKEN+ACCT_PROFILE (I4)");
     } else fail("sticky env polluted helper", redact(r.stdout));
@@ -576,9 +690,14 @@ try {
       note("error", "doctor leaked token with sticky env", redact(all));
       fail("doctor leak", "token");
     } else {
-      if (/GH_TOKEN|sticky|mismatch|principal/i.test(all)) ok("doctor warns about sticky token");
+      if (/GH_TOKEN|sticky|mismatch|principal/i.test(all))
+        ok("doctor warns about sticky token");
       else {
-        note("warn", "doctor may not warn on sticky GH_TOKEN mismatch", all.slice(0, 300));
+        note(
+          "warn",
+          "doctor may not warn on sticky GH_TOKEN mismatch",
+          all.slice(0, 300),
+        );
         ok("doctor no leak");
       }
     }
@@ -589,31 +708,64 @@ try {
   {
     // list leftover private e2e repos
     const listPri = acct(
-      ["exec", "gh", "api", "user/repos?per_page=100&visibility=private", "--jq", ".[].full_name"],
+      [
+        "exec",
+        "gh",
+        "api",
+        "user/repos?per_page=100&visibility=private",
+        "--jq",
+        ".[].full_name",
+      ],
       env,
       personalRoot,
     );
     const listSec = acct(
-      ["exec", "gh", "api", "user/repos?per_page=100&visibility=private", "--jq", ".[].full_name"],
+      [
+        "exec",
+        "gh",
+        "api",
+        "user/repos?per_page=100&visibility=private",
+        "--jq",
+        ".[].full_name",
+      ],
       env,
       workRoot,
     );
-    if (listPri.status === 0 && !hasTok(listPri.stdout, tokens())) ok("primary private list via exec");
+    if (listPri.status === 0 && !hasTok(listPri.stdout, tokens()))
+      ok("primary private list via exec");
     else fail("primary list", redact(listPri.stderr || listPri.stdout));
-    if (listSec.status === 0 && !hasTok(listSec.stdout, tokens())) ok(`${SECONDARY.id} private list via exec`);
+    if (listSec.status === 0 && !hasTok(listSec.stdout, tokens()))
+      ok(`${SECONDARY.id} private list via exec`);
     else fail(`${SECONDARY.id} list`, redact(listSec.stderr || listSec.stdout));
 
-    const priRepos = (listPri.stdout || "").split("\n").filter((x) => x.startsWith(`${PRIMARY.githubUser}/acct-e2e-`));
-    const secRepos = (listSec.stdout || "").split("\n").filter((x) => x.startsWith(`${SECONDARY.githubUser}/acct-e2e-`));
-    note("info", `leftover e2e repos primary=${priRepos.length} ${SECONDARY.id}=${secRepos.length}`, "");
+    const priRepos = (listPri.stdout || "")
+      .split("\n")
+      .filter((x) => x.startsWith(`${PRIMARY.githubUser}/acct-e2e-`));
+    const secRepos = (listSec.stdout || "")
+      .split("\n")
+      .filter((x) => x.startsWith(`${SECONDARY.githubUser}/acct-e2e-`));
+    note(
+      "info",
+      `leftover e2e repos primary=${priRepos.length} ${SECONDARY.id}=${secRepos.length}`,
+      "",
+    );
 
     if (priRepos[0]) {
-      const cross = acct(["exec", "gh", "api", `repos/${priRepos[0]}`, "--jq", ".full_name"], env, workRoot);
-      if (cross.status !== 0) ok(`${SECONDARY.id} cannot API-read ${priRepos[0]}`);
+      const cross = acct(
+        ["exec", "gh", "api", `repos/${priRepos[0]}`, "--jq", ".full_name"],
+        env,
+        workRoot,
+      );
+      if (cross.status !== 0)
+        ok(`${SECONDARY.id} cannot API-read ${priRepos[0]}`);
       else fail(`${SECONDARY.id} saw primary private`, cross.stdout);
     }
     if (secRepos[0]) {
-      const cross = acct(["exec", "gh", "api", `repos/${secRepos[0]}`, "--jq", ".full_name"], env, personalRoot);
+      const cross = acct(
+        ["exec", "gh", "api", `repos/${secRepos[0]}`, "--jq", ".full_name"],
+        env,
+        personalRoot,
+      );
       if (cross.status !== 0) ok(`primary cannot API-read ${secRepos[0]}`);
       else fail(`primary saw ${SECONDARY.id} private`, cross.stdout);
     }
@@ -625,17 +777,29 @@ try {
     const r = acct(["shell-env"], env, personalRoot);
     if (hasTok(r.stdout, [priTok]) && !hasTok(r.stdout, [secTok])) {
       // check single-quote wrapping
-      if (/export GH_TOKEN=`/.test(r.stdout) || /export GH_TOKEN="/.test(r.stdout)) {
+      if (
+        /export GH_TOKEN=`/.test(r.stdout) ||
+        /export GH_TOKEN="/.test(r.stdout)
+      ) {
         ok("shell-env exports quoted primary token");
       } else {
-        note("warn", "shell-env token quoting unexpected", redact(r.stdout).slice(0, 120));
+        note(
+          "warn",
+          "shell-env token quoting unexpected",
+          redact(r.stdout).slice(0, 120),
+        );
         ok("shell-env exports token");
       }
-      note("warn", "shell-env prints live token to stdout (by design for eval)", "process list / shell history risk");
+      note(
+        "warn",
+        "shell-env prints live token to stdout (by design for eval)",
+        "process list / shell history risk",
+      );
     } else fail("shell-env", redact(r.stdout));
 
     const u = acct(["shell-env"], env, unboundRoot);
-    if (/unset GH_TOKEN/.test(u.stdout) && !hasTok(u.stdout, tokens())) ok("unbound shell-env clears tokens");
+    if (/unset GH_TOKEN/.test(u.stdout) && !hasTok(u.stdout, tokens()))
+      ok("unbound shell-env clears tokens");
     else fail("unbound shell-env", redact(u.stdout));
   }
 
@@ -651,7 +815,8 @@ try {
       note("warn", `install duplicated managed blocks markers=${markers}`, "");
       ok("install churn noted");
     }
-    if (/gho_|ghp_|github_pat_/.test(gc)) fail("gitconfig token leak", "token in gitconfig");
+    if (/gho_|ghp_|github_pat_/.test(gc))
+      fail("gitconfig token leak", "token in gitconfig");
     else ok("gitconfig has no tokens");
 
     const cfg = fs.readFileSync(path.join(configDir, "config.yaml"), "utf8");
@@ -664,7 +829,12 @@ try {
   {
     acct(["enforce", "off"], env, unboundRoot);
     // set defaultEnforce if CLI supports
-    const r = helper("get", `protocol=https\nhost=github.com\n`, unboundRoot, env);
+    const r = helper(
+      "get",
+      `protocol=https\nhost=github.com\n`,
+      unboundRoot,
+      env,
+    );
     if (!r.stdout.trim()) {
       note(
         "warn",

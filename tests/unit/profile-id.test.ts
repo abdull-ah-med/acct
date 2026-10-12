@@ -19,7 +19,9 @@ describe("profile id allowlist", () => {
   it("rejects Windows reserved device names", () => {
     for (const id of ["CON", "aux", "com1", "LPT9", "NUL", "Prn"]) {
       expect(isValidProfileId(id), id).toBe(false);
-      expect(() => assertValidProfileId(id)).toThrow(/reserved|Invalid profile id/i);
+      expect(() => assertValidProfileId(id)).toThrow(
+        /reserved|Invalid profile id/i,
+      );
     }
     expect(() => assertValidProfileId("work")).not.toThrow();
   });
@@ -59,9 +61,9 @@ describe("profile id allowlist", () => {
       assertNoProfileIdCaseCollision(profiles, "work"),
     ).not.toThrow();
     expect(profileIdCaseKey("WORK")).toBe("work");
-    expect(listProfileIdCaseCollisions([{ id: "work" }, { id: "WORK" }])).toEqual(
-      [["work", "WORK"]],
-    );
+    expect(
+      listProfileIdCaseCollisions([{ id: "work" }, { id: "WORK" }]),
+    ).toEqual([["work", "WORK"]]);
     expect(listProfileIdCaseCollisions(profiles)).toEqual([]);
   });
 });

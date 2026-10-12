@@ -27,7 +27,9 @@ describe("file secret backend", () => {
 
   beforeEach(() => {
     setSecretStoreForTests(null);
-    dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-secrets-")));
+    dir = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-secrets-")),
+    );
     prev = process.env.ACCT_CONFIG_DIR;
     process.env.ACCT_CONFIG_DIR = dir;
     process.env.ACCT_SECRET_BACKEND = "file";
@@ -45,7 +47,9 @@ describe("file secret backend", () => {
     expect(await getProfileToken(profile)).toBe("gho_TEST_ONLY_file_backend");
     const secrets = path.join(dir, "secrets.json");
     expect(fs.existsSync(secrets)).toBe(true);
-    expect(fs.readFileSync(secrets, "utf8")).toContain("gho_TEST_ONLY_file_backend");
+    expect(fs.readFileSync(secrets, "utf8")).toContain(
+      "gho_TEST_ONLY_file_backend",
+    );
     expect(fs.existsSync(path.join(dir, "config.yaml"))).toBe(false);
   });
 

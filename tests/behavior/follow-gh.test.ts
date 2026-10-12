@@ -15,7 +15,9 @@ const work: Profile = {
 };
 
 function tokenCalls(gh: ReturnType<typeof installFakeGh>) {
-  return gh.calls().filter((c) => c.argv[0] === "auth" && c.argv[1] === "token");
+  return gh
+    .calls()
+    .filter((c) => c.argv[0] === "auth" && c.argv[1] === "token");
 }
 
 function storedTokens(configDir: string): Record<string, string> {
@@ -58,9 +60,7 @@ describe("follow-gh at the credential-helper seam", () => {
       ]);
       expect(tokenCall!.hasGhToken).toBe(false);
       expect(tokenCall!.hasGithubToken).toBe(false);
-      expect(
-        gh.calls().some((c) => c.argv.includes("switch")),
-      ).toBe(false);
+      expect(gh.calls().some((c) => c.argv.includes("switch"))).toBe(false);
 
       gh.setToken("user-a", "gho_TEST_ONLY_rotated");
       const second = helperGet(ws.workDir, env);

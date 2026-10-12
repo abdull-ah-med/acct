@@ -13,7 +13,9 @@ describe("enforce hooks (I11b)", () => {
   let prev: string | undefined;
 
   beforeEach(() => {
-    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-")));
+    tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-")),
+    );
     prev = process.env.ACCT_CONFIG_DIR;
     process.env.ACCT_CONFIG_DIR = path.join(tmp, "config");
   });
@@ -30,7 +32,9 @@ describe("enforce hooks (I11b)", () => {
       "/usr/local/bin/node",
       "/opt/acct/bin/acct.js",
     );
-    expect(script).toContain("'/usr/local/bin/node' '/opt/acct/bin/acct.js' hook-run pre-commit");
+    expect(script).toContain(
+      "'/usr/local/bin/node' '/opt/acct/bin/acct.js' hook-run pre-commit",
+    );
     expect(script).not.toMatch(/^acct /m);
   });
 
@@ -46,7 +50,9 @@ describe("enforce hooks (I11b)", () => {
     if (process.platform === "win32") {
       expect(body).toContain("# acct managed hook v2");
     } else {
-      expect(fs.statSync(path.join(dir, "pre-commit")).mode & 0o111).toBeTruthy();
+      expect(
+        fs.statSync(path.join(dir, "pre-commit")).mode & 0o111,
+      ).toBeTruthy();
     }
   });
 

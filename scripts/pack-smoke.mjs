@@ -50,16 +50,25 @@ try {
   }
   // Test the tarball against the same runtime dependency versions validated by CI.
   // npm ci primes these exact packages in the cache; offline avoids semver drift.
-  const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
-  const runtime = Object.keys(pkg.dependencies).map(name => `${name}@${lock.packages[`node_modules/${name}`].version}`);
-  const install = run("npm", ["install", "--offline", tgz, ...runtime], { cwd: tmp });
+  const lock = JSON.parse(
+    fs.readFileSync(path.join(root, "package-lock.json"), "utf8"),
+  );
+  const runtime = Object.keys(pkg.dependencies).map(
+    (name) => `${name}@${lock.packages[`node_modules/${name}`].version}`,
+  );
+  const install = run("npm", ["install", "--offline", tgz, ...runtime], {
+    cwd: tmp,
+  });
   if (install.status !== 0) {
     console.error(install.stderr || install.stdout);
     process.exit(install.status ?? 1);
   }
 
   const acctJs = path.join(tmp, "node_modules/acct-sh/bin/acct.js");
-  const helperJs = path.join(tmp, "node_modules/acct-sh/bin/git-credential-acct.js");
+  const helperJs = path.join(
+    tmp,
+    "node_modules/acct-sh/bin/git-credential-acct.js",
+  );
 
   const ver = run(process.execPath, [acctJs, "--version"], { cwd: tmp });
   const got = (ver.stdout || "").trim();

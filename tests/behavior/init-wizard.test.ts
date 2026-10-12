@@ -31,9 +31,10 @@ describe("acct init wizard at the CLI seam", () => {
     });
     try {
       const r = acct(["init"], env, workDir, {
-        input: ["n", "work", "user-a", "user-a@example.com", "User A", "y"].join(
-          "\n",
-        ) + "\n",
+        input:
+          ["n", "work", "user-a", "user-a@example.com", "User A", "y"].join(
+            "\n",
+          ) + "\n",
       });
       const out = `${r.stdout}\n${r.stderr}`;
       expect(r.status, out).toBe(0);

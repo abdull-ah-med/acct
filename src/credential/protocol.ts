@@ -11,7 +11,14 @@ export type CredentialAttrs = Record<string, string>;
 /** HTTPS default port — only non-pinned profiles may accept this explicit port. */
 export const DEFAULT_HTTPS_PORT = "443";
 
-const SINGULAR_KEYS = new Set(["protocol", "host", "path", "username", "password", "url"]);
+const SINGULAR_KEYS = new Set([
+  "protocol",
+  "host",
+  "path",
+  "username",
+  "password",
+  "url",
+]);
 
 /**
  * Split `host` / `host:port` / `[ipv6]:port` per git-credential host attribute.
@@ -173,7 +180,14 @@ export function hostAllowed(
   const req = splitHostPort(requestedHost);
   const prof = splitHostPort(profileHost);
   if (!req.hostname || !prof.hostname) return false;
-  if (req.hostname.toLowerCase() !== prof.hostname.toLowerCase() && !(req.hostname.toLowerCase() === "gist.github.com" && prof.hostname.toLowerCase() === "github.com")) return false;
+  if (
+    req.hostname.toLowerCase() !== prof.hostname.toLowerCase() &&
+    !(
+      req.hostname.toLowerCase() === "gist.github.com" &&
+      prof.hostname.toLowerCase() === "github.com"
+    )
+  )
+    return false;
 
   if (prof.port !== undefined) {
     // git-credential includes the port only when the URL specified it

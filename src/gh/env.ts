@@ -26,12 +26,31 @@ export async function envForProfile(
   base: NodeJS.ProcessEnv = process.env,
   mode: EnforceMode = profile.enforce ?? "strict",
 ): Promise<NodeJS.ProcessEnv> {
-  const env = { ...base, ACCT_PROFILE: profile.id, GH_HOST: canonicalHost(profile.host) } as NodeJS.ProcessEnv;
-  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]) delete env[key];
-  let token = await resolveProfileToken(profile, base, {allowNetwork: false, persist: false});
-  if (!token && mode !== "off") console.error(`acct: no token for profile ${profile.id} — gh is blocked here; run: acct profile token ${profile.id} --import-gh`);
+  const env = {
+    ...base,
+    ACCT_PROFILE: profile.id,
+    GH_HOST: canonicalHost(profile.host),
+  } as NodeJS.ProcessEnv;
+  for (const key of [
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_ENTERPRISE_TOKEN",
+    "GITHUB_ENTERPRISE_TOKEN",
+  ])
+    delete env[key];
+  let token = await resolveProfileToken(profile, base, {
+    allowNetwork: false,
+    persist: false,
+  });
+  if (!token && mode !== "off")
+    console.error(
+      `acct: no token for profile ${profile.id} — gh is blocked here; run: acct profile token ${profile.id} --import-gh`,
+    );
   if (!token && mode === "strict") token = "acct-blocked-no-token";
-  if (token) env[isGithubDotComFamily(profile.host) ? "GH_TOKEN" : "GH_ENTERPRISE_TOKEN"] = token;
+  if (token)
+    env[
+      isGithubDotComFamily(profile.host) ? "GH_TOKEN" : "GH_ENTERPRISE_TOKEN"
+    ] = token;
   return env;
 }
 
@@ -49,12 +68,16 @@ export function ghApiLogin(
   opts: { timeoutMs?: number } = {},
 ): string | null {
   try {
-    const out = execFileSync(resolveRealGh(env), ["api", "user", "--jq", ".login"], {
-      encoding: "utf8",
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: opts.timeoutMs ?? 3000,
-    });
+    const out = execFileSync(
+      resolveRealGh(env),
+      ["api", "user", "--jq", ".login"],
+      {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: opts.timeoutMs ?? 3000,
+      },
+    );
     return out.trim() || null;
   } catch {
     return null;
@@ -93,8 +116,7 @@ export function ghActiveLogin(
       hosts?: Record<string, Array<{ login?: unknown; active?: unknown }>>;
     };
     const entries = parsed.hosts?.[host] ?? [];
-    const active =
-      entries.find((e) => e.active === true) ?? entries[0];
+    const active = entries.find((e) => e.active === true) ?? entries[0];
     return typeof active?.login === "string" && active.login.trim()
       ? active.login.trim()
       : null;
@@ -354,12 +376,17 @@ export function stripWrapperArgv(argv: string[]): string[] {
  * replacement into initial-arguments (`-I` / `-i` / `-J` and long forms).
  * Cite: https://man7.org/linux/man-pages/man1/xargs.1.html ; https://ss64.com/mac/xargs.html
  */
-function xargsOptionsUseReplace(argv: string[], start: number, end: number): boolean {
+function xargsOptionsUseReplace(
+  argv: string[],
+  start: number,
+  end: number,
+): boolean {
   for (let i = start; i < end; i++) {
     const a = argv[i]!;
     if (a === "--") break;
     if (a === "-I" || a === "-i" || a === "-J") return true;
-    if (a.startsWith("-I") || a.startsWith("-i") || a.startsWith("-J")) return true;
+    if (a.startsWith("-I") || a.startsWith("-i") || a.startsWith("-J"))
+      return true;
     if (a === "--replace" || a.startsWith("--replace=")) return true;
   }
   return false;
@@ -454,11 +481,12 @@ export function normalizeShellScriptForAuthDeny(script: string): string {
     out = out.replace(/""/g, "").replace(/''/g, "");
   }
   // printf / C escapes → whitespace so `\btoken\b` matches after `auth\ntoken`
-  out = out
-    .replace(/\\[nrtvf0]/gi, " ")
-    .replace(/\\[0-7]{1,3}/g, " ");
+  out = out.replace(/\\[nrtvf0]/gi, " ").replace(/\\[0-7]{1,3}/g, " ");
   // Strip IFS expansions used as empty glue (quoted or bare).
-  out = out.replace(/\$\{IFS\}|\$IFS|"\$\{IFS\}"|'\$\{IFS\}'|"\$IFS"|'\$IFS'/g, "");
+  out = out.replace(
+    /\$\{IFS\}|\$IFS|"\$\{IFS\}"|'\$\{IFS\}'|"\$IFS"|'\$IFS'/g,
+    "",
+  );
   out = expandDangerousBraceGroups(out);
   return out;
 }
@@ -544,7 +572,9 @@ function decodeAnsiCBody(body: string): string {
  */
 function expandDangerousBraceGroups(script: string): string {
   return script.replace(/\{([^{}]+)\}/g, (full, inner: string) => {
-    const parts = inner.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""));
+    const parts = inner
+      .split(",")
+      .map((p) => p.trim().replace(/^["']|["']$/g, ""));
     if (parts.length < 2) return full;
     const hasGh = parts.some((p) => /(?:^|\/)gh(?:\.exe)?$/i.test(p));
     const hasDanger = parts.some((p) => DANGEROUS_GH_AUTH.has(p.toLowerCase()));
@@ -580,7 +610,7 @@ const DECODER_RE =
  * Cite: REMEDIATION_PLAN.md P1.3–P1.7
  */
 export function shellScriptHasDangerousGhAuth(script: string): boolean {
-  const s = normalizeShellScriptForAuthDeny(script);
+  const normalizedScript = normalizeShellScriptForAuthDeny(script);
   const subs = [...DANGEROUS_GH_AUTH].join("|");
   const dangerLit = String.raw`(?:["'](?:${subs})["']|(?:${subs})\b)`;
   const sep = String.raw`(?:\s+)+`;
@@ -605,26 +635,23 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
 
   // Nested shell via decoder pipeline / eval — reconstructs arbitrary argv.
   // Cite: live bypass `echo … | base64 -d | sh` (2026-08-08); P1.5 printf/echo -e
-  if (DECODER_RE.test(s) && (pipeToShell.test(s) || /\beval\b/i.test(s))) {
+  if (
+    DECODER_RE.test(normalizedScript) &&
+    (pipeToShell.test(normalizedScript) || /\beval\b/i.test(normalizedScript))
+  ) {
     return true;
   }
 
   const triplePatterns = [
     // Literal / path / quoted: gh auth token
-    new RegExp(
-      `${boundary}${GH_LIT}${sep}${AUTH_LIT}${sep}${dangerLit}`,
-      "i",
-    ),
+    new RegExp(`${boundary}${GH_LIT}${sep}${AUTH_LIT}${sep}${dangerLit}`, "i"),
     // Expansion(s) as argv0: $g auth token ; $a$b auth token ; $(which gh) auth login
     new RegExp(
       `${boundary}${SHELL_EXP_GLUE}${sep}${AUTH_LIT}${sep}${dangerLit}`,
       "i",
     ),
     // Expansion as auth: gh $x switch
-    new RegExp(
-      `${boundary}${GH_LIT}${sep}${SHELL_EXP}${sep}${dangerLit}`,
-      "i",
-    ),
+    new RegExp(`${boundary}${GH_LIT}${sep}${SHELL_EXP}${sep}${dangerLit}`, "i"),
     // Expansion(s) as dangerous subcommand: gh auth $(echo token) ; gh auth $a$b
     new RegExp(
       `${boundary}${GH_LIT}${sep}${AUTH_LIT}${sep}${SHELL_EXP_GLUE}`,
@@ -636,19 +663,31 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
       "i",
     ),
   ];
-  if (triplePatterns.some((re) => re.test(s))) return true;
+  if (triplePatterns.some((re) => re.test(normalizedScript))) return true;
 
-  const hasDangerWord = new RegExp(`\\b(?:${subs})\\b`, "i").test(s);
-  const hasAuthWord = /\bauth\b/i.test(s);
+  const hasDangerWord = new RegExp(`\\b(?:${subs})\\b`, "i").test(
+    normalizedScript,
+  );
+  const hasAuthWord = /\bauth\b/i.test(normalizedScript);
   const hasGhWord = new RegExp(
     `${boundary}(?:\\S*/)?gh(?:\\.exe)?\\b`,
     "i",
-  ).test(s);
-  if (hasDangerWord && hasAuthWord && hasGhWord && /\bxargs\b/i.test(s)) {
+  ).test(normalizedScript);
+  if (
+    hasDangerWord &&
+    hasAuthWord &&
+    hasGhWord &&
+    /\bxargs\b/i.test(normalizedScript)
+  ) {
     return true;
   }
 
-  if (hasDangerWord && hasAuthWord && hasGhWord && pipeToShell.test(s)) {
+  if (
+    hasDangerWord &&
+    hasAuthWord &&
+    hasGhWord &&
+    pipeToShell.test(normalizedScript)
+  ) {
     return true;
   }
 
@@ -658,19 +697,19 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
       String.raw`(^|[;|&{}\n])\s*${SHELL_EXP_GLUE}\s*([;|&{}\n]|$)`,
       "i",
     );
-    if (gluedSoleCmd.test(s)) return true;
+    if (gluedSoleCmd.test(normalizedScript)) return true;
   }
 
   // P1.4: assignment reconstruction (`x=gh` / `y=token` / `a=$(printf gh)`)
   if (hasDangerWord && hasAuthWord && hasGhWord) {
     const assignRe =
       /=\s*['"]?(?:gh|token|login|logout|refresh|switch|setup-git)\b|=\$\([^)]*\b(?:gh|token)\b/i;
-    if (assignRe.test(s)) return true;
+    if (assignRe.test(normalizedScript)) return true;
   }
 
   // P1.7: alias g=gh; g auth token
   if (hasAuthWord && hasDangerWord) {
-    for (const m of s.matchAll(
+    for (const m of normalizedScript.matchAll(
       /\balias\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*['"]?(?:\S*\/)?gh(?:\.exe)?['"]?/gi,
     )) {
       const name = m[1]!;
@@ -678,10 +717,10 @@ export function shellScriptHasDangerousGhAuth(script: string): boolean {
         String.raw`(^|[^A-Za-z0-9_])${name}${sep}${AUTH_LIT}${sep}${dangerLit}`,
         "i",
       );
-      if (useRe.test(s)) return true;
+      if (useRe.test(normalizedScript)) return true;
     }
     // Conservative: alias + auth + danger present
-    if (/\balias\b/i.test(s) && hasGhWord) return true;
+    if (/\balias\b/i.test(normalizedScript) && hasGhWord) return true;
   }
 
   return false;
@@ -697,7 +736,11 @@ function shellFlagTakesScript(flag: string): boolean {
   if (lower === "-command" || lower === "/c") return true;
   if (flag.startsWith("--")) return false;
   // Avoid treating find -printf / similar as shell -c (must be pure letter cluster)
-  if (/^-[a-zA-Z]+$/.test(flag) && flag.includes("c") && !flag.includes("printf")) {
+  if (
+    /^-[a-zA-Z]+$/.test(flag) &&
+    flag.includes("c") &&
+    !flag.includes("printf")
+  ) {
     // Still exclude long utility flags that happen to contain "c"
     if (flag.length > 4 && !/^-[a-z]*c[a-z]*$/i.test(flag)) return false;
     // Shell option clusters are short: -c, -lc, -ic, -plc, -norc, …
@@ -722,10 +765,7 @@ function pwshArgvHidesScript(argv: string[]): boolean {
     if (flag.startsWith("-enc")) return true;
     if (flag === "-file" || flag === "-f") return true;
     if (flag === "-commandwithargs" || flag === "-cwa") return true;
-    if (
-      (flag === "-command" || flag === "-c") &&
-      argv[i + 1] === "-"
-    ) {
+    if ((flag === "-command" || flag === "-c") && argv[i + 1] === "-") {
       return true;
     }
   }
@@ -744,8 +784,9 @@ function shellCPositionalsDangerous(
   if (!argsAfterScript.length) return false;
   const positionals = argsAfterScript.slice(1); // skip $0
   const joined = [...argsAfterScript, ...positionals].join(" ");
-  const usesPositional =
-    /\$@|\$\*|\$\{[@*]\}|\$[1-9]|\$\{[1-9][0-9]*\}/.test(script);
+  const usesPositional = /\$@|\$\*|\$\{[@*]\}|\$[1-9]|\$\{[1-9][0-9]*\}/.test(
+    script,
+  );
   const scriptHasGh = /\bgh(?:\.exe)?\b/i.test(script);
   const hasDangerPos = positionals.some((p) =>
     DANGEROUS_POSITIONAL_WORDS.has(p.toLowerCase()),
@@ -774,15 +815,25 @@ function shellCPositionalsDangerous(
 /** Literal `gh auth <dangerous>` subsequence anywhere in argv. */
 function directGhAuthDangerous(argv: string[]): boolean {
   const end = argv.indexOf("--", 1);
-  const words = argv.slice(1, end < 0 ? undefined : end).map(a => a.toLowerCase());
-  const first = words.findIndex(a => !a.startsWith("-"));
+  const words = argv
+    .slice(1, end < 0 ? undefined : end)
+    .map((a) => a.toLowerCase());
+  const first = words.findIndex((a) => !a.startsWith("-"));
   if (first < 0 || words[first] !== "auth") return false;
   const rest = words.slice(first + 1);
-  return rest.some(a => DANGEROUS_GH_AUTH.has(a)) || (rest.includes("status") && rest.some(a => a === "-t" || a === "--show-token"));
+  return (
+    rest.some((a) => DANGEROUS_GH_AUTH.has(a)) ||
+    (rest.includes("status") &&
+      rest.some((a) => a === "-t" || a === "--show-token"))
+  );
 }
 function argvHasGhAuthDangerSubsequence(argv: string[]): boolean {
   for (let j = 0; j < argv.length; j++) {
-    if (commandBasename(argv[j]!) === "gh" && directGhAuthDangerous(argv.slice(j))) return true;
+    if (
+      commandBasename(argv[j]!) === "gh" &&
+      directGhAuthDangerous(argv.slice(j))
+    )
+      return true;
   }
   return false;
 }
@@ -830,7 +881,9 @@ export function stripGitConfigEnvOverrides(
   return out;
 }
 
-function parseGitConfigAssignment(value: string): { key: string; val: string } | null {
+function parseGitConfigAssignment(
+  value: string,
+): { key: string; val: string } | null {
   const eq = value.indexOf("=");
   if (eq <= 0) return null;
   return {
@@ -982,10 +1035,7 @@ export function isDangerousGhArgv(argv: string[]): boolean {
     return directGhAuthDangerous(rest);
   }
 
-  if (
-    (base === "pwsh" || base === "powershell") &&
-    pwshArgvHidesScript(rest)
-  ) {
+  if ((base === "pwsh" || base === "powershell") && pwshArgvHidesScript(rest)) {
     return true;
   }
 

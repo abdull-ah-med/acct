@@ -61,7 +61,14 @@ function helper(op, body, cwd, env) {
   });
 }
 function ghToken(user) {
-  const r = run("gh", ["auth", "token", "--hostname", "github.com", "--user", user]);
+  const r = run("gh", [
+    "auth",
+    "token",
+    "--hostname",
+    "github.com",
+    "--user",
+    user,
+  ]);
   if (r.status !== 0) throw new Error(`token fail ${user}`);
   return r.stdout.trim();
 }
@@ -75,7 +82,8 @@ const personalRoot = path.join(base, "trees", "personal");
 const workRoot = path.join(base, "trees", "work");
 const unboundRoot = path.join(base, "trees", "unbound");
 const sibling = path.join(base, "trees", "sibling-not-bound");
-for (const d of [personalRoot, workRoot, unboundRoot, sibling]) fs.mkdirSync(d, { recursive: true });
+for (const d of [personalRoot, workRoot, unboundRoot, sibling])
+  fs.mkdirSync(d, { recursive: true });
 fs.writeFileSync(
   gitconfig,
   "[user]\n\tname = GlobalFallback\n\temail = global@example.com\n[credential]\n\thelper = osxkeychain\n",
@@ -115,7 +123,8 @@ try {
     env,
     personalRoot,
   );
-  if (r.status !== 0) throw new Error("init personal failed: " + redact(r.stderr));
+  if (r.status !== 0)
+    throw new Error("init personal failed: " + redact(r.stderr));
   r = acct(
     [
       "profile",
@@ -134,7 +143,8 @@ try {
     ],
     env,
   );
-  if (r.status !== 0) throw new Error(`add ${SECONDARY.id} failed: ` + redact(r.stderr));
+  if (r.status !== 0)
+    throw new Error(`add ${SECONDARY.id} failed: ` + redact(r.stderr));
   acct(["bind", workRoot, SECONDARY.id], env);
   acct(["install"], env);
   const priTok = ghToken(PRIMARY.githubUser);
@@ -148,9 +158,15 @@ try {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, ".acct"), `profile: ${SECONDARY.id}\n`);
     r = acct(["status"], env, dir);
-    if (new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) && /reason: local/.test(r.stdout)) {
+    if (
+      new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) &&
+      /reason: local/.test(r.stdout)
+    ) {
       ok(".acct honored without git repo");
-    } else if (/profile: personal/.test(r.stdout) && /reason: binding/.test(r.stdout)) {
+    } else if (
+      /profile: personal/.test(r.stdout) &&
+      /reason: binding/.test(r.stdout)
+    ) {
       note(
         "error",
         "LOOPHOLE: .acct ignored when cwd is not a git repo",
@@ -164,7 +180,10 @@ try {
 
     fs.writeFileSync(path.join(dir, ".acct"), "");
     r = acct(["status"], env, dir);
-    if (/profile: \(unbound\)/.test(r.stdout) && /reason: local/.test(r.stdout)) {
+    if (
+      /profile: \(unbound\)/.test(r.stdout) &&
+      /reason: local/.test(r.stdout)
+    ) {
       ok("empty .acct unbound without git repo");
     } else if (/profile: personal/.test(r.stdout)) {
       note(
@@ -187,7 +206,8 @@ try {
       fs.symlinkSync(realWork, link);
       r = acct(["status"], env, link);
       // Depending on normalizePath: may resolve to work (good) or personal (bad)
-      if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(r.stdout)) ok(`symlink into ${SECONDARY.id} tree resolves ${SECONDARY.id}`);
+      if (new RegExp(`${escapeRe(SECONDARY.githubUser)}`).test(r.stdout))
+        ok(`symlink into ${SECONDARY.id} tree resolves ${SECONDARY.id}`);
       else {
         note(
           "warn",
@@ -255,22 +275,32 @@ try {
       // Cite: https://git-scm.com/docs/git-credential
       if (c.name === "url= with userinfo") {
         if (leaked && out.includes(priTok) && !out.includes(secTok)) {
-          ok("url= userinfo → host github.com → primary token only (protocol OK)");
+          ok(
+            "url= userinfo → host github.com → primary token only (protocol OK)",
+          );
         } else if (!leaked) {
           ok("url= userinfo fail-closed");
         } else fail(`smuggle ${c.name}`, redact(out));
         continue;
       }
-      if (leaked && !/host=github.com\n|host=GitHub.COM/i.test(c.body) && c.name !== "uppercase host") {
+      if (
+        leaked &&
+        !/host=github.com\n|host=GitHub.COM/i.test(c.body) &&
+        c.name !== "uppercase host"
+      ) {
         note("error", `TOKEN LEAK via ${c.name}`, redact(out).slice(0, 200));
         fail(`smuggle ${c.name}`, redact(out));
-      } else if (leaked && (c.name === "uppercase host" || /GitHub\.COM/.test(c.body))) {
+      } else if (
+        leaked &&
+        (c.name === "uppercase host" || /GitHub\.COM/.test(c.body))
+      ) {
         // Case folding — document if accepted
         if (out.includes(`password=${priTok}`)) {
           ok(`uppercase host accepted (case-insensitive) — token only primary`);
         } else fail(`uppercase host odd`, redact(out));
       } else if (leaked && c.name === "capability + get confusion") {
-        if (out.includes(priTok) && !out.includes(secTok)) ok("capability attrs still return correct token");
+        if (out.includes(priTok) && !out.includes(secTok))
+          ok("capability attrs still return correct token");
         else fail("capability leak", redact(out));
       } else if (!leaked) {
         ok(`no leak: ${c.name}`);
@@ -290,13 +320,21 @@ try {
     // Credential protocol stdout must include password= — that is not an I13 debug leak.
     // Cite: https://git-scm.com/docs/git-credential ; I13 applies to ACCT_DEBUG / logs.
     if (r.stderr.includes(priTok) || r.stderr.includes(secTok)) {
-      note("error", "I13 VIOLATION: ACCT_DEBUG stderr leaked real token", redact(r.stderr).slice(0, 300));
+      note(
+        "error",
+        "I13 VIOLATION: ACCT_DEBUG stderr leaked real token",
+        redact(r.stderr).slice(0, 300),
+      );
       fail("ACCT_DEBUG redaction", "token present in stderr");
     } else if (
       /gho_[A-Za-z0-9]{8,}/.test(r.stderr) &&
       !/gho_\*\*\*|REDACTED|gho_TEST_ONLY/.test(r.stderr)
     ) {
-      note("error", "ACCT_DEBUG stderr may leak token-shaped material", redact(r.stderr).slice(0, 300));
+      note(
+        "error",
+        "ACCT_DEBUG stderr may leak token-shaped material",
+        redact(r.stderr).slice(0, 300),
+      );
       fail("ACCT_DEBUG shape", redact(r.stderr));
     } else if (r.stdout.includes(priTok) && /REDACTED/.test(r.stderr)) {
       ok("ACCT_DEBUG stderr redacted; stdout password is credential protocol");
@@ -319,7 +357,11 @@ try {
     } else fail("shell-env missing token", redact(r.stdout));
 
     // exec env dump should contain token — but acct shouldn't log it
-    r = acct(["exec", "node", "-e", "process.stdout.write(process.env.GH_TOKEN||'')"], env, personalRoot);
+    r = acct(
+      ["exec", "node", "-e", "process.stdout.write(process.env.GH_TOKEN||'')"],
+      env,
+      personalRoot,
+    );
     if (r.stdout === priTok) ok("exec injects correct token to child");
     else fail("exec inject", redact(r.stdout));
 
@@ -328,7 +370,8 @@ try {
       { ...env, GH_TOKEN: secTok },
       personalRoot,
     );
-    if (r.stdout === priTok && r.stdout !== secTok) ok("exec overrides attacker GH_TOKEN");
+    if (r.stdout === priTok && r.stdout !== secTok)
+      ok("exec overrides attacker GH_TOKEN");
     else fail("exec override fail", redact(r.stdout));
 
     // Can we trick exec deny-list?
@@ -344,13 +387,30 @@ try {
       ["exec", "sh", "-c", `gh auth token --user ${PRIMARY.githubUser}`],
       ["exec", "bash", "-c", '"gh" "auth" "token"'],
       ["exec", "bash", "-c", "g=gh; $g auth token"],
-      ["exec", "bash", "-c", `x=auth; gh $x switch --user ${SECONDARY.githubUser}`],
-      ["exec", "bash", "-c", `unset GH_TOKEN GITHUB_TOKEN; x=auth; gh $x switch --user ${SECONDARY.githubUser}`],
+      [
+        "exec",
+        "bash",
+        "-c",
+        `x=auth; gh $x switch --user ${SECONDARY.githubUser}`,
+      ],
+      [
+        "exec",
+        "bash",
+        "-c",
+        `unset GH_TOKEN GITHUB_TOKEN; x=auth; gh $x switch --user ${SECONDARY.githubUser}`,
+      ],
       ["exec", "bash", "-c", "$(command -v gh) auth token"],
       ["exec", "bash", "-c", "echo auth token | xargs gh"],
       ["exec", "xargs", "gh"],
       ["exec", "xargs", "-n2", "gh"],
-      ["exec", "xargs", "-I{}", "sh", "-c", "unset GH_TOKEN; gh auth {} --user other"],
+      [
+        "exec",
+        "xargs",
+        "-I{}",
+        "sh",
+        "-c",
+        "unset GH_TOKEN; gh auth {} --user other",
+      ],
       ["exec", "env", "xargs", "-n2", "gh"],
       ["exec", "zsh", "-c", "g=gh; $g auth token"],
     ];
@@ -371,7 +431,11 @@ try {
       } else if (r.status !== 0) {
         ok(`blocked/failed: ${args.slice(1, 4).join(" ")}`);
       } else {
-        note("warn", `ran without refuse (no dump): ${args.slice(1, 4).join(" ")}`, redact(out).slice(0, 120));
+        note(
+          "warn",
+          `ran without refuse (no dump): ${args.slice(1, 4).join(" ")}`,
+          redact(out).slice(0, 120),
+        );
         ok(`no dump: ${args.slice(1, 4).join(" ")}`);
       }
     }
@@ -383,16 +447,25 @@ try {
     const repo = path.join(workRoot, "bypass-repo");
     fs.mkdirSync(repo, { recursive: true });
     run("git", ["init"], { cwd: repo, env });
-    run("git", ["config", "user.email", "wrong@example.com"], { cwd: repo, env });
+    run("git", ["config", "user.email", "wrong@example.com"], {
+      cwd: repo,
+      env,
+    });
     run("git", ["config", "user.name", "Wrong"], { cwd: repo, env });
-    run("git", ["config", "core.hooksPath", path.join(configDir, "hooks")], { cwd: repo, env });
+    run("git", ["config", "core.hooksPath", path.join(configDir, "hooks")], {
+      cwd: repo,
+      env,
+    });
     fs.writeFileSync(path.join(repo, "x.txt"), "x\n");
     run("git", ["add", "x.txt"], { cwd: repo, env });
     const blocked = acct(["hook-run", "pre-commit"], env, repo);
     if (blocked.status !== 0) ok("hook-run blocks wrong identity");
     else fail("hook-run should block", blocked.stdout);
 
-    const nv = run("git", ["commit", "--no-verify", "-m", "bypass"], { cwd: repo, env });
+    const nv = run("git", ["commit", "--no-verify", "-m", "bypass"], {
+      cwd: repo,
+      env,
+    });
     if (nv.status === 0) {
       note(
         "warn",
@@ -404,7 +477,14 @@ try {
 
     const alt = run(
       "git",
-      ["-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "-m", "hooksPath bypass"],
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "hooksPath bypass",
+      ],
       { cwd: repo, env },
     );
     if (alt.status === 0) {
@@ -412,7 +492,11 @@ try {
       ok("hooksPath bypass works as documented");
     } else {
       // /dev/null may not work on all platforms
-      note("info", "hooksPath bypass attempt", redact(alt.stderr).slice(0, 120));
+      note(
+        "info",
+        "hooksPath bypass attempt",
+        redact(alt.stderr).slice(0, 120),
+      );
       ok("hooksPath attempt recorded");
     }
   }
@@ -428,7 +512,9 @@ try {
       env,
     );
     if (r.stdout.includes(secTok) && !r.stdout.includes(priTok)) {
-      ok(`cloning primary path from ${SECONDARY.id} tree still uses ${SECONDARY.id} creds (cwd wins)`);
+      ok(
+        `cloning primary path from ${SECONDARY.id} tree still uses ${SECONDARY.id} creds (cwd wins)`,
+      );
       note(
         "info",
         "By design: path= does not select profile — wrong-account clone of public repos works; private cross-account push should fail at GitHub ACL",
@@ -444,10 +530,17 @@ try {
     const decoy = personalRoot + "-evil";
     fs.mkdirSync(decoy, { recursive: true });
     r = acct(["status"], env, decoy);
-    if (/unbound|profile: \(unbound\)/.test(r.stdout) || !new RegExp(`${escapeRe(PRIMARY.githubUser)}`).test(r.stdout)) {
+    if (
+      /unbound|profile: \(unbound\)/.test(r.stdout) ||
+      !new RegExp(`${escapeRe(PRIMARY.githubUser)}`).test(r.stdout)
+    ) {
       ok("path prefix does not match personalRoot-evil");
     } else {
-      note("error", "PREFIX ATTACK: personalRoot-evil matched personal binding", r.stdout);
+      note(
+        "error",
+        "PREFIX ATTACK: personalRoot-evil matched personal binding",
+        r.stdout,
+      );
       fail("prefix attack", r.stdout);
     }
 
@@ -475,15 +568,26 @@ try {
       personalRoot,
       env,
     );
-    const g = helper("get", "protocol=https\nhost=github.com\n\n", personalRoot, env);
-    if (g.stdout.includes(priTok)) ok("erase with foreign token did not clear primary");
+    const g = helper(
+      "get",
+      "protocol=https\nhost=github.com\n\n",
+      personalRoot,
+      env,
+    );
+    if (g.stdout.includes(priTok))
+      ok("erase with foreign token did not clear primary");
     else fail("erase foreign cleared token", redact(g.stdout));
   }
 
   // ---------- J: doctor / status must not print tokens ----------
   console.log("\nJ) CLI output token hygiene");
   {
-    for (const cmd of [["status"], ["whoami"], ["doctor"], ["profile", "list"]]) {
+    for (const cmd of [
+      ["status"],
+      ["whoami"],
+      ["doctor"],
+      ["profile", "list"],
+    ]) {
       r = acct(cmd, env, personalRoot);
       const all = r.stdout + r.stderr;
       if (all.includes(priTok) || all.includes(secTok)) {
@@ -526,13 +630,21 @@ try {
   // ---------- L: profile token --stdin empty / garbage ----------
   console.log("\nL) Token store validation");
   {
-    r = acct(["profile", "token", PRIMARY.id, "--stdin"], { ...env }, personalRoot);
+    r = acct(
+      ["profile", "token", PRIMARY.id, "--stdin"],
+      { ...env },
+      personalRoot,
+    );
     // empty stdin
-    r = run(process.execPath, [ACCT, "profile", "token", PRIMARY.id, "--stdin"], {
-      env,
-      cwd: personalRoot,
-      input: "",
-    });
+    r = run(
+      process.execPath,
+      [ACCT, "profile", "token", PRIMARY.id, "--stdin"],
+      {
+        env,
+        cwd: personalRoot,
+        input: "",
+      },
+    );
     if (r.status !== 0) ok("rejects empty token stdin");
     else {
       note("warn", "empty token stdin accepted?", "");
@@ -548,16 +660,29 @@ try {
   // ---------- M: Live API: can work read primary private e2e repo if leftover? ----------
   console.log("\nM) Cross-account API ACL (live)");
   {
-    for (const name of [`acct-e2e-msl0623l-a`, `acct-e2e-msl0623l-${SECONDARY.id}`]) {
-      const owner = name.endsWith("-a") ? PRIMARY.githubUser : SECONDARY.githubUser;
+    for (const name of [
+      `acct-e2e-msl0623l-a`,
+      `acct-e2e-msl0623l-${SECONDARY.id}`,
+    ]) {
+      const owner = name.endsWith("-a")
+        ? PRIMARY.githubUser
+        : SECONDARY.githubUser;
       const ownerTok = name.endsWith("-a") ? priTok : secTok;
       const otherTok = name.endsWith("-a") ? secTok : priTok;
-      const ownerSee = run("gh", ["api", `repos/${owner}/${name}`, "--jq", ".full_name"], {
-        env: { ...env, GH_TOKEN: ownerTok, GITHUB_TOKEN: undefined },
-      });
-      const otherSee = run("gh", ["api", `repos/${owner}/${name}`, "--jq", ".full_name"], {
-        env: { ...env, GH_TOKEN: otherTok, GITHUB_TOKEN: undefined },
-      });
+      const ownerSee = run(
+        "gh",
+        ["api", `repos/${owner}/${name}`, "--jq", ".full_name"],
+        {
+          env: { ...env, GH_TOKEN: ownerTok, GITHUB_TOKEN: undefined },
+        },
+      );
+      const otherSee = run(
+        "gh",
+        ["api", `repos/${owner}/${name}`, "--jq", ".full_name"],
+        {
+          env: { ...env, GH_TOKEN: otherTok, GITHUB_TOKEN: undefined },
+        },
+      );
       if (ownerSee.status === 0) {
         note(
           "warn",
@@ -565,7 +690,8 @@ try {
           "delete manually — token lacks delete_repo",
         );
       }
-      if (otherSee.status !== 0) ok(`cross-account cannot see private ${owner}/${name}`);
+      if (otherSee.status !== 0)
+        ok(`cross-account cannot see private ${owner}/${name}`);
       else fail(`cross-account saw private repo`, otherSee.stdout);
     }
   }
@@ -574,12 +700,17 @@ try {
   console.log("\nN) SSH IdentitiesOnly vs agent pollution");
   {
     acct(["profile", "ssh-key", PRIMARY.id, "--path", PRIMARY.sshKey], env);
-    const inc = fs.readFileSync(path.join(configDir, "git", "personal.inc"), "utf8");
+    const inc = fs.readFileSync(
+      path.join(configDir, "git", "personal.inc"),
+      "utf8",
+    );
     const primaryKeyHint = path.basename(PRIMARY.sshKey || "primary_github");
-    if (/IdentitiesOnly=yes/.test(inc) && inc.includes(primaryKeyHint)) ok("sshCommand pins primary key");
+    if (/IdentitiesOnly=yes/.test(inc) && inc.includes(primaryKeyHint))
+      ok("sshCommand pins primary key");
     else fail("sshCommand", inc);
     // Without IdentitiesOnly, agent might offer wrong keys — we only verify config
-    if (new RegExp(`IdentityFile=.*${escapeRe(SECONDARY.id)}`).test(inc)) fail(`personal.inc mentions ${SECONDARY.id} key`, inc);
+    if (new RegExp(`IdentityFile=.*${escapeRe(SECONDARY.id)}`).test(inc))
+      fail(`personal.inc mentions ${SECONDARY.id} key`, inc);
     else ok(`personal.inc does not reference ${SECONDARY.id} key`);
   }
 

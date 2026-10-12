@@ -1,5 +1,5 @@
-import {writeGlobalGitconfig} from "../util/gitconfig.js";
-import {failAt} from "../util/transaction.js";
+import { writeGlobalGitconfig } from "../util/gitconfig.js";
+import { failAt } from "../util/transaction.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,16 +7,18 @@ import type { AcctConfig, Profile } from "../types.js";
 import { gitIncDir, backupDir, acctConfigDir } from "../config/store.js";
 import { sshCommandFor } from "../ssh/keys.js";
 import { canonicalHost } from "../secrets/store.js";
-import {gitConfigValue, gitConfigSubsection} from "./serialize.js";
-import { homeDir, normalizePath, posixShellSingleQuote, pathIsPrefix } from "../util/paths.js";
+import { gitConfigValue, gitConfigSubsection } from "./serialize.js";
+import {
+  homeDir,
+  normalizePath,
+  posixShellSingleQuote,
+  pathIsPrefix,
+} from "../util/paths.js";
 import {
   assertSafeBindPath,
   assertSafeProfileFields,
 } from "../util/profile-fields.js";
-import {
-  atomicWriteFileSync,
-  ensureAcctDir,
-} from "../util/fs-safe.js";
+import { atomicWriteFileSync, ensureAcctDir } from "../util/fs-safe.js";
 import { renderCmdNodeInvoke } from "../util/cmd-escape.js";
 
 const BEGIN = "# >>> acct managed begin >>>";
@@ -44,12 +46,23 @@ export function renderProfileInclude(
     host: profile.host,
     user: profile.githubUser,
   });
-  const lines = [`# acct profile ${profile.id} — do not edit by hand`, "[user]", `\tname = ${gitConfigValue(profile.name)}`, `\temail = ${gitConfigValue(profile.email)}`];
-  for(const host of profileHosts(profile)) {
-    lines.push(`[credential ${gitConfigSubsection("https://"+host)}]`, '\thelper = ""', `\thelper = ${gitConfigValue(quoteHelper(helperCommand))}`, "\tuseHttpPath = false", `\tusername = ${gitConfigValue(profile.githubUser)}`);
+  const lines = [
+    `# acct profile ${profile.id} — do not edit by hand`,
+    "[user]",
+    `\tname = ${gitConfigValue(profile.name)}`,
+    `\temail = ${gitConfigValue(profile.email)}`,
+  ];
+  for (const host of profileHosts(profile)) {
+    lines.push(
+      `[credential ${gitConfigSubsection("https://" + host)}]`,
+      '\thelper = ""',
+      `\thelper = ${gitConfigValue(quoteHelper(helperCommand))}`,
+      "\tuseHttpPath = false",
+      `\tusername = ${gitConfigValue(profile.githubUser)}`,
+    );
   }
-  const ssh=sshCommandFor(profile);
-  if(ssh) lines.push("[core]", `\tsshCommand = ${gitConfigValue(ssh)}`);
+  const ssh = sshCommandFor(profile);
+  if (ssh) lines.push("[core]", `\tsshCommand = ${gitConfigValue(ssh)}`);
 
   return lines.join("\n") + "\n";
 }
@@ -89,9 +102,19 @@ export function removeProfileArtifacts(
   }
   const sshDir = path.join(acctConfigDir(env), "ssh");
   const key = profile.sshKeyPath ?? path.join(sshDir, profile.id);
-  const real = (p: string) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
-  if (pathIsPrefix(real(sshDir), real(key)) && !remaining.some(p => p.sshKeyPath && real(p.sshKeyPath) === real(key))) {
-    fs.rmSync(key, {force: true}); fs.rmSync(key + ".pub", {force: true});
+  const real = (p: string) => {
+    try {
+      return fs.realpathSync.native(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  if (
+    pathIsPrefix(real(sshDir), real(key)) &&
+    !remaining.some((p) => p.sshKeyPath && real(p.sshKeyPath) === real(key))
+  ) {
+    fs.rmSync(key, { force: true });
+    fs.rmSync(key + ".pub", { force: true });
   }
 }
 
@@ -112,7 +135,13 @@ export function ensureCredentialShim(
   const shim = path.join(dir, "git-credential-acct");
 
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const realJs = path.resolve(here, "..", "..", "bin", "git-credential-acct.js");
+  const realJs = path.resolve(
+    here,
+    "..",
+    "..",
+    "bin",
+    "git-credential-acct.js",
+  );
   // Fail closed if the packaged bin is missing — never PATH-search (I11b).
   const target = realJs;
   const node = env.ACCT_NODE_PATH?.trim() || process.execPath;
@@ -143,13 +172,24 @@ export function buildIncludeIfBlock(
   const useInsensitive =
     process.platform === "win32" || process.platform === "darwin";
   const keyword = useInsensitive ? "gitdir/i" : "gitdir";
-  const lines: string[] = [BEGIN, "[include]", `\tpath = ${gitConfigValue(path.join(gitIncDir(env), "_managed.inc").replace(/\\/g,"/"))}`];
-  for (const binding of [...config.bindings].sort((a,b) => normalizePath(a.path).length-normalizePath(b.path).length || normalizePath(a.path).localeCompare(normalizePath(b.path)))) {
-    const profile=config.profiles.find(p => p.id === binding.profileId);
-    if(!profile) continue;
+  const lines: string[] = [
+    BEGIN,
+    "[include]",
+    `\tpath = ${gitConfigValue(path.join(gitIncDir(env), "_managed.inc").replace(/\\/g, "/"))}`,
+  ];
+  for (const binding of [...config.bindings].sort(
+    (a, b) =>
+      normalizePath(a.path).length - normalizePath(b.path).length ||
+      normalizePath(a.path).localeCompare(normalizePath(b.path)),
+  )) {
+    const profile = config.profiles.find((p) => p.id === binding.profileId);
+    if (!profile) continue;
     assertSafeBindPath(binding.path);
-    const gitdir=normalizePath(binding.path).replace(/\/+$/, "")+"/";
-    lines.push(`[includeIf ${gitConfigSubsection(keyword+":"+gitdir)}]`, `\tpath = ${gitConfigValue(profileIncPath(profile,env).replace(/\\/g,"/"))}`);
+    const gitdir = normalizePath(binding.path).replace(/\/+$/, "") + "/";
+    lines.push(
+      `[includeIf ${gitConfigSubsection(keyword + ":" + gitdir)}]`,
+      `\tpath = ${gitConfigValue(profileIncPath(profile, env).replace(/\\/g, "/"))}`,
+    );
   }
 
   lines.push(END);
@@ -163,7 +203,6 @@ export function globalGitconfigPath(
   return path.join(homeDir(env), ".gitconfig");
 }
 
-
 export function installIncludeIf(
   config: AcctConfig,
   env: NodeJS.ProcessEnv = process.env,
@@ -172,10 +211,19 @@ export function installIncludeIf(
     for (const profile of config.profiles) {
       writeProfileInclude(profile, env);
     }
-    const hosts=[...new Set(config.profiles.flatMap(profileHosts))].sort();
-    const helper=gitConfigValue(quoteHelper(ensureCredentialShim(env)));
-    atomicWriteFileSync(path.join(gitIncDir(env),"_managed.inc"), hosts.map(host => `[credential ${gitConfigSubsection("https://"+host)}]\n\thelper = ""\n\thelper = ${helper}\n`).join(""), 0o600);
-    failAt("includes",env);
+    const hosts = [...new Set(config.profiles.flatMap(profileHosts))].sort();
+    const helper = gitConfigValue(quoteHelper(ensureCredentialShim(env)));
+    atomicWriteFileSync(
+      path.join(gitIncDir(env), "_managed.inc"),
+      hosts
+        .map(
+          (host) =>
+            `[credential ${gitConfigSubsection("https://" + host)}]\n\thelper = ""\n\thelper = ${helper}\n`,
+        )
+        .join(""),
+      0o600,
+    );
+    failAt("includes", env);
     const block = buildIncludeIfBlock(config, env);
     const gitconfig = globalGitconfigPath(env);
     let existing = fs.existsSync(gitconfig)
@@ -193,8 +241,8 @@ export function installIncludeIf(
     existing = stripManagedBlock(existing);
     const next = existing.trimEnd() + "\n\n" + block;
     const final = next.startsWith("\n") ? next.slice(1) : next;
-    writeGlobalGitconfig(gitconfig,final,env);
-    failAt("gitconfig",env);
+    writeGlobalGitconfig(gitconfig, final, env);
+    failAt("gitconfig", env);
   })();
 }
 
@@ -204,8 +252,8 @@ export function uninstallIncludeIf(env: NodeJS.ProcessEnv = process.env): void {
     if (fs.existsSync(gitconfig)) {
       const existing = fs.readFileSync(gitconfig, "utf8");
       const next = stripManagedBlock(existing);
-      writeGlobalGitconfig(gitconfig,next,env);
-      failAt("gitconfig",env);
+      writeGlobalGitconfig(gitconfig, next, env);
+      failAt("gitconfig", env);
     }
     ensureAcctDir(acctConfigDir(env));
     // Clean orphan .inc files under git/
@@ -231,7 +279,7 @@ export function restoreGitconfigBackup(
   const gitconfig = globalGitconfigPath(env);
   if (!fs.existsSync(backupFile)) return false;
   return (() => {
-    writeGlobalGitconfig(gitconfig,fs.readFileSync(backupFile,"utf8"),env);
+    writeGlobalGitconfig(gitconfig, fs.readFileSync(backupFile, "utf8"), env);
     return true;
   })();
 }
@@ -246,9 +294,18 @@ export function stripManagedBlock(text: string): string {
 }
 
 export function profileHosts(profile: Profile): string[] {
-  const host=canonicalHost(profile.host); return host === "github.com" ? [host,"gist.github.com"] : [host];
+  const host = canonicalHost(profile.host);
+  return host === "github.com" ? [host, "gist.github.com"] : [host];
 }
 export function acctHelperValue(env: NodeJS.ProcessEnv): string {
-  const shim=path.join(acctConfigDir(env),"bin",process.platform === "win32" ? "git-credential-acct.cmd":"git-credential-acct").replace(/\\/g,"/");
+  const shim = path
+    .join(
+      acctConfigDir(env),
+      "bin",
+      process.platform === "win32"
+        ? "git-credential-acct.cmd"
+        : "git-credential-acct",
+    )
+    .replace(/\\/g, "/");
   return quoteHelper(shim);
 }

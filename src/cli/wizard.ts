@@ -1,6 +1,4 @@
-import {
-  assertValidProfileId,
-} from "../util/profile-id.js";
+import { assertValidProfileId } from "../util/profile-id.js";
 import {
   assertSafeGithubUser,
   assertSafeProfileEmail,
@@ -15,7 +13,12 @@ export interface WizardIO {
   say(line: string): void;
 }
 
-export class WizardCancelled extends Error {constructor(){super("Wizard cancelled (EOF or Ctrl-C)");this.name="WizardCancelled";}}
+export class WizardCancelled extends Error {
+  constructor() {
+    super("Wizard cancelled (EOF or Ctrl-C)");
+    this.name = "WizardCancelled";
+  }
+}
 
 export function createStdioWizardIO(): WizardIO & { close(): void } {
   const rl = readline.createInterface({
@@ -23,7 +26,10 @@ export function createStdioWizardIO(): WizardIO & { close(): void } {
     crlfDelay: Infinity,
   });
   const buffer: string[] = [];
-  const waiters: Array<{resolve:(line:string)=>void;reject:(error:Error)=>void}> = [];
+  const waiters: Array<{
+    resolve: (line: string) => void;
+    reject: (error: Error) => void;
+  }> = [];
   let closed = false;
   rl.on("line", (line) => {
     const w = waiters.shift();
@@ -34,22 +40,27 @@ export function createStdioWizardIO(): WizardIO & { close(): void } {
     closed = true;
     while (waiters.length) waiters.shift()!.reject(new WizardCancelled());
   });
-  const cancel=()=>{buffer.length=0;rl.close();};
-  rl.on("SIGINT",cancel);
-  process.once("SIGINT",cancel);
+  const cancel = () => {
+    buffer.length = 0;
+    rl.close();
+  };
+  rl.on("SIGINT", cancel);
+  process.once("SIGINT", cancel);
   return {
     async ask(prompt: string) {
       const p = prompt.endsWith(" ") ? prompt : `${prompt} `;
       output.write(p);
       if (buffer.length > 0) return buffer.shift()!;
       if (closed) throw new WizardCancelled();
-      return await new Promise<string>((resolve,reject) => waiters.push({resolve,reject}));
+      return await new Promise<string>((resolve, reject) =>
+        waiters.push({ resolve, reject }),
+      );
     },
     say(line: string) {
       output.write(`${line}\n`);
     },
     close() {
-      process.removeListener("SIGINT",cancel);
+      process.removeListener("SIGINT", cancel);
       rl.close();
     },
   };
@@ -123,9 +134,13 @@ async function askValidated(
  */
 export async function collectInitPlan(
   io: WizardIO,
-  ctx: { cwd: string; current: CurrentFolderIdentity; seed?:Partial<InitPlan> },
+  ctx: {
+    cwd: string;
+    current: CurrentFolderIdentity;
+    seed?: Partial<InitPlan>;
+  },
 ): Promise<InitPlan | null> {
-  const seed=ctx.seed ?? {};
+  const seed = ctx.seed ?? {};
   const host = seed.host ?? "github.com";
   const bind = seed.bind ?? ctx.cwd;
 
@@ -148,19 +163,22 @@ export async function collectInitPlan(
     io.say("  gh:   (unset)");
   }
 
-  const seeded=!!(seed.id || seed.githubUser || seed.email || seed.name);
-  const useCurrent = !seeded && await askYesNo(
-    io,
-    "Use the identity already in this folder?",
-    currentIdentityUsable(ctx.current),
-  );
+  const seeded = !!(seed.id || seed.githubUser || seed.email || seed.name);
+  const useCurrent =
+    !seeded &&
+    (await askYesNo(
+      io,
+      "Use the identity already in this folder?",
+      currentIdentityUsable(ctx.current),
+    ));
   if (useCurrent) {
     name = ctx.current.name.trim();
     email = ctx.current.email.trim();
     githubUser = (ctx.current.githubUser ?? "").trim();
   }
 
-  const id = seed.id ?? await askValidated(io, "id", "id", assertValidProfileId);
+  const id =
+    seed.id ?? (await askValidated(io, "id", "id", assertValidProfileId));
 
   if (!githubUser) {
     githubUser = await askValidated(
@@ -200,7 +218,9 @@ export async function collectInitPlan(
     protocol: seed.protocol ?? "https",
     bind,
     importGh: seed.importGh ?? true,
-    ...(seed.force === undefined ? {}:{force:seed.force}),
-    ...(seed.globalHooks === undefined ? {}:{globalHooks:seed.globalHooks}),
+    ...(seed.force === undefined ? {} : { force: seed.force }),
+    ...(seed.globalHooks === undefined
+      ? {}
+      : { globalHooks: seed.globalHooks }),
   };
 }

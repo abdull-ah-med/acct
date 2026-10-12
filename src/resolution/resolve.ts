@@ -1,4 +1,9 @@
-import type { ResolveInput, ResolveResult, EnforceMode, Profile } from "../types.js";
+import type {
+  ResolveInput,
+  ResolveResult,
+  EnforceMode,
+  Profile,
+} from "../types.js";
 import { findProfileById } from "../config/store.js";
 import { normalizePath, pathIsPrefix } from "../util/paths.js";
 
@@ -17,9 +22,15 @@ function enforceFor(
  * Cite: docs/invariants.md; docs/research/local-acct-exec-deny-cites-2026-08-08.md
  */
 export function resolveProfile(input: ResolveInput): ResolveResult {
-  return {anchor:normalizePath(input.cwd),gitContext:null,...resolvePolicy(input)};
+  return {
+    anchor: normalizePath(input.cwd),
+    gitContext: null,
+    ...resolvePolicy(input),
+  };
 }
-function resolvePolicy(input: ResolveInput): Omit<ResolveResult,"anchor"|"gitContext"> {
+function resolvePolicy(
+  input: ResolveInput,
+): Omit<ResolveResult, "anchor" | "gitContext"> {
   const env = input.env ?? process.env;
   // resolveFromCwd supplies the shared repository-root anchor.
   const cwd = normalizePath(input.cwd);

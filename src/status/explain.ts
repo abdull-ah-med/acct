@@ -11,10 +11,10 @@ export type DiagnoseIssueCode =
   | "gh-active-mismatch";
 
 export interface DiagnoseInput {
-  hooksActive?:boolean;
-  pushHooksActive?:boolean;
-  hooksInactiveReason?:string;
-  authState?:"verified"|"unavailable"|"missing"|"mismatch";
+  hooksActive?: boolean;
+  pushHooksActive?: boolean;
+  hooksInactiveReason?: string;
+  authState?: "verified" | "unavailable" | "missing" | "mismatch";
   profileId: string;
   githubUser: string;
   host: string;
@@ -73,11 +73,17 @@ export interface DiagnoseReport {
 }
 
 function identityMatches(input: DiagnoseInput): boolean {
-  return input.commitEmail.toLowerCase() === input.email.toLowerCase() && input.commitName === input.name;
+  return (
+    input.commitEmail.toLowerCase() === input.email.toLowerCase() &&
+    input.commitName === input.name
+  );
 }
 
 function principalMatches(input: DiagnoseInput): boolean {
-  return !!input.authPrincipal && input.authPrincipal.toLowerCase() === input.githubUser.toLowerCase();
+  return (
+    !!input.authPrincipal &&
+    input.authPrincipal.toLowerCase() === input.githubUser.toLowerCase()
+  );
 }
 
 function isGitRepo(input: DiagnoseInput): boolean {
@@ -109,7 +115,11 @@ export function diagnose(input: DiagnoseInput): DiagnoseReport {
     });
   }
 
-  if (input.principalChecked && input.authPrincipal && input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()) {
+  if (
+    input.principalChecked &&
+    input.authPrincipal &&
+    input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()
+  ) {
     issues.push({
       code: "principal-mismatch",
       severity: "error",
@@ -158,15 +168,20 @@ export function diagnose(input: DiagnoseInput): DiagnoseReport {
   const commit = commitOutlook(input);
   const push = pushOutlook(input);
   const gh = ghOutlook(input);
-  if(input.hooksActive !== true && isGitRepo(input)) {
-    commit.outlook="risk";commit.explanation=`not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"}). Effective identity: ${input.commitName} <${input.commitEmail}>.`;
+  if (input.hooksActive !== true && isGitRepo(input)) {
+    commit.outlook = "risk";
+    commit.explanation = `not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"}). Effective identity: ${input.commitName} <${input.commitEmail}>.`;
   }
-  if(input.pushHooksActive !== true && isGitRepo(input)) {
-    push.outlook="risk";push.explanation=`not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"}); push authentication depends on the remote transport.`;
+  if (input.pushHooksActive !== true && isGitRepo(input)) {
+    push.outlook = "risk";
+    push.explanation = `not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"}); push authentication depends on the remote transport.`;
   }
-  if(input.protocol === "ssh") {
-    push.outlook=input.pushHooksActive !== true ? "risk":"n/a";
-    push.explanation=input.pushHooksActive !== true ? `not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"})`:"SSH account is verified against the remote alias at push time; HTTPS auth state does not measure the SSH key.";
+  if (input.protocol === "ssh") {
+    push.outlook = input.pushHooksActive !== true ? "risk" : "n/a";
+    push.explanation =
+      input.pushHooksActive !== true
+        ? `not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"})`
+        : "SSH account is verified against the remote alias at push time; HTTPS auth state does not measure the SSH key.";
   }
   const ok = issues.every((i) => i.severity !== "error");
 
@@ -209,11 +224,17 @@ function buildFixes(input: DiagnoseInput, issues: DiagnoseIssue[]): string[] {
     );
   }
 
-  if (codes.has("gh-active-mismatch") && !codes.has("principal-mismatch") && !codes.has("token-missing")) {
+  if (
+    codes.has("gh-active-mismatch") &&
+    !codes.has("principal-mismatch") &&
+    !codes.has("token-missing")
+  ) {
     // I10: prefer injection over a global switch. Switch is optional and global.
     // Cite: https://cli.github.com/manual/gh_auth_switch
     fixes.push("acct exec -- gh …");
-    fixes.push('# shell hook (injects token, no switch): eval "$(acct hook zsh)"');
+    fixes.push(
+      '# shell hook (injects token, no switch): eval "$(acct hook zsh)"',
+    );
     fixes.push(
       `gh auth switch --hostname ${input.host} --user ${input.githubUser}`,
     );
@@ -247,7 +268,8 @@ function commitOutlook(input: DiagnoseInput): PlaneOutlook {
       explanation:
         `will go through as ${input.name} <${input.email}> ` +
         `(git author/committer from includeIf). Git commit does not use GitHub auth` +
-        (input.authPrincipal && input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()
+        (input.authPrincipal &&
+        input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()
           ? ` — it will not use ${input.authPrincipal}.`
           : "."),
     };
@@ -327,8 +349,7 @@ function pushOutlook(input: DiagnoseInput): PlaneOutlook {
     if (input.protocol === "https" && wrongPrincipal && input.hasToken) {
       return {
         outlook: "risk",
-        explanation:
-          `enforce=${input.enforce}: hooks will not block. The stored PAT authenticates as ${wrongPrincipal}, so HTTPS push would go through as ${wrongPrincipal}, not ${input.githubUser}.`,
+        explanation: `enforce=${input.enforce}: hooks will not block. The stored PAT authenticates as ${wrongPrincipal}, so HTTPS push would go through as ${wrongPrincipal}, not ${input.githubUser}.`,
       };
     }
     return {
@@ -371,7 +392,10 @@ function ghOutlook(input: DiagnoseInput): PlaneOutlook {
       explanation: `acct exec / the shell hook injects ${input.githubUser}'s token. Raw gh without the hook still follows whatever GH_TOKEN / gh auth is in the shell.`,
     };
   }
-  if (input.authPrincipal && input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()) {
+  if (
+    input.authPrincipal &&
+    input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()
+  ) {
     return {
       outlook: "leak",
       explanation:

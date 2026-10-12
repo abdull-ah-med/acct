@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
-import {validateConfig} from "./validate.js";
+import { validateConfig } from "./validate.js";
 import type { AcctConfig, LocalAcctFile, Profile, Binding } from "../types.js";
-import { acctConfigDir, normalizePath, pathIsPrefix, TOKEN_SHAPE } from "../util/paths.js";
+import {
+  acctConfigDir,
+  normalizePath,
+  pathIsPrefix,
+  TOKEN_SHAPE,
+} from "../util/paths.js";
 import { ensureAcctDir, atomicWriteFileSync } from "../util/fs-safe.js";
 
 export { acctConfigDir };
@@ -36,32 +41,55 @@ export function hooksDir(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(acctConfigDir(env), "hooks");
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env, unbindPath?: string): AcctConfig {
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  unbindPath?: string,
+): AcctConfig {
   const file = configPath(env);
   if (!fs.existsSync(file)) return defaultConfig();
   const raw = fs.readFileSync(file, "utf8");
-  let parsed:unknown;
-  try {parsed=YAML.parse(raw);}catch {throw new Error("Invalid acct config: YAML syntax; run acct doctor");}
-  if(!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid acct config: root");
+  let parsed: unknown;
+  try {
+    parsed = YAML.parse(raw);
+  } catch {
+    throw new Error("Invalid acct config: YAML syntax; run acct doctor");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("Invalid acct config: root");
   // Only unbind may remove its requested entry before validation, making the
   // documented repair for a dangling reference usable. All remaining fields
   // still pass the normal validator; every read-only command stays strict.
   if (unbindPath && "bindings" in parsed && Array.isArray(parsed.bindings)) {
     const target = normalizePath(unbindPath);
     parsed.bindings = parsed.bindings.filter((binding: unknown) => {
-      if (!binding || typeof binding !== "object" || !("path" in binding) || typeof binding.path !== "string") return true;
-      return !(pathIsPrefix(binding.path, target) && pathIsPrefix(target, binding.path));
+      if (
+        !binding ||
+        typeof binding !== "object" ||
+        !("path" in binding) ||
+        typeof binding.path !== "string"
+      )
+        return true;
+      return !(
+        pathIsPrefix(binding.path, target) && pathIsPrefix(target, binding.path)
+      );
     });
   }
-  validateConfig(parsed);const config=parsed;
-  return {...config,bindings:config.bindings.map(b=>({...b,path:normalizePath(b.path)}))};
+  validateConfig(parsed);
+  const config = parsed;
+  return {
+    ...config,
+    bindings: config.bindings.map((b) => ({
+      ...b,
+      path: normalizePath(b.path),
+    })),
+  };
 }
 
 export function saveConfig(
   config: AcctConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  validateConfig({...defaultConfig(),...config});
+  validateConfig({ ...defaultConfig(), ...config });
   assertNoSecretsInConfig(config);
   const dir = acctConfigDir(env);
   ensureAcctDir(dir);
@@ -90,7 +118,9 @@ export function findProfileByUser(
   config: AcctConfig,
   user: string,
 ): Profile | undefined {
-  return config.profiles.find((p) => p.githubUser.toLowerCase() === user.toLowerCase());
+  return config.profiles.find(
+    (p) => p.githubUser.toLowerCase() === user.toLowerCase(),
+  );
 }
 
 /**
@@ -101,10 +131,15 @@ export function getProfile(
   config: AcctConfig,
   idOrUser: string,
 ): Profile | undefined {
-  return findProfileById(config, idOrUser) ?? findProfileByUser(config, idOrUser);
+  return (
+    findProfileById(config, idOrUser) ?? findProfileByUser(config, idOrUser)
+  );
 }
 
-export function upsertProfile(config: AcctConfig, profile: Profile): AcctConfig {
+export function upsertProfile(
+  config: AcctConfig,
+  profile: Profile,
+): AcctConfig {
   const idx = config.profiles.findIndex((p) => p.id === profile.id);
   const profiles = [...config.profiles];
   if (idx >= 0) profiles[idx] = profile;
@@ -120,10 +155,15 @@ export function removeProfile(config: AcctConfig, id: string): AcctConfig {
   };
 }
 
-export function upsertBinding(config: AcctConfig, binding: Binding): AcctConfig {
+export function upsertBinding(
+  config: AcctConfig,
+  binding: Binding,
+): AcctConfig {
   const normalized = { ...binding, path: normalizePath(binding.path) };
   const idx = config.bindings.findIndex(
-    (b) => pathIsPrefix(b.path, normalized.path) && pathIsPrefix(normalized.path, b.path),
+    (b) =>
+      pathIsPrefix(b.path, normalized.path) &&
+      pathIsPrefix(normalized.path, b.path),
   );
   const bindings = [...config.bindings];
   if (idx >= 0) bindings[idx] = normalized;
@@ -135,7 +175,9 @@ export function removeBinding(config: AcctConfig, dirPath: string): AcctConfig {
   const n = normalizePath(dirPath);
   return {
     ...config,
-    bindings: config.bindings.filter((b) => !(pathIsPrefix(b.path, n) && pathIsPrefix(n, b.path))),
+    bindings: config.bindings.filter(
+      (b) => !(pathIsPrefix(b.path, n) && pathIsPrefix(n, b.path)),
+    ),
   };
 }
 

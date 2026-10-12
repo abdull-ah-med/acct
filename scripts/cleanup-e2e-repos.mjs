@@ -20,7 +20,14 @@ function run(cmd, args, opts = {}) {
 }
 
 function tokenFor(user) {
-  const r = run("gh", ["auth", "token", "--hostname", "github.com", "--user", user]);
+  const r = run("gh", [
+    "auth",
+    "token",
+    "--hostname",
+    "github.com",
+    "--user",
+    user,
+  ]);
   if (r.status !== 0) throw new Error(`token fail ${user}: ${r.stderr}`);
   return r.stdout.trim();
 }
@@ -51,7 +58,8 @@ function deleteRepo(fullName, user) {
   if (!ALLOWED.has(owner) || owner !== user) {
     throw new Error(`SAFETY: owner ${owner} not allowed / mismatch`);
   }
-  if (!name?.startsWith("acct-e2e-")) throw new Error(`SAFETY: not e2e repo ${fullName}`);
+  if (!name?.startsWith("acct-e2e-"))
+    throw new Error(`SAFETY: not e2e repo ${fullName}`);
   const tok = tokenFor(user);
   const r = run("gh", ["repo", "delete", fullName, "--yes"], {
     env: { ...process.env, GH_TOKEN: tok, GITHUB_TOKEN: undefined },

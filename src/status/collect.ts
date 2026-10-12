@@ -1,4 +1,4 @@
-import {activeHook} from "./runtime.js";
+import { activeHook } from "./runtime.js";
 import type { EnforceMode, Profile } from "../types.js";
 import { resolveProfileToken } from "../gh/token.js";
 import { envForProfile, ghActiveLogin, ghApiLogin } from "../gh/env.js";
@@ -7,7 +7,11 @@ import {
   hasLocalIdentityOverride,
   includeIfGitdirApplies,
 } from "../enforce/checks.js";
-import { diagnose, type DiagnoseInput, type DiagnoseReport } from "./explain.js";
+import {
+  diagnose,
+  type DiagnoseInput,
+  type DiagnoseReport,
+} from "./explain.js";
 
 export interface CollectDiagnoseOptions {
   /**
@@ -28,7 +32,10 @@ export async function collectDiagnoseInput(
   env: NodeJS.ProcessEnv,
   opts: CollectDiagnoseOptions = {},
 ): Promise<DiagnoseInput> {
-  const hasToken = !!(await resolveProfileToken(profile, env, {allowNetwork: opts.queryPrincipal !== false && opts.persistToken === true, persist: opts.persistToken === true}));
+  const hasToken = !!(await resolveProfileToken(profile, env, {
+    allowNetwork: opts.queryPrincipal !== false && opts.persistToken === true,
+    persist: opts.persistToken === true,
+  }));
   const queryPrincipal = opts.queryPrincipal !== false;
   let authPrincipal: string | null = null;
   let ghActiveUser: string | null = null;
@@ -38,12 +45,19 @@ export async function collectDiagnoseInput(
     ghActiveUser = ghActiveLogin(profile.host, env);
   }
   const inGitRepo = includeIfGitdirApplies(cwd, opts.bindingPath);
-  const commitHook=activeHook(cwd,env),pushHook=activeHook(cwd,env,"pre-push");
+  const commitHook = activeHook(cwd, env),
+    pushHook = activeHook(cwd, env, "pre-push");
   return {
-    hooksActive:commitHook.active,
-    pushHooksActive:pushHook.active,
-    hooksInactiveReason:commitHook.reason,
-    authState:!hasToken ? "missing":!queryPrincipal || !authPrincipal ? "unavailable":authPrincipal.toLowerCase() === profile.githubUser.toLowerCase() ? "verified":"mismatch",
+    hooksActive: commitHook.active,
+    pushHooksActive: pushHook.active,
+    hooksInactiveReason: commitHook.reason,
+    authState: !hasToken
+      ? "missing"
+      : !queryPrincipal || !authPrincipal
+        ? "unavailable"
+        : authPrincipal.toLowerCase() === profile.githubUser.toLowerCase()
+          ? "verified"
+          : "mismatch",
     profileId: profile.id,
     githubUser: profile.githubUser,
     host: profile.host,

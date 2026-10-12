@@ -8,7 +8,9 @@ describe("readLocalAcct (I3 empty fail-closed)", () => {
   let tmp: string;
 
   beforeEach(() => {
-    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-local-acct-")));
+    tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-local-acct-")),
+    );
   });
 
   afterEach(() => {
@@ -61,7 +63,9 @@ describe("findLocalAcct (nearest walk-up)", () => {
   let tmp: string;
 
   beforeEach(() => {
-    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-find-acct-")));
+    tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-find-acct-")),
+    );
   });
 
   afterEach(() => {

@@ -60,17 +60,12 @@ export interface ResolveInput {
 }
 
 export type ResolveReason =
-  | "cli"
-  | "env"
-  | "local"
-  | "binding"
-  | "unbound"
-  | "conflict";
+  "cli" | "env" | "local" | "binding" | "unbound" | "conflict";
 
 export interface ResolveResult {
   anchor: string;
   gitContext: import("./resolution/gitContext.js").GitContext | null;
-  conflict?: {directoryProfile?: string; gitProfile?: string; detail: string};
+  conflict?: { directoryProfile?: string; gitProfile?: string; detail: string };
   ignoredLocalAcct?: string;
   profile: Profile | null;
   reason: ResolveReason;

@@ -88,16 +88,57 @@ export function githubKnownHostsPath(): string {
 /** GitHub returns exit 1 on successful authentication; the greeting identifies the account.
  * https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection
  */
-export function parseSshLogin(output: string): string | null { return /\bHi ([A-Za-z0-9-]+)!/.exec(output)?.[1] ?? null; }
-export function testSshAuth(profile: Profile): {ok:boolean;output:string} {
-  if(!profile.sshKeyPath) return {ok:false,output:"No sshKeyPath on profile — attach with: acct profile ssh-key <id> --path <key> or --generate"};
-  const host=assertSafeSshHost(splitHostPort(profile.host).hostname);
-  if(!fs.existsSync(profile.sshKeyPath)) return {ok:false,output:`SSH key file missing: ${profile.sshKeyPath}`};
-  const known=githubKnownHostsPath();
-  const hostKeyArgs=host.toLowerCase() === "github.com" ? ["-o","StrictHostKeyChecking=yes","-o",`UserKnownHostsFile=${known}`,"-o","GlobalKnownHostsFile=/dev/null"] : ["-o","StrictHostKeyChecking=accept-new"];
-  let output="";
-  try { output=execFileSync("ssh",["-i",profile.sshKeyPath,"-o","IdentitiesOnly=yes","-T","-o","BatchMode=yes","-o","ConnectTimeout=10",...hostKeyArgs,`git@${host}`],{encoding:"utf8",stdio:["ignore","pipe","pipe"],timeout:15000}); }
-  catch(error) { const e=error as {stdout?:string;stderr?:string}; output=(e.stdout??"")+(e.stderr??""); }
-  const login=parseSshLogin(output);
-  return {ok:login?.toLowerCase() === profile.githubUser.toLowerCase(),output:`expected=${profile.githubUser} actual=${login ?? "unknown"}\n${output}`};
+export function parseSshLogin(output: string): string | null {
+  return /\bHi ([A-Za-z0-9-]+)!/.exec(output)?.[1] ?? null;
+}
+export function testSshAuth(profile: Profile): { ok: boolean; output: string } {
+  if (!profile.sshKeyPath)
+    return {
+      ok: false,
+      output:
+        "No sshKeyPath on profile — attach with: acct profile ssh-key <id> --path <key> or --generate",
+    };
+  const host = assertSafeSshHost(splitHostPort(profile.host).hostname);
+  if (!fs.existsSync(profile.sshKeyPath))
+    return { ok: false, output: `SSH key file missing: ${profile.sshKeyPath}` };
+  const known = githubKnownHostsPath();
+  const hostKeyArgs =
+    host.toLowerCase() === "github.com"
+      ? [
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          `UserKnownHostsFile=${known}`,
+          "-o",
+          "GlobalKnownHostsFile=/dev/null",
+        ]
+      : ["-o", "StrictHostKeyChecking=accept-new"];
+  let output = "";
+  try {
+    output = execFileSync(
+      "ssh",
+      [
+        "-i",
+        profile.sshKeyPath,
+        "-o",
+        "IdentitiesOnly=yes",
+        "-T",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        ...hostKeyArgs,
+        `git@${host}`,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 },
+    );
+  } catch (error) {
+    const e = error as { stdout?: string; stderr?: string };
+    output = (e.stdout ?? "") + (e.stderr ?? "");
+  }
+  const login = parseSshLogin(output);
+  return {
+    ok: login?.toLowerCase() === profile.githubUser.toLowerCase(),
+    output: `expected=${profile.githubUser} actual=${login ?? "unknown"}\n${output}`,
+  };
 }

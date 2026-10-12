@@ -27,7 +27,7 @@ describe("identity includeIf", () => {
       "/Volumes/Work/untitled folder 3/bin/git-credential-acct.js",
     );
     expect(inc).toContain(
-      'helper = "!\'/Volumes/Work/untitled folder 3/bin/git-credential-acct.js\'"',
+      "helper = \"!'/Volumes/Work/untitled folder 3/bin/git-credential-acct.js'\"",
     );
   });
 
@@ -36,7 +36,7 @@ describe("identity includeIf", () => {
     expect(inc).toContain('name = "Work"');
     expect(inc).toContain('email = "work@corp.com"');
     expect(inc).toContain('helper = ""');
-    expect(inc).toContain('helper = "!\'acct\'"');
+    expect(inc).toContain("helper = \"!'acct'\"");
     expect(inc).toContain('username = "work-user"');
   });
 
@@ -48,7 +48,7 @@ describe("identity includeIf", () => {
     };
     const inc = renderProfileInclude(ssh, "acct");
     expect(inc).toContain('helper = ""');
-    expect(inc).toContain('helper = "!\'acct\'"');
+    expect(inc).toContain("helper = \"!'acct'\"");
     expect(inc).toContain("IdentitiesOnly=yes");
     expect(inc).toContain("-i '/tmp/id_work'");
     expect(inc).not.toContain("HostName=");
@@ -94,7 +94,9 @@ describe("identity includeIf", () => {
   });
 
   it("builds includeIf for bindings with global helper reset", () => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")),
+    );
     try {
       const config: AcctConfig = {
         version: 1,
@@ -117,7 +119,9 @@ describe("identity includeIf", () => {
   });
 
   it("credential shim execs process.execPath, not PATH node (I11b)", () => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-shim-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-shim-")),
+    );
     try {
       const shim = ensureCredentialShim({ ACCT_CONFIG_DIR: tmp });
       const body = fs.readFileSync(shim, "utf8");
@@ -135,7 +139,9 @@ describe("identity includeIf", () => {
   });
 
   it("escapes double-quotes in a binding path", () => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")),
+    );
     try {
       const config: AcctConfig = {
         version: 1,
@@ -152,7 +158,9 @@ describe("identity includeIf", () => {
   });
 
   it("rejects bind paths that would break out of includeIf quotes", () => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")),
+    );
     try {
       const config: AcctConfig = {
         version: 1,
@@ -174,7 +182,9 @@ describe("identity includeIf", () => {
   });
 
   it("rejects bind paths with gitdir glob metacharacters", () => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")),
+    );
     try {
       const config: AcctConfig = {
         version: 1,

@@ -40,7 +40,9 @@
     "pack:check": "npm pack --dry-run",
     "pack:smoke": "node scripts/test-isolated.mjs --copy-cache node scripts/pack-smoke.mjs",
     "postinstall": "node ./scripts/postinstall.mjs",
-    "prepublishOnly": "npm run lint && npm run build && npm test && npm run pack:check && npm run pack:smoke"
+    "prepublishOnly": "npm run lint && npm run build && npm test && npm run pack:check && npm run pack:smoke",
+    "format": "prettier --write src tests scripts bin",
+    "format:check": "prettier --check src tests scripts bin"
   },
   "engines": {
     "node": ">=20"
@@ -79,6 +81,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "prettier": "3.9.10",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"
   }

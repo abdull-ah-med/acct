@@ -87,12 +87,16 @@ export function loginForToken(
     env.GH_HOST = canonicalHost(host);
   }
   try {
-    const out = execFileSync(resolveRealGh(env), ["api", "user", "--jq", ".login"], {
-      encoding: "utf8",
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 3000,
-    }).trim();
+    const out = execFileSync(
+      resolveRealGh(env),
+      ["api", "user", "--jq", ".login"],
+      {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 3000,
+      },
+    ).trim();
     return out || null;
   } catch {
     return null;
@@ -144,7 +148,9 @@ export async function resolveProfileToken(
 
   const login = loginForToken(live, profile.host, env);
   if (login && !principalMatches(profile, login)) {
-    console.error(`acct warning: live gh token principal differs from profile ${profile.id}; using stored token`);
+    console.error(
+      `acct warning: live gh token principal differs from profile ${profile.id}; using stored token`,
+    );
     return stored;
   }
   if (!login) return live;

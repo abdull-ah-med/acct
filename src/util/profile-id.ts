@@ -14,8 +14,7 @@
 const PROFILE_ID_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
 /** Windows reserved device names — cannot be used as filenames on NTFS. */
-const WINDOWS_RESERVED_RE =
-  /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/i;
+const WINDOWS_RESERVED_RE = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/i;
 
 export function isValidProfileId(id: string): boolean {
   if (!PROFILE_ID_RE.test(id)) return false;
@@ -54,9 +53,7 @@ export function findProfileIdCaseCollision(
   id: string,
 ): ProfileIdLike | undefined {
   const key = profileIdCaseKey(id);
-  return profiles.find(
-    (p) => profileIdCaseKey(p.id) === key && p.id !== id,
-  );
+  return profiles.find((p) => profileIdCaseKey(p.id) === key && p.id !== id);
 }
 
 /**

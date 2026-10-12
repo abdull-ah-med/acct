@@ -4,11 +4,7 @@ import path from "node:path";
 import type { Profile } from "../../src/types.js";
 import { ensureDistBuild, installFakeGh } from "../harness/fake-gh.js";
 import { installNativeCommand } from "../harness/native-command.js";
-import {
-  acct,
-  initGitIdentity,
-  makeWorkspace,
-} from "../harness/workspace.js";
+import { acct, initGitIdentity, makeWorkspace } from "../harness/workspace.js";
 import {
   illegalGhFlags,
   parseGhAuthInvocations,
@@ -175,9 +171,7 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
 
       acct(["doctor", "--online"], env, ws.workDir);
       expect(
-        gh.calls().some(
-          (c) => c.argv[0] === "api" && c.argv[1] === "user",
-        ),
+        gh.calls().some((c) => c.argv[0] === "api" && c.argv[1] === "user"),
       ).toBe(true);
     } finally {
       ws.close();
@@ -189,13 +183,17 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
     const binDir = path.join(ws.root, "fake-git");
     fs.mkdirSync(binDir, { recursive: true });
     const dump = path.join(ws.root, "git-env.txt");
-    const fakeGit = installNativeCommand(binDir, "git", `
+    const fakeGit = installNativeCommand(
+      binDir,
+      "git",
+      `
 const fs = require("node:fs");
 const lines = Object.entries(process.env)
   .filter(([key]) => key.startsWith("GIT_CONFIG"))
   .map(([key, value]) => key + "=" + value);
 fs.writeFileSync(${JSON.stringify(dump)}, lines.join("\\n"));
-`);
+`,
+    );
     const env = {
       ...ws.env,
       ...fakeGit.env,

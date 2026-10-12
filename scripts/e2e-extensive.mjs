@@ -14,12 +14,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ACCT = path.join(ROOT, "bin/acct.js");
 const HELPER = path.join(ROOT, "bin/git-credential-acct.js");
 
-const FORBIDDEN = [
-  /mair/i,
-  /reachrazamair/i,
-  /Work-Mair/i,
-  /mairahmed/i,
-];
+const FORBIDDEN = [/mair/i, /reachrazamair/i, /Work-Mair/i, /mairahmed/i];
 
 const { a: PRIMARY, b: SECONDARY } = syntheticPair();
 
@@ -69,7 +64,9 @@ async function main() {
   console.log("=== acct extensive harness (synthetic, NO MAIR) ===\n");
 
   // Isolated fixtures under the OS temporary directory
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-e2e-")));
+  const base = fs.realpathSync.native(
+    fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-e2e-")),
+  );
   assertSafe("base", base);
   const configDir = path.join(base, "config");
   const gitconfig = path.join(base, "gitconfig");
@@ -81,7 +78,10 @@ async function main() {
   fs.mkdirSync(workRoot, { recursive: true });
   fs.mkdirSync(unboundRoot, { recursive: true });
   fs.mkdirSync(ghConfigDir, { recursive: true });
-  fs.writeFileSync(gitconfig, "[user]\n\tname = GlobalFallback\n\temail = global@example.com\n");
+  fs.writeFileSync(
+    gitconfig,
+    "[user]\n\tname = GlobalFallback\n\temail = global@example.com\n",
+  );
   // Bind targets must be git toplevels so core.hooksPath does not walk into the
   // checkout repo (CI runs security + e2e in the same workspace).
   run("git", ["init"], { cwd: personalRoot });
@@ -178,17 +178,25 @@ async function main() {
   {
     const tokA = "gho_TEST_ONLY_USER_A_" + "x".repeat(20);
     const tokB = "gho_TEST_ONLY_USER_B_" + "y".repeat(20);
-    let r = run(process.execPath, [ACCT, "profile", "token", PRIMARY.id, "--stdin"], {
-      env,
-      input: tokA,
-    });
+    let r = run(
+      process.execPath,
+      [ACCT, "profile", "token", PRIMARY.id, "--stdin"],
+      {
+        env,
+        input: tokA,
+      },
+    );
     if (r.status === 0) ok("store user-a token");
     else fail("store user-a token", r.stderr || r.stdout);
 
-    r = run(process.execPath, [ACCT, "profile", "token", SECONDARY.id, "--stdin"], {
-      env,
-      input: tokB,
-    });
+    r = run(
+      process.execPath,
+      [ACCT, "profile", "token", SECONDARY.id, "--stdin"],
+      {
+        env,
+        input: tokB,
+      },
+    );
     if (r.status === 0) ok("store user-b token");
     else fail("store user-b token", r.stderr || r.stdout);
   }
@@ -204,7 +212,10 @@ async function main() {
 
     r = acct(["status"], env, workRoot);
     assertSafe("status work", r.stdout + r.stderr);
-    if (r.stdout.includes(SECONDARY.id) && r.stdout.includes(SECONDARY.githubUser))
+    if (
+      r.stdout.includes(SECONDARY.id) &&
+      r.stdout.includes(SECONDARY.githubUser)
+    )
       ok("status in work → user-b");
     else fail("status work", r.stdout);
 
@@ -215,7 +226,7 @@ async function main() {
     // nested longer binding
     const nested = path.join(personalRoot, "nested-work-override");
     fs.mkdirSync(nested, { recursive: true });
-    run("git", ["init"], {cwd:nested, env});
+    run("git", ["init"], { cwd: nested, env });
     acct(["bind", nested, SECONDARY.id], env);
     r = acct(["status"], env, nested);
     if (r.stdout.includes(SECONDARY.githubUser)) ok("longest binding wins");
@@ -248,7 +259,10 @@ async function main() {
     fs.mkdirSync(nogit, { recursive: true });
     fs.writeFileSync(path.join(nogit, ".acct"), `profile: ${SECONDARY.id}\n`);
     r = acct(["status"], env, nogit);
-    if (new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) && /reason: local/.test(r.stdout))
+    if (
+      new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) &&
+      /reason: local/.test(r.stdout)
+    )
       ok("non-git .acct overrides binding");
     else fail("non-git .acct", r.stdout);
     fs.writeFileSync(path.join(nogit, ".acct"), "");
@@ -268,7 +282,10 @@ async function main() {
     else fail("ACCT_PROFILE ignored", r.stdout);
 
     r = acct(["status", "--profile", PRIMARY.id], env, workRoot);
-    if (r.stdout.includes(PRIMARY.githubUser) && r.stdout.includes("reason: cli"))
+    if (
+      r.stdout.includes(PRIMARY.githubUser) &&
+      r.stdout.includes("reason: cli")
+    )
       ok("CLI --profile selects profile for status");
     else fail("CLI --profile", r.stdout);
   }
@@ -280,7 +297,10 @@ async function main() {
     assertSafe("install", r.stdout + r.stderr);
     const gc = fs.readFileSync(gitconfig, "utf8");
     assertSafe("gitconfig content", gc);
-    if (gc.includes("acct managed") && gc.includes(personalRoot.replace(/\\/g, "/")))
+    if (
+      gc.includes("acct managed") &&
+      gc.includes(personalRoot.replace(/\\/g, "/"))
+    )
       ok("includeIf installed in isolated gitconfig");
     else fail("includeIf install", gc.slice(0, 500));
 
@@ -292,10 +312,16 @@ async function main() {
     // profile inc files
     const incPersonal = path.join(configDir, "git", "personal.inc");
     const incWork = path.join(configDir, "git", `${SECONDARY.id}.inc`);
-    if (fs.existsSync(incPersonal) && fs.readFileSync(incPersonal, "utf8").includes(PRIMARY.email))
+    if (
+      fs.existsSync(incPersonal) &&
+      fs.readFileSync(incPersonal, "utf8").includes(PRIMARY.email)
+    )
       ok("personal.inc identity");
     else fail("personal.inc", "missing");
-    if (fs.existsSync(incWork) && fs.readFileSync(incWork, "utf8").includes(SECONDARY.email))
+    if (
+      fs.existsSync(incWork) &&
+      fs.readFileSync(incWork, "utf8").includes(SECONDARY.email)
+    )
       ok("work.inc identity");
     else fail("work.inc", "missing");
 
@@ -317,8 +343,7 @@ async function main() {
       });
     }
 
-    const getBody =
-      `protocol=https\nhost=github.com\npath=${PRIMARY.githubUser}/demo.git\n\n`;
+    const getBody = `protocol=https\nhost=github.com\npath=${PRIMARY.githubUser}/demo.git\n\n`;
 
     let r = helper("get", getBody, personalRoot);
     assertSafe("helper get personal", r.stdout);
@@ -349,8 +374,7 @@ async function main() {
       "protocol=https\nhost=evil.example\npath=x/y.git\n\n",
       personalRoot,
     );
-    if (r.stdout === "" && r.status === 0)
-      ok("unmanaged host → empty success");
+    if (r.stdout === "" && r.status === 0) ok("unmanaged host → empty success");
     else fail("wrong host", JSON.stringify(r.stdout));
 
     // Empty host → quit
@@ -373,10 +397,7 @@ async function main() {
 
     // Unbound strict: defaultEnforce is strict → quit=1, no password
     r = helper("get", getBody, unboundRoot);
-    if (
-      !r.stdout.includes("password=") &&
-      r.stdout.includes("quit=1")
-    )
+    if (!r.stdout.includes("password=") && r.stdout.includes("quit=1"))
       ok("unbound strict → quit=1 fail-closed");
     else fail("unbound leak", JSON.stringify(r.stdout));
 
@@ -396,10 +417,14 @@ async function main() {
     else fail("erase effect", JSON.stringify(r.stdout));
 
     // Foreign erase (wrong password) must not wipe — re-seed then prove
-    r = run(process.execPath, [ACCT, "profile", "token", "personal", "--stdin"], {
-      env,
-      input: "gho_TEST_ONLY_USER_A_restored\n",
-    });
+    r = run(
+      process.execPath,
+      [ACCT, "profile", "token", "personal", "--stdin"],
+      {
+        env,
+        input: "gho_TEST_ONLY_USER_A_restored\n",
+      },
+    );
     if (r.status === 0) ok("restore token via profile token --stdin");
     else fail("profile token restore", r.stderr);
 
@@ -431,11 +456,7 @@ async function main() {
     else fail("store then get", r.stdout);
 
     // I16: http must not receive HTTPS tokens
-    r = helper(
-      "get",
-      "protocol=http\nhost=github.com\n\n",
-      personalRoot,
-    );
+    r = helper("get", "protocol=http\nhost=github.com\n\n", personalRoot);
     if (r.stdout.includes("quit=1") && !r.stdout.includes("password="))
       ok("http protocol → quit=1 (I16)");
     else fail("http protocol", JSON.stringify(r.stdout));
@@ -447,7 +468,8 @@ async function main() {
 
     // unknown op silent
     r = helper("wat", "\n", personalRoot);
-    if (r.status === 0 && !r.stdout.includes("password=")) ok("unknown op ignored");
+    if (r.status === 0 && !r.stdout.includes("password="))
+      ok("unknown op ignored");
     else fail("unknown op", r.stdout);
   }
 
@@ -512,7 +534,11 @@ async function main() {
       ok("exec blocks bash -c gh auth token (I18)");
     else fail("exec should block bash -c", r.stdout + r.stderr);
 
-    r = acct(["exec", "xargs", "-I{}", "gh", "auth", "token"], env, personalRoot);
+    r = acct(
+      ["exec", "xargs", "-I{}", "gh", "auth", "token"],
+      env,
+      personalRoot,
+    );
     if (r.status !== 0 && /Refusing to run/.test(r.stderr + r.stdout))
       ok("exec blocks xargs gh auth token (I18)");
     else fail("exec should block xargs", r.stdout + r.stderr);
@@ -525,7 +551,14 @@ async function main() {
     else fail("exec should block xargs -n2 gh", r.stderr + r.stdout);
 
     r = acct(
-      ["exec", "xargs", "-I{}", "sh", "-c", "unset GH_TOKEN; gh auth {} --user other"],
+      [
+        "exec",
+        "xargs",
+        "-I{}",
+        "sh",
+        "-c",
+        "unset GH_TOKEN; gh auth {} --user other",
+      ],
       env,
       personalRoot,
     );
@@ -572,21 +605,39 @@ async function main() {
       r = acct(["exec", ...cmd], env, personalRoot);
       if (!(r.status !== 0 && /Refusing/.test(r.stderr + r.stdout))) {
         r2ok = false;
-        fail(`exec block round2 ${cmd.slice(0, 3).join(" ")}`, r.stderr + r.stdout);
+        fail(
+          `exec block round2 ${cmd.slice(0, 3).join(" ")}`,
+          r.stderr + r.stdout,
+        );
       }
     }
     if (r2ok) ok("exec blocks I18 round-2 shell bypasses");
 
-    r = acct(["exec", "node", "-e", "console.log(process.env.ACCT_PROFILE)"], env, personalRoot);
-    if (r.status === 0 && r.stdout.trim() === "personal") ok("exec injects ACCT_PROFILE");
-    else fail("exec env", r.stdout + r.stderr);
-
     r = acct(
-      ["exec", "--profile", SECONDARY.id, "node", "-e", "console.log(process.env.ACCT_PROFILE)"],
+      ["exec", "node", "-e", "console.log(process.env.ACCT_PROFILE)"],
       env,
       personalRoot,
     );
-    if (r.status !== 0 && /allow-cross-profile|Refusing --profile/i.test(r.stderr + r.stdout))
+    if (r.status === 0 && r.stdout.trim() === "personal")
+      ok("exec injects ACCT_PROFILE");
+    else fail("exec env", r.stdout + r.stderr);
+
+    r = acct(
+      [
+        "exec",
+        "--profile",
+        SECONDARY.id,
+        "node",
+        "-e",
+        "console.log(process.env.ACCT_PROFILE)",
+      ],
+      env,
+      personalRoot,
+    );
+    if (
+      r.status !== 0 &&
+      /allow-cross-profile|Refusing --profile/i.test(r.stderr + r.stdout)
+    )
       ok("exec denies cross-profile without flag");
     else fail("exec cross-profile deny", r.stderr + r.stdout);
 
@@ -603,7 +654,8 @@ async function main() {
       env,
       personalRoot,
     );
-    if (r.status === 0 && r.stdout.trim() === SECONDARY.id) ok("exec --allow-cross-profile works");
+    if (r.status === 0 && r.stdout.trim() === SECONDARY.id)
+      ok("exec --allow-cross-profile works");
     else fail("exec allow-cross-profile", r.stderr + r.stdout);
   }
 
@@ -619,7 +671,10 @@ async function main() {
       cwd: repo,
       env: { ...env, GIT_TEMPLATE_DIR: emptyTpl },
     });
-    run("git", ["config", "user.email", "wrong@example.com"], { cwd: repo, env });
+    run("git", ["config", "user.email", "wrong@example.com"], {
+      cwd: repo,
+      env,
+    });
     run("git", ["config", "user.name", "Wrong Name"], { cwd: repo, env });
 
     let r = acct(["hook-run", "pre-commit"], env, repo);
@@ -635,7 +690,10 @@ async function main() {
 
     // warn mode
     acct(["enforce", "warn"], env);
-    run("git", ["config", "user.email", "wrong@example.com"], { cwd: repo, env });
+    run("git", ["config", "user.email", "wrong@example.com"], {
+      cwd: repo,
+      env,
+    });
     r = acct(["hook-run", "pre-commit"], env, repo);
     // profile enforce may still be strict on profile — check defaultEnforce
     // Our resolve uses binding/profile enforce first; profile has strict.
@@ -656,7 +714,8 @@ async function main() {
     assertSafe("doctor", r.stdout + r.stderr);
     if (r.status === 0 || r.status === 1) ok("doctor runs");
     else fail("doctor crash", r.stderr);
-    if (!/mair|reachraza/i.test(r.stdout + r.stderr)) ok("doctor output has no mair");
+    if (!/mair|reachraza/i.test(r.stdout + r.stderr))
+      ok("doctor output has no mair");
     else fail("doctor mair leak", r.stdout);
   }
 
@@ -681,9 +740,13 @@ async function main() {
   {
     const r = acct(["profile", "ssh-key", SECONDARY.id, "--generate"], env);
     assertSafe("ssh-key", r.stdout + r.stderr);
-    if (r.status === 0 && /ssh-ed25519/.test(r.stdout)) ok("work ssh key generated");
+    if (r.status === 0 && /ssh-ed25519/.test(r.stdout))
+      ok("work ssh key generated");
     else fail("ssh generate", r.stderr + r.stdout);
-    const inc = fs.readFileSync(path.join(configDir, "git", `${SECONDARY.id}.inc`), "utf8");
+    const inc = fs.readFileSync(
+      path.join(configDir, "git", `${SECONDARY.id}.inc`),
+      "utf8",
+    );
     if (inc.includes("IdentitiesOnly=yes")) ok("work.inc has IdentitiesOnly");
     else fail("IdentitiesOnly", inc);
     if (!/mair/i.test(inc)) ok("work ssh inc has no mair");
@@ -695,9 +758,11 @@ async function main() {
     const before = fs.readFileSync(gitconfig, "utf8");
     const r = acct(["uninstall"], env);
     const after = fs.readFileSync(gitconfig, "utf8");
-    if (r.status === 0 && !after.includes("acct managed")) ok("uninstall removes managed block");
+    if (r.status === 0 && !after.includes("acct managed"))
+      ok("uninstall removes managed block");
     else fail("uninstall", after.slice(0, 300));
-    if (after.includes("GlobalFallback")) ok("uninstall keeps non-acct gitconfig content");
+    if (after.includes("GlobalFallback"))
+      ok("uninstall keeps non-acct gitconfig content");
     else fail("uninstall preserved", after);
     void before;
   }

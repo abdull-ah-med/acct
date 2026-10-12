@@ -8,8 +8,7 @@ import path from "node:path";
 const MAX_LEN = 256;
 const UNSAFE_CHARS = /[\r\n\0]/;
 
-const HOST_RE =
-  /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?$/;
+const HOST_RE = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?$/;
 const USER_RE = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$/;
 const EMAIL_RE = /^[^\s@\r\n\0\\"]+@[^\s@\r\n\0\\"]+\.[^\s@\r\n\0\\"]+$/;
 
@@ -85,9 +84,10 @@ export function assertSafeBindPath(dir: string): void {
   // Recognized absolute Windows paths use backslashes as separators. Validate
   // their Git slash representation; keep literal POSIX/relative backslashes
   // forbidden. https://git-scm.com/docs/git-config (Conditional includes)
-  const gitPath = path.win32.isAbsolute(dir) && !dir.startsWith("/")
-    ? dir.replace(/\\/g, "/")
-    : dir;
+  const gitPath =
+    path.win32.isAbsolute(dir) && !dir.startsWith("/")
+      ? dir.replace(/\\/g, "/")
+      : dir;
   if (BIND_UNSAFE.test(gitPath)) {
     throw new Error(
       "Invalid bind path: must not contain CR, LF, NUL, backslash, double-quote, brackets, or gitdir glob metacharacters * ?",

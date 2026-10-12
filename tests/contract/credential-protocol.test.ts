@@ -23,9 +23,7 @@ describe("credential protocol (git-scm.com/docs/git-credential)", () => {
       username: "alice",
       password: "gho_TEST_ONLY_secret",
     });
-    expect(out).toBe(
-      "username=alice\npassword=gho_TEST_ONLY_secret\n\n",
-    );
+    expect(out).toBe("username=alice\npassword=gho_TEST_ONLY_secret\n\n");
   });
 
   it("formats quit=true fail-closed response", () => {

@@ -70,9 +70,9 @@ describe("secrets + gh env", () => {
       true,
     );
     expect(isDangerousGhArgv(["env", "gh", "auth", "token"])).toBe(true);
-    expect(
-      isDangerousGhArgv(["env", "FOO=1", "gh", "auth", "switch"]),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["env", "FOO=1", "gh", "auth", "switch"])).toBe(
+      true,
+    );
     expect(isDangerousGhArgv(["nice", "gh", "auth", "logout"])).toBe(true);
     expect(isDangerousGhArgv(["gh.exe", "auth", "token"])).toBe(true);
     expect(isDangerousGhArgv(["env", "gh", "auth", "status"])).toBe(false);
@@ -85,18 +85,16 @@ describe("secrets + gh env", () => {
     expect(isDangerousGhArgv(["xargs", "-n2", "gh"])).toBe(true);
     expect(isDangerousGhArgv(["xargs", "gh", "auth", "token"])).toBe(true);
     expect(isDangerousGhArgv(["xargs", "gh", "pr", "list"])).toBe(true);
-    expect(
-      isDangerousGhArgv(["xargs", "-I{}", "gh", "auth", "token"]),
-    ).toBe(true);
-    expect(
-      isDangerousGhArgv(["xargs", "-I", "%", "gh", "auth", "login"]),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["xargs", "-I{}", "gh", "auth", "token"])).toBe(
+      true,
+    );
+    expect(isDangerousGhArgv(["xargs", "-I", "%", "gh", "auth", "login"])).toBe(
+      true,
+    );
     expect(
       isDangerousGhArgv(["xargs", "-I{}", "/usr/bin/gh", "auth", "token"]),
     ).toBe(true);
-    expect(isDangerousGhArgv(["xargs", "-I{}", "gh", "auth", "{}"])).toBe(
-      true,
-    );
+    expect(isDangerousGhArgv(["xargs", "-I{}", "gh", "auth", "{}"])).toBe(true);
     expect(isDangerousGhArgv(["env", "xargs", "-n2", "gh"])).toBe(true);
     expect(isDangerousGhArgv(["nice", "xargs", "gh"])).toBe(true);
     // Shell utility: -I{} can substitute into -c scripts after unset GH_TOKEN.
@@ -118,15 +116,13 @@ describe("secrets + gh env", () => {
   });
 
   it("I18: shell -c scripts invoking gh auth dangerous are denied", () => {
-    expect(
-      isDangerousGhArgv(["bash", "-c", "gh auth token"]),
-    ).toBe(true);
-    expect(
-      isDangerousGhArgv(["sh", "-c", "gh auth token --user x"]),
-    ).toBe(true);
-    expect(
-      isDangerousGhArgv(["zsh", "-lc", "/usr/bin/gh auth login"]),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["bash", "-c", "gh auth token"])).toBe(true);
+    expect(isDangerousGhArgv(["sh", "-c", "gh auth token --user x"])).toBe(
+      true,
+    );
+    expect(isDangerousGhArgv(["zsh", "-lc", "/usr/bin/gh auth login"])).toBe(
+      true,
+    );
     expect(
       isDangerousGhArgv(["bash", "-c", "echo hello && gh auth switch"]),
     ).toBe(true);
@@ -187,18 +183,14 @@ describe("secrets + gh env", () => {
   });
 
   it("I18: awk / osascript / git shell-alias carriers denied", () => {
-    expect(
-      isDangerousGhArgv(["awk", 'BEGIN{system("gh auth token")}']),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["awk", 'BEGIN{system("gh auth token")}'])).toBe(
+      true,
+    );
     expect(
       isDangerousGhArgv(["gawk", "-F,", 'BEGIN{system("gh auth login")}']),
     ).toBe(true);
     expect(
-      isDangerousGhArgv([
-        "osascript",
-        "-e",
-        'do shell script "gh auth token"',
-      ]),
+      isDangerousGhArgv(["osascript", "-e", 'do shell script "gh auth token"']),
     ).toBe(true);
     expect(
       isDangerousGhArgv(["git", "-c", "alias.p=!gh auth token", "p"]),
@@ -217,9 +209,9 @@ describe("secrets + gh env", () => {
       false,
     );
     expect(isDangerousGhArgv(["awk", "BEGIN{print 1}"])).toBe(false);
-    expect(
-      isDangerousGhArgv(["osascript", "-e", 'return "hello"']),
-    ).toBe(false);
+    expect(isDangerousGhArgv(["osascript", "-e", 'return "hello"'])).toBe(
+      false,
+    );
     // Non-goal: env-echo interpreters still not sandbox-denied
     expect(
       isDangerousGhArgv(["node", "-e", "console.log(process.env.GH_TOKEN)"]),
@@ -239,16 +231,16 @@ describe("secrets + gh env", () => {
     expect(
       isDangerousGhArgv(["sh", "-c", "exec gh $@", "sh", "auth", "token"]),
     ).toBe(true);
-    expect(
-      isDangerousGhArgv(["bash", "-c", "echo $1", "_", "hello"]),
-    ).toBe(false);
+    expect(isDangerousGhArgv(["bash", "-c", "echo $1", "_", "hello"])).toBe(
+      false,
+    );
   });
 
   it("I18 P1.2: pwsh / powershell / cmd script flags are scanned", () => {
     expect(isDangerousGhArgv(["pwsh", "-c", "gh auth token"])).toBe(true);
-    expect(
-      isDangerousGhArgv(["powershell", "-Command", "gh auth token"]),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["powershell", "-Command", "gh auth token"])).toBe(
+      true,
+    );
     expect(isDangerousGhArgv(["cmd", "/c", "gh auth token"])).toBe(true);
     expect(isDangerousGhArgv(["cmd.exe", "/C", "gh auth token"])).toBe(true);
     expect(isDangerousGhArgv(["pwsh", "-c", "gh pr list"])).toBe(false);
@@ -268,34 +260,34 @@ describe("secrets + gh env", () => {
     expect(
       isDangerousGhArgv(["cmd", "/c", "pwsh", "-EncodedCommand", "AAAA"]),
     ).toBe(true);
-    expect(
-      isDangerousGhArgv(["cmd", "/c", "pwsh -EncodedCommand AAAA"]),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["cmd", "/c", "pwsh -EncodedCommand AAAA"])).toBe(
+      true,
+    );
     expect(isDangerousGhArgv(["pwsh", "-c", "gh pr list"])).toBe(false);
   });
 
   it("I18 P1.3: ANSI-C $'\\xNN' / octal escapes decode before deny match", () => {
-    expect(
-      shellScriptHasDangerousGhAuth("$'\\x67h' auth $'\\x74oken'"),
-    ).toBe(true);
-    expect(
-      shellScriptHasDangerousGhAuth("$'\\147\\150' auth token"),
-    ).toBe(true);
-    expect(
-      isDangerousGhArgv(["bash", "-c", "$'\\x67h auth \\x74oken'"]),
-    ).toBe(true);
+    expect(shellScriptHasDangerousGhAuth("$'\\x67h' auth $'\\x74oken'")).toBe(
+      true,
+    );
+    expect(shellScriptHasDangerousGhAuth("$'\\147\\150' auth token")).toBe(
+      true,
+    );
+    expect(isDangerousGhArgv(["bash", "-c", "$'\\x67h auth \\x74oken'"])).toBe(
+      true,
+    );
   });
 
   it("I18 P1.4: variable reconstruction with literal auth between expansions", () => {
-    expect(
-      shellScriptHasDangerousGhAuth("x=gh; y=token; $x auth $y"),
-    ).toBe(true);
-    expect(
-      shellScriptHasDangerousGhAuth("a=$(printf gh); $a auth token"),
-    ).toBe(true);
-    expect(
-      shellScriptHasDangerousGhAuth("gh_cmd=gh; $gh_cmd auth token"),
-    ).toBe(true);
+    expect(shellScriptHasDangerousGhAuth("x=gh; y=token; $x auth $y")).toBe(
+      true,
+    );
+    expect(shellScriptHasDangerousGhAuth("a=$(printf gh); $a auth token")).toBe(
+      true,
+    );
+    expect(shellScriptHasDangerousGhAuth("gh_cmd=gh; $gh_cmd auth token")).toBe(
+      true,
+    );
   });
 
   it("I18 P1.5: printf / echo -e piped to shell are treated as decoders", () => {
@@ -314,9 +306,9 @@ describe("secrets + gh env", () => {
   });
 
   it("I18 P1.7: shell alias reconstructing gh is denied", () => {
-    expect(
-      shellScriptHasDangerousGhAuth("alias g=gh; g auth token"),
-    ).toBe(true);
+    expect(shellScriptHasDangerousGhAuth("alias g=gh; g auth token")).toBe(
+      true,
+    );
     expect(
       shellScriptHasDangerousGhAuth("alias mygh='gh'; mygh auth login"),
     ).toBe(true);
@@ -354,12 +346,7 @@ describe("secrets + gh env", () => {
       ]),
     ).toBe(true);
     expect(
-      isDangerousGhArgv([
-        "git",
-        "-c",
-        "include.path=/tmp/evil.inc",
-        "status",
-      ]),
+      isDangerousGhArgv(["git", "-c", "include.path=/tmp/evil.inc", "status"]),
     ).toBe(true);
     expect(
       isDangerousGhArgv([
@@ -376,19 +363,11 @@ describe("secrets + gh env", () => {
 
   it("I18 P1.10: find -exec and argv-wide gh auth subsequence denied", () => {
     expect(
-      isDangerousGhArgv([
-        "find",
-        ".",
-        "-exec",
-        "gh",
-        "auth",
-        "token",
-        ";",
-      ]),
+      isDangerousGhArgv(["find", ".", "-exec", "gh", "auth", "token", ";"]),
     ).toBe(true);
-    expect(
-      isDangerousGhArgv(["xargs", "-I{}", "gh", "auth", "token"]),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["xargs", "-I{}", "gh", "auth", "token"])).toBe(
+      true,
+    );
     expect(
       isDangerousGhArgv([
         "find",
@@ -405,8 +384,8 @@ describe("secrets + gh env", () => {
   it("I18 P1.11: ash / mksh / busybox shells are scanned", () => {
     expect(isDangerousGhArgv(["ash", "-c", "gh auth token"])).toBe(true);
     expect(isDangerousGhArgv(["mksh", "-c", "gh auth token"])).toBe(true);
-    expect(
-      isDangerousGhArgv(["busybox", "sh", "-c", "gh auth token"]),
-    ).toBe(true);
+    expect(isDangerousGhArgv(["busybox", "sh", "-c", "gh auth token"])).toBe(
+      true,
+    );
   });
 });

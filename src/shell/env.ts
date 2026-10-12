@@ -28,7 +28,11 @@ export async function buildShellEnvExports(
   const exports: Record<string, string | null> = {};
 
   if (resolved.profile) {
-    const profileEnv = await envForProfile(resolved.profile, envForResolve, resolved.enforce);
+    const profileEnv = await envForProfile(
+      resolved.profile,
+      envForResolve,
+      resolved.enforce,
+    );
     exports.ACCT_PROFILE = resolved.profile.id;
     exports.GH_TOKEN = profileEnv.GH_TOKEN ?? null;
     exports.GITHUB_TOKEN = null;
@@ -36,9 +40,11 @@ export async function buildShellEnvExports(
     exports.GITHUB_ENTERPRISE_TOKEN = null;
     exports.GH_HOST = profileEnv.GH_HOST ?? null;
   } else {
-    if(resolved.reason === "conflict" && resolved.enforce === "strict") {
-      for(const key of TOKEN_KEYS) exports[key]=null;
-      exports.ACCT_PROFILE=null; exports.GH_TOKEN="acct-blocked-no-token"; exports.GH_ENTERPRISE_TOKEN="acct-blocked-no-token";
+    if (resolved.reason === "conflict" && resolved.enforce === "strict") {
+      for (const key of TOKEN_KEYS) exports[key] = null;
+      exports.ACCT_PROFILE = null;
+      exports.GH_TOKEN = "acct-blocked-no-token";
+      exports.GH_ENTERPRISE_TOKEN = "acct-blocked-no-token";
       console.error("acct: " + resolved.conflict?.detail);
       return exports;
     }

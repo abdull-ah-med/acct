@@ -10,8 +10,14 @@ import {
   profileIncPath,
   globalGitconfigPath,
 } from "../../src/identity/includeIf.js";
-import { cmdEscapePath, renderCmdNodeInvoke } from "../../src/util/cmd-escape.js";
-import { assertSafeProfileFields, assertSafeBindPath } from "../../src/util/profile-fields.js";
+import {
+  cmdEscapePath,
+  renderCmdNodeInvoke,
+} from "../../src/util/cmd-escape.js";
+import {
+  assertSafeProfileFields,
+  assertSafeBindPath,
+} from "../../src/util/profile-fields.js";
 import { renderGitCmd, installWrapShims } from "../../src/shell/wrap.js";
 import { configureHooksPath, unsetAcctHooksPath } from "../../src/cli/index.js";
 import type { AcctConfig, Profile } from "../../src/types.js";
@@ -47,12 +53,17 @@ describe("installIncludeIf locking / cleanup", () => {
   let prevGit: string | undefined;
 
   beforeEach(() => {
-    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-incif-")));
+    tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-incif-")),
+    );
     prevConfig = process.env.ACCT_CONFIG_DIR;
     prevGit = process.env.GIT_CONFIG_GLOBAL;
     process.env.ACCT_CONFIG_DIR = path.join(tmp, "acct");
     process.env.GIT_CONFIG_GLOBAL = path.join(tmp, "gitconfig");
-    fs.writeFileSync(process.env.GIT_CONFIG_GLOBAL, "[user]\n\tname = Global\n");
+    fs.writeFileSync(
+      process.env.GIT_CONFIG_GLOBAL,
+      "[user]\n\tname = Global\n",
+    );
   });
 
   afterEach(() => {
@@ -204,7 +215,9 @@ describe("profile field validation", () => {
     expect(() => assertSafeBindPath('/tmp/work"')).not.toThrow();
     expect(() => assertSafeBindPath("/tmp/work*")).toThrow(/Invalid bind path/);
     expect(() => assertSafeBindPath("/tmp/work?")).toThrow(/Invalid bind path/);
-    expect(() => assertSafeBindPath("/tmp/work[a]")).toThrow(/Invalid bind path/);
+    expect(() => assertSafeBindPath("/tmp/work[a]")).toThrow(
+      /Invalid bind path/,
+    );
     expect(() => assertSafeBindPath("/tmp/work")).not.toThrow();
   });
 });
@@ -221,12 +234,15 @@ describe("renderGitCmd", () => {
 
 describe("wrap shims (I11b)", () => {
   it("gh wrap shim execs process.execPath, not PATH node", () => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-wrap-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-wrap-")),
+    );
     try {
       const dir = installWrapShims({ ACCT_CONFIG_DIR: tmp });
-      const shim = process.platform === "win32"
-        ? path.join(dir, "gh.cmd")
-        : path.join(dir, "gh");
+      const shim =
+        process.platform === "win32"
+          ? path.join(dir, "gh.cmd")
+          : path.join(dir, "gh");
       const body = fs.readFileSync(shim, "utf8");
       expect(body).toContain(process.execPath);
       expect(body).not.toMatch(/\bexec node\b/);
@@ -241,7 +257,9 @@ describe("configureHooksPath", () => {
   let hooks: string;
 
   beforeEach(() => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-cfg-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-cfg-")),
+    );
     repo = path.join(tmp, "repo");
     hooks = path.join(tmp, "acct-hooks");
     fs.mkdirSync(repo, { recursive: true });
@@ -258,10 +276,14 @@ describe("configureHooksPath", () => {
       cwd: repo,
       stdio: "ignore",
     });
-    expect(() =>
-      configureHooksPath(hooks, { bindDir: repo }),
-    ).not.toThrow();
-    expect(execFileSync("git",["config","--local","--get","acct.chainHooksPath"],{cwd:repo,encoding:"utf8"}).trim()).toBe(".githooks");
+    expect(() => configureHooksPath(hooks, { bindDir: repo })).not.toThrow();
+    expect(
+      execFileSync(
+        "git",
+        ["config", "--local", "--get", "acct.chainHooksPath"],
+        { cwd: repo, encoding: "utf8" },
+      ).trim(),
+    ).toBe(".githooks");
   });
 
   it("overwrites with --force", () => {
@@ -298,15 +320,17 @@ describe("configureHooksPath", () => {
     const nested = path.join(repo, "subdir");
     fs.mkdirSync(nested, { recursive: true });
     // Repo-local hooks apply to the entire repository.
-    expect(() =>
-      configureHooksPath(hooks, { bindDir: nested }),
-    ).not.toThrow();
+    expect(() => configureHooksPath(hooks, { bindDir: nested })).not.toThrow();
     let v = "";
     try {
-      v = execFileSync("git", ["config", "--local", "--get", "core.hooksPath"], {
-        cwd: repo,
-        encoding: "utf8",
-      }).trim();
+      v = execFileSync(
+        "git",
+        ["config", "--local", "--get", "core.hooksPath"],
+        {
+          cwd: repo,
+          encoding: "utf8",
+        },
+      ).trim();
     } catch {
       v = "";
     }
@@ -338,7 +362,9 @@ describe("unsetAcctHooksPath (I14)", () => {
   let hooks: string;
 
   beforeEach(() => {
-    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-unset-")));
+    const tmp = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-unset-")),
+    );
     repo = path.join(tmp, "repo");
     hooks = path.join(tmp, "acct-hooks");
     fs.mkdirSync(repo, { recursive: true });
@@ -362,10 +388,14 @@ describe("unsetAcctHooksPath (I14)", () => {
     unsetAcctHooksPath({ bindDir: repo });
     let v = "";
     try {
-      v = execFileSync("git", ["config", "--local", "--get", "core.hooksPath"], {
-        cwd: repo,
-        encoding: "utf8",
-      }).trim();
+      v = execFileSync(
+        "git",
+        ["config", "--local", "--get", "core.hooksPath"],
+        {
+          cwd: repo,
+          encoding: "utf8",
+        },
+      ).trim();
     } catch {
       v = "";
     }
@@ -381,10 +411,14 @@ describe("unsetAcctHooksPath (I14)", () => {
       stdio: "ignore",
     });
     unsetAcctHooksPath({ bindDir: repo });
-    const v = execFileSync("git", ["config", "--local", "--get", "core.hooksPath"], {
-      cwd: repo,
-      encoding: "utf8",
-    }).trim();
+    const v = execFileSync(
+      "git",
+      ["config", "--local", "--get", "core.hooksPath"],
+      {
+        cwd: repo,
+        encoding: "utf8",
+      },
+    ).trim();
     expect(path.resolve(v)).toBe(path.resolve(other));
   });
 });
