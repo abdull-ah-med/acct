@@ -208,6 +208,13 @@ describe("phase 2 real Git configuration and transport contracts", () => {
     expect(twin.status, twin.stderr).toBe(0);
     const common = repo(path.join(harness.root, "main"));
     bind(common, "a");
+    // git < 2.42 cannot add a worktree to a repository without commits.
+    expect(
+      harness.git(
+        ["commit", "--allow-empty", "--no-verify", "-qm", "init"],
+        common,
+      ).status,
+    ).toBe(0);
     const linked = path.join(harness.root, "linked");
     expect(
       harness.git(["worktree", "add", "-q", "-b", "side", linked], common)
