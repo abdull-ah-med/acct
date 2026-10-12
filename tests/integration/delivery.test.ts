@@ -40,6 +40,12 @@ describe("reviewed release delivery contract", () => {
     expect(runs).not.toMatch(/npm (ci|run|pkg)/);
     expect(runs).toContain("npm publish");
     expect(runs).toContain("--ignore-scripts");
+    // Tarball paths must start with ./ or npm treats them as user/repo.
+    for (const match of runs.matchAll(/npm publish "([^"]+)"/g))
+      expect(match[1]).toMatch(/^\.\//);
+    expect(build.steps.map((step: any) => step.run ?? "").join("\n")).toContain(
+      "--dry-run",
+    );
     for (const job of Object.values(workflow.jobs) as any[])
       for (const step of job.steps)
         if (step.run) expect(step.run).not.toContain("${{");

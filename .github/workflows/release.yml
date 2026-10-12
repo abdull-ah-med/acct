@@ -73,6 +73,9 @@ jobs:
           npm pack --ignore-scripts --pack-destination release
           cp "docs/releases/$RELEASE_TAG.md" release/release.md
           (cd release && sha256sum *.tgz > SHA256SUMS)
+          # Exercise the exact publish arguments before anything is released.
+          # A path without ./ is read as GitHub user/repo shorthand.
+          npm publish "./release/acct-sh-$RELEASE_VERSION.tgz" --dry-run --ignore-scripts --access public --registry=https://registry.npmjs.org
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-packages
@@ -127,7 +130,7 @@ jobs:
             if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
               sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
             fi
-            npm publish "release/acct-sh-$RELEASE_VERSION.tgz" --registry=https://registry.npmjs.org --access public --provenance --ignore-scripts
+            npm publish "./release/acct-sh-$RELEASE_VERSION.tgz" --registry=https://registry.npmjs.org --access public --provenance --ignore-scripts
           fi
       - name: Publish GitHub Packages artifact
         env:
@@ -141,7 +144,7 @@ jobs:
           if npm view "@$PACKAGE_OWNER/acct-sh@$RELEASE_VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
             echo 'GitHub Packages version already exists; skipping'
           else
-            npm publish "release/$PACKAGE_OWNER-acct-sh-$RELEASE_VERSION.tgz" --registry=https://npm.pkg.github.com --access public --ignore-scripts
+            npm publish "./release/$PACKAGE_OWNER-acct-sh-$RELEASE_VERSION.tgz" --registry=https://npm.pkg.github.com --access public --ignore-scripts
           fi
       - name: Verify registry versions
         env:
