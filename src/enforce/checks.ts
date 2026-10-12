@@ -1,3 +1,4 @@
+import path from "node:path";
 import fs from "node:fs";
 import type { EnforceMode, Profile } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
@@ -223,24 +224,37 @@ export async function checkPushAuth(
     if (!/^[A-Za-z0-9.-]+$/.test(alias) || alias.startsWith("-"))
       messages.push("Unsafe SSH alias");
     else {
-      const effective =
+      const custom =
         env.GIT_SSH_COMMAND ||
         readGitSsh(cwd, env) ||
-        (env.GIT_SSH ? posixShellSingleQuote(env.GIT_SSH) : "ssh");
+        (env.GIT_SSH ? posixShellSingleQuote(env.GIT_SSH) : "");
+      // Git runs core.sshCommand / GIT_SSH_COMMAND through a POSIX shell
+      // (Git for Windows uses its bundled sh), so use that same shell here.
+      // Plain `ssh` is spawned directly. https://git-scm.com/docs/git#Documentation/git.txt-GITSSHCOMMAND
+      const shell = custom ? gitPosixShell(env) : null;
       const run = (args: string[]) =>
-        spawnSync(
-          process.platform === "win32" ? "cmd.exe" : "/bin/sh",
-          process.platform === "win32"
-            ? [
-                "/c",
-                effective + " " + args.map(posixShellSingleQuote).join(" "),
-              ]
-            : ["-c", effective + ' "$@"', "acct-ssh", ...args],
-          { cwd, env, encoding: "utf8", timeout: 15000 },
-        );
+        custom
+          ? shell
+            ? spawnSync(shell, ["-c", custom + ' "$@"', "acct-ssh", ...args], {
+                cwd,
+                env,
+                encoding: "utf8",
+                timeout: 15000,
+              })
+            : { stdout: "", stderr: "" }
+          : spawnSync("ssh", args, {
+              cwd,
+              env,
+              encoding: "utf8",
+              timeout: 15000,
+            });
       const config = run(["-G", alias]);
       const hostname = /^hostname\s+(\S+)/im.exec(config.stdout ?? "")?.[1];
-      if (!hostname) messages.push(`Could not resolve SSH alias ${alias}`);
+      if (custom && !shell)
+        messages.push(
+          "Could not find the POSIX shell Git uses to run the configured SSH command",
+        );
+      else if (!hostname) messages.push(`Could not resolve SSH alias ${alias}`);
       else if (
         hostname.toLowerCase() !==
         splitHostPort(profile.host).hostname.toLowerCase()
@@ -286,6 +300,32 @@ function readGitSsh(cwd: string, env: NodeJS.ProcessEnv): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * The POSIX shell Git uses for `core.sshCommand`. On Windows that is Git for
+ * Windows' bundled sh (`<git root>/usr/bin/sh.exe` or `<git root>/bin/sh.exe`,
+ * where `git --exec-path` is `<git root>/mingw64/libexec/git-core`). Returns
+ * null when it cannot be located.
+ */
+export function gitPosixShell(env: NodeJS.ProcessEnv): string | null {
+  if (process.platform !== "win32") return "/bin/sh";
+  try {
+    const execPath = execFileSync("git", ["--exec-path"], {
+      env,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    const root = path.resolve(execPath, "..", "..", "..");
+    for (const candidate of [
+      path.join(root, "usr", "bin", "sh.exe"),
+      path.join(root, "bin", "sh.exe"),
+    ])
+      if (fs.existsSync(candidate)) return candidate;
+  } catch {
+    // git missing — caller reports the SSH check as unverifiable
+  }
+  return null;
 }
 
 export function formatBlockMessage(

@@ -25,6 +25,23 @@ function words(line: string): string[] {
   if (current) result.push(current);
   return result;
 }
+/**
+ * Split a Windows .cmd line written by renderCmdNodeInvoke: `"node" "script" %*`.
+ * Backslashes are path separators (not escapes); `""` is a literal quote and
+ * `%%` a literal percent (see util/cmd-escape.ts).
+ */
+export function cmdWords(line: string): string[] {
+  const result: string[] = [];
+  for (const match of line.matchAll(/"((?:[^"]|"")*)"|(\S+)/g)) {
+    const quoted = match[1];
+    result.push(
+      quoted !== undefined
+        ? quoted.replace(/""/g, '"').replace(/%%/g, "%")
+        : match[2]!,
+    );
+  }
+  return result;
+}
 export function checkShims(env: NodeJS.ProcessEnv): DoctorFinding[] {
   if (!loadConfig(env).installed) return [];
   const findings: DoctorFinding[] = [];
@@ -90,7 +107,9 @@ export function checkShims(env: NodeJS.ProcessEnv): DoctorFinding[] {
         });
       continue;
     }
-    const argv = words(line.replace(/^exec\s+/, ""));
+    const argv = file.endsWith(".cmd")
+      ? cmdWords(line)
+      : words(line.replace(/^exec\s+/, ""));
     for (const target of argv.slice(0, 2))
       if (
         !path.isAbsolute(target) ||
