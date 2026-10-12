@@ -43,8 +43,12 @@ describe("reviewed release delivery contract", () => {
     for (const job of Object.values(workflow.jobs) as any[])
       for (const step of job.steps)
         if (step.run) expect(step.run).not.toContain("${{");
-    expect(read(".github/workflows/release.yml")).toContain(
-      "softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65",
+    expect(publish.permissions).toEqual({
+      "id-token": "write",
+      packages: "write",
+    });
+    expect(read(".github/workflows/release.yml")).not.toContain(
+      "action-gh-release",
     );
   });
 });

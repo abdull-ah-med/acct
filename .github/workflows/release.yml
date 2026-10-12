@@ -86,8 +86,9 @@ jobs:
     # Configure required reviewers on this environment in repository settings.
     # https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
     environment: release
+    # The GitHub Release (notes + these tarballs) is created by the maintainer's
+    # account after this job succeeds; see docs/publishing.md.
     permissions:
-      contents: write
       id-token: write
       packages: write
     steps:
@@ -161,10 +162,3 @@ jobs:
           done
           echo 'Registry verification failed' >&2
           exit 1
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: acct-sh ${{ needs.build.outputs.tag }}
-          generate_release_notes: false
-          body_path: release/release.md
