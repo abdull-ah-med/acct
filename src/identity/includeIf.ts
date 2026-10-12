@@ -3,8 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AcctConfig, Profile } from "../types.js";
 import { gitIncDir, backupDir, acctConfigDir } from "../config/store.js";
-import { assertSafeSshHost } from "../ssh/keys.js";
-import { splitHostPort } from "../credential/protocol.js";
+import { sshCommandFor } from "../ssh/keys.js";
+import { canonicalHost } from "../secrets/store.js";
+import {gitConfigValue, gitConfigSubsection} from "./serialize.js";
 import { homeDir, normalizePath, posixShellSingleQuote, pathIsPrefix } from "../util/paths.js";
 import {
   assertSafeBindPath,
@@ -42,31 +43,12 @@ export function renderProfileInclude(
     host: profile.host,
     user: profile.githubUser,
   });
-  const helperValue = quoteHelper(helperCommand);
-  const lines: string[] = [
-    `# acct profile ${profile.id} — do not edit by hand`,
-    "[user]",
-    `\tname = ${profile.name}`,
-    `\temail = ${profile.email}`,
-    // I8b: always clear competing helpers for this gitdir, then install acct
-    "[credential]",
-    '\thelper = ""',
-    `\thelper = ${helperValue}`,
-    "[credential \"https://" + profile.host + "\"]",
-    "\tuseHttpPath = false",
-    `\tusername = ${profile.githubUser}`,
-  ];
-
-  if (profile.sshKeyPath) {
-    const key = profile.sshKeyPath.replace(/\\/g, "/");
-    const host = assertSafeSshHost(splitHostPort(profile.host).hostname);
-    lines.push(
-      "[core]",
-      // IdentitiesOnly: https://man.openbsd.org/ssh_config.5
-      // core.sshCommand: https://git-scm.com/docs/git-config#Documentation/git-config.txt-coresshCommand
-      `\tsshCommand = ssh -i ${posixShellSingleQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`,
-    );
+  const lines = [`# acct profile ${profile.id} — do not edit by hand`, "[user]", `\tname = ${gitConfigValue(profile.name)}`, `\temail = ${gitConfigValue(profile.email)}`];
+  for(const host of profileHosts(profile)) {
+    lines.push(`[credential ${gitConfigSubsection("https://"+host)}]`, '\thelper = ""', `\thelper = ${gitConfigValue(quoteHelper(helperCommand))}`, "\tuseHttpPath = false", `\tusername = ${gitConfigValue(profile.githubUser)}`);
   }
+  const ssh=sshCommandFor(profile);
+  if(ssh) lines.push("[core]", `\tsshCommand = ${gitConfigValue(ssh)}`);
 
   return lines.join("\n") + "\n";
 }
@@ -160,28 +142,13 @@ export function buildIncludeIfBlock(
   const useInsensitive =
     process.platform === "win32" || process.platform === "darwin";
   const keyword = useInsensitive ? "gitdir/i" : "gitdir";
-  const helper = quoteHelper(ensureCredentialShim(env));
-  const lines: string[] = [
-    BEGIN,
-    "# Managed by acct — do not edit",
-    "",
-    "# Global helper reset: empty string clears lower-priority helpers, then acct.",
-    "# https://git-scm.com/docs/gitcredentials",
-    "[credential]",
-    '\thelper = ""',
-    `\thelper = ${helper}`,
-    "",
-  ];
-
-  for (const binding of config.bindings) {
-    const profile = config.profiles.find((p) => p.id === binding.profileId);
-    if (!profile) continue;
+  const lines: string[] = [BEGIN, "[include]", `\tpath = ${gitConfigValue(path.join(gitIncDir(env), "_managed.inc").replace(/\\/g,"/"))}`];
+  for (const binding of [...config.bindings].sort((a,b) => normalizePath(a.path).length-normalizePath(b.path).length || normalizePath(a.path).localeCompare(normalizePath(b.path)))) {
+    const profile=config.profiles.find(p => p.id === binding.profileId);
+    if(!profile) continue;
     assertSafeBindPath(binding.path);
-    const inc = profileIncPath(profile, env).replace(/\\/g, "/");
-    const gitdir = normalizePath(binding.path).replace(/\/+$/, "") + "/";
-    lines.push(`[includeIf "${keyword}:${gitdir}"]`);
-    lines.push(`\tpath = ${inc}`);
-    lines.push("");
+    const gitdir=normalizePath(binding.path).replace(/\/+$/, "")+"/";
+    lines.push(`[includeIf ${gitConfigSubsection(keyword+":"+gitdir)}]`, `\tpath = ${gitConfigValue(profileIncPath(profile,env).replace(/\\/g,"/"))}`);
   }
 
   lines.push(END);
@@ -207,6 +174,9 @@ export function installIncludeIf(
     for (const profile of config.profiles) {
       writeProfileInclude(profile, env);
     }
+    const hosts=[...new Set(config.profiles.flatMap(profileHosts))].sort();
+    const helper=gitConfigValue(quoteHelper(ensureCredentialShim(env)));
+    atomicWriteFileSync(path.join(gitIncDir(env),"_managed.inc"), hosts.map(host => `[credential ${gitConfigSubsection("https://"+host)}]\n\thelper = ""\n\thelper = ${helper}\n`).join(""), 0o600);
     const block = buildIncludeIfBlock(config, env);
     const gitconfig = globalGitconfigPath(env);
     let existing = fs.existsSync(gitconfig)
@@ -287,4 +257,12 @@ export function stripManagedBlock(text: string): string {
   if (end === -1) return text;
   const after = end + END.length;
   return (text.slice(0, begin) + text.slice(after)).replace(/\n{3,}/g, "\n\n");
+}
+
+export function profileHosts(profile: Profile): string[] {
+  const host=canonicalHost(profile.host); return host === "github.com" ? [host,"gist.github.com"] : [host];
+}
+export function acctHelperValue(env: NodeJS.ProcessEnv): string {
+  const shim=path.join(acctConfigDir(env),"bin",process.platform === "win32" ? "git-credential-acct.cmd":"git-credential-acct").replace(/\\/g,"/");
+  return quoteHelper(shim);
 }

@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -29,14 +30,11 @@ describe("native Windows binding paths", () => {
     expect(() => assertSafeBindPath("C:\\Users\\Example\\Work")).not.toThrow();
     expect(() => assertSafeBindPath("\\\\server\\share\\Work")).not.toThrow();
     for (const unsafe of [
-      'C:\\Work\\bad"name',
       "C:\\Work\\bad\nname",
       "C:\\Work\\bad\0name",
       "C:\\Work\\glob*",
       "C:\\Work\\glob?",
       "C:\\Work\\[glob]",
-      "/tmp/literal\\backslash",
-      "relative\\path",
     ]) {
       expect(() => assertSafeBindPath(unsafe)).toThrow(/Invalid bind path/);
     }
@@ -49,7 +47,7 @@ describe("installIncludeIf locking / cleanup", () => {
   let prevGit: string | undefined;
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-incif-"));
+    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-incif-")));
     prevConfig = process.env.ACCT_CONFIG_DIR;
     prevGit = process.env.GIT_CONFIG_GLOBAL;
     process.env.ACCT_CONFIG_DIR = path.join(tmp, "acct");
@@ -203,7 +201,7 @@ describe("profile field validation", () => {
   });
 
   it("rejects bind paths with gitconfig / gitdir metacharacters", () => {
-    expect(() => assertSafeBindPath('/tmp/work"')).toThrow(/Invalid bind path/);
+    expect(() => assertSafeBindPath('/tmp/work"')).not.toThrow();
     expect(() => assertSafeBindPath("/tmp/work*")).toThrow(/Invalid bind path/);
     expect(() => assertSafeBindPath("/tmp/work?")).toThrow(/Invalid bind path/);
     expect(() => assertSafeBindPath("/tmp/work[a]")).toThrow(/Invalid bind path/);
@@ -223,7 +221,7 @@ describe("renderGitCmd", () => {
 
 describe("wrap shims (I11b)", () => {
   it("gh wrap shim execs process.execPath, not PATH node", () => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-wrap-"));
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-wrap-")));
     try {
       const dir = installWrapShims({ ACCT_CONFIG_DIR: tmp });
       const shim = process.platform === "win32"
@@ -243,7 +241,7 @@ describe("configureHooksPath", () => {
   let hooks: string;
 
   beforeEach(() => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-hooks-cfg-"));
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-cfg-")));
     repo = path.join(tmp, "repo");
     hooks = path.join(tmp, "acct-hooks");
     fs.mkdirSync(repo, { recursive: true });
@@ -339,7 +337,7 @@ describe("unsetAcctHooksPath (I14)", () => {
   let hooks: string;
 
   beforeEach(() => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-hooks-unset-"));
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-unset-")));
     repo = path.join(tmp, "repo");
     hooks = path.join(tmp, "acct-hooks");
     fs.mkdirSync(repo, { recursive: true });

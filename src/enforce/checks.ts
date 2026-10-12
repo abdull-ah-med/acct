@@ -1,8 +1,12 @@
 import fs from "node:fs";
 import type { EnforceMode, Profile } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
+import {parseSshLogin} from "../ssh/keys.js";
+import {splitHostPort,hostAllowed} from "../credential/protocol.js";
+import {resolveProfileToken} from "../gh/token.js";
+import {acctConfigDir,posixShellSingleQuote} from "../util/paths.js";
 import { envForProfile, ghApiLogin } from "../gh/env.js";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { pathIsPrefix } from "../util/paths.js";
 
 export interface CheckResult {
@@ -86,7 +90,12 @@ export async function checkCommitIdentity(
   const resolved = resolveFromCwd(cwd, env);
   const messages: string[] = [];
   if (!resolved.profile) {
-    return { ok: true, mode: resolved.enforce, messages };
+    if(resolved.conflict) messages.push(resolved.conflict.detail);
+    try {
+      const origin=execFileSync("git",["config","--show-origin","--get","user.email"],{cwd,env,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).split("\t")[0] ?? "";
+      if(origin.startsWith("file:") && pathIsPrefix(acctConfigDir(env)+"/git",origin.slice(5))) messages.push("Unbound repository inherited acct identity; set a repo-local user.email or run acct local set <id>.");
+    } catch { /* no effective email */ }
+    return {ok:resolved.enforce !== "strict" || messages.length === 0,mode:resolved.enforce,messages};
   }
   if (resolved.enforce === "off") {
     return { ok: true, mode: resolved.enforce, messages };
@@ -114,43 +123,46 @@ export async function checkCommitIdentity(
   return { ok, mode: resolved.enforce, messages };
 }
 
-export async function checkPushAuth(
-  cwd: string = process.cwd(),
-  env: NodeJS.ProcessEnv = process.env,
-  readConfig: GitConfigReader = defaultGitConfigReader,
-): Promise<CheckResult> {
-  const resolved = resolveFromCwd(cwd, env);
-  const messages: string[] = [];
-  if (!resolved.profile) {
-    return { ok: true, mode: resolved.enforce, messages };
+/** Check the authentication transport Git will use, not an unrelated credential.
+ * https://git-scm.com/docs/git#Documentation/git.txt-GITSSHCOMMAND
+ * https://git-scm.com/docs/git-config#Documentation/git-config.txt-coresshCommand
+ */
+export async function checkPushAuth(cwd=process.cwd(),env:NodeJS.ProcessEnv=process.env,readConfig:GitConfigReader=defaultGitConfigReader,url?:string):Promise<CheckResult> {
+  const resolved=resolveFromCwd(cwd,env), identity=await checkCommitIdentity(cwd,env,readConfig);
+  if(!resolved.profile || resolved.enforce === "off") return identity;
+  const p=resolved.profile, messages=[...identity.messages];
+  if(!url) { try {url=execFileSync("git",["remote","get-url","--push","origin"],{cwd,env,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();} catch {url="";} }
+  let alias:string|null=null,httpsHost:string|null=null;
+  try { const u=new URL(url); if(u.protocol === "https:") httpsHost=u.host; else if(u.protocol === "ssh:") alias=u.hostname; }
+  catch { alias=/^(?:[^@/:]+@)?([^/:]+):.+/.exec(url)?.[1] ?? null; if(/^[A-Za-z]:[\\/]/.test(url)) alias=null; }
+  if(httpsHost) {
+    if(!hostAllowed(httpsHost,p.host)) console.error(`acct note: unmanaged HTTPS host ${httpsHost} — auth check skipped`);
+    else {
+      const token=await resolveProfileToken(p,env,{allowNetwork:true,persist:false});
+      const login=token ? ghApiLogin(await envForProfile(p,env,resolved.enforce)) : null;
+      if(!login) messages.push(`Could not verify GitHub auth for profile "${p.id}". Run: acct profile token ${p.id}`);
+      else if(login.toLowerCase() !== p.githubUser.toLowerCase()) messages.push(`Authenticated as "${login}" but profile "${p.id}" expects "${p.githubUser}".`);
+    }
+  } else if(alias) {
+    if(!/^[A-Za-z0-9.-]+$/.test(alias) || alias.startsWith("-")) messages.push("Unsafe SSH alias");
+    else {
+      const effective=env.GIT_SSH_COMMAND || readGitSsh(cwd,env) || (env.GIT_SSH ? posixShellSingleQuote(env.GIT_SSH) : "ssh");
+      const run=(args:string[]) => spawnSync(process.platform === "win32" ? "cmd.exe" : "/bin/sh",process.platform === "win32" ? ["/c",effective+" "+args.map(posixShellSingleQuote).join(" ")] : ["-c",effective+' "$@"',"acct-ssh",...args],{cwd,env,encoding:"utf8",timeout:15000});
+      const config=run(["-G",alias]);
+      const hostname=/^hostname\s+(\S+)/im.exec(config.stdout??"")?.[1];
+      if(!hostname) messages.push(`Could not resolve SSH alias ${alias}`);
+      else if(hostname.toLowerCase() !== splitHostPort(p.host).hostname.toLowerCase()) console.error(`acct note: unmanaged SSH host ${hostname} — auth check skipped`);
+      else {
+        const result=run(["-T","-o","BatchMode=yes","-o","ConnectTimeout=10",`git@${alias}`]);
+        const login=parseSshLogin((result.stdout??"")+(result.stderr??""));
+        if(login?.toLowerCase() !== p.githubUser.toLowerCase()) messages.push(`SSH authenticated account: expected=${p.githubUser} actual=${login ?? "unknown"}`);
+      }
+    }
   }
-  if (resolved.enforce === "off") {
-    return { ok: true, mode: resolved.enforce, messages };
-  }
-
-  const profile = resolved.profile;
-  const profileEnv = await envForProfile(profile, env);
-  const login = ghApiLogin(profileEnv);
-  if (!login) {
-    messages.push(
-      `Could not verify GitHub auth for profile "${profile.id}". Run: acct profile token ${profile.id}`,
-    );
-  } else if (login !== profile.githubUser) {
-    messages.push(
-      `Authenticated as "${login}" but profile "${profile.id}" expects "${profile.githubUser}".`,
-    );
-  }
-
-  const identity = await checkCommitIdentity(cwd, env, readConfig);
-  messages.push(...identity.messages.filter((m) => !messages.includes(m)));
-
-  const ok = messages.length === 0;
-  if (!ok && resolved.enforce === "warn") {
-    for (const m of messages) console.error(`acct warn: ${m}`);
-    return { ok: true, mode: resolved.enforce, messages };
-  }
-  return { ok, mode: resolved.enforce, messages };
+  if(messages.length && resolved.enforce === "warn") for(const message of messages) console.error("acct warn: "+message);
+  return {ok:resolved.enforce === "warn" || messages.length === 0,mode:resolved.enforce,messages};
 }
+function readGitSsh(cwd:string,env:NodeJS.ProcessEnv):string {try {return execFileSync("git",["config","--get","core.sshCommand"],{cwd,env,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();}catch{return "";}}
 
 export function formatBlockMessage(
   kind: "commit" | "push",

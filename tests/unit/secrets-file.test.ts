@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,7 +27,7 @@ describe("file secret backend", () => {
 
   beforeEach(() => {
     setSecretStoreForTests(null);
-    dir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-secrets-"));
+    dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-secrets-")));
     prev = process.env.ACCT_CONFIG_DIR;
     process.env.ACCT_CONFIG_DIR = dir;
     process.env.ACCT_SECRET_BACKEND = "file";

@@ -26,11 +26,11 @@ describe("ssh host + command", () => {
       sshKeyPath: "/tmp/my keys/id",
     };
     expect(sshCommandFor(profile)).toBe(
-      "ssh -i '/tmp/my keys/id' -o IdentitiesOnly=yes -o HostName=github.com",
+      "ssh -i '/tmp/my keys/id' -o IdentitiesOnly=yes",
     );
   });
 
-  it("strips :443 from HostName (ssh_config HostName is a hostname)", () => {
+  it("never rewrites a remote hostname", () => {
     const profile: Profile = {
       id: "work",
       githubUser: "u",
@@ -41,7 +41,7 @@ describe("ssh host + command", () => {
       sshKeyPath: "/tmp/id",
     };
     expect(sshCommandFor(profile)).toBe(
-      "ssh -i '/tmp/id' -o IdentitiesOnly=yes -o HostName=github.com",
+      "ssh -i '/tmp/id' -o IdentitiesOnly=yes",
     );
   });
 

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
 import type { AcctConfig, LocalAcctFile, Profile, Binding } from "../types.js";
-import { acctConfigDir, normalizePath, TOKEN_SHAPE } from "../util/paths.js";
+import { acctConfigDir, normalizePath, pathIsPrefix, TOKEN_SHAPE } from "../util/paths.js";
 import { ensureAcctDir, atomicWriteFileSync } from "../util/fs-safe.js";
 
 export { acctConfigDir };
@@ -118,7 +118,7 @@ export function removeProfile(config: AcctConfig, id: string): AcctConfig {
 export function upsertBinding(config: AcctConfig, binding: Binding): AcctConfig {
   const normalized = { ...binding, path: normalizePath(binding.path) };
   const idx = config.bindings.findIndex(
-    (b) => normalizePath(b.path) === normalized.path,
+    (b) => pathIsPrefix(b.path, normalized.path) && pathIsPrefix(normalized.path, b.path),
   );
   const bindings = [...config.bindings];
   if (idx >= 0) bindings[idx] = normalized;
@@ -130,7 +130,7 @@ export function removeBinding(config: AcctConfig, dirPath: string): AcctConfig {
   const n = normalizePath(dirPath);
   return {
     ...config,
-    bindings: config.bindings.filter((b) => normalizePath(b.path) !== n),
+    bindings: config.bindings.filter((b) => !(pathIsPrefix(b.path, n) && pathIsPrefix(n, b.path))),
   };
 }
 

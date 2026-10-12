@@ -12,14 +12,16 @@ function enforceFor(
 
 /**
  * Resolve which profile applies to a working directory.
- * Order: CLI --profile → nearest .acct (cwd walk-up) → longest binding → unbound.
+ * Order: CLI --profile → nearest .acct from the repository anchor → longest binding → unbound.
  * Ambient ACCT_PROFILE is ignored unless allowEnvProfile is set (I4).
  * Cite: docs/invariants.md; docs/research/local-acct-exec-deny-cites-2026-08-08.md
  */
 export function resolveProfile(input: ResolveInput): ResolveResult {
+  return {anchor:normalizePath(input.cwd),gitContext:null,...resolvePolicy(input)};
+}
+function resolvePolicy(input: ResolveInput): Omit<ResolveResult,"anchor"|"gitContext"> {
   const env = input.env ?? process.env;
-  // Bindings are directory-scoped: match against cwd, not git toplevel.
-  // git toplevel is only for locating repo-local `.acct` (see resolveFromCwd).
+  // resolveFromCwd supplies the shared repository-root anchor.
   const cwd = normalizePath(input.cwd);
   const defaultEnforce = input.config.defaultEnforce;
 

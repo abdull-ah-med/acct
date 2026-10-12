@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,17 +27,17 @@ describe("identity includeIf", () => {
       "/Volumes/Work/untitled folder 3/bin/git-credential-acct.js",
     );
     expect(inc).toContain(
-      "helper = !'/Volumes/Work/untitled folder 3/bin/git-credential-acct.js'",
+      'helper = "!\'/Volumes/Work/untitled folder 3/bin/git-credential-acct.js\'"',
     );
   });
 
   it("renders user identity and resets credential helpers for https", () => {
     const inc = renderProfileInclude(profile, "acct");
-    expect(inc).toContain("name = Work");
-    expect(inc).toContain("email = work@corp.com");
+    expect(inc).toContain('name = "Work"');
+    expect(inc).toContain('email = "work@corp.com"');
     expect(inc).toContain('helper = ""');
-    expect(inc).toContain("helper = !'acct'");
-    expect(inc).toContain("username = work-user");
+    expect(inc).toContain('helper = "!\'acct\'"');
+    expect(inc).toContain('username = "work-user"');
   });
 
   it("renders IdentitiesOnly sshCommand and keeps HTTPS helper (I8b)", () => {
@@ -47,10 +48,10 @@ describe("identity includeIf", () => {
     };
     const inc = renderProfileInclude(ssh, "acct");
     expect(inc).toContain('helper = ""');
-    expect(inc).toContain("helper = !'acct'");
+    expect(inc).toContain('helper = "!\'acct\'"');
     expect(inc).toContain("IdentitiesOnly=yes");
     expect(inc).toContain("-i '/tmp/id_work'");
-    expect(inc).toContain("HostName=github.com");
+    expect(inc).not.toContain("HostName=");
   });
 
   it("https profile with sshKeyPath gets both planes", () => {
@@ -93,7 +94,7 @@ describe("identity includeIf", () => {
   });
 
   it("builds includeIf for bindings with global helper reset", () => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
     try {
       const config: AcctConfig = {
         version: 1,
@@ -105,12 +106,8 @@ describe("identity includeIf", () => {
         HOME: "/Users/x",
         ACCT_CONFIG_DIR: tmp,
       });
-      expect(block).toContain('helper = ""');
-      expect(block).toMatch(/helper = !'/);
-      const resetIdx = block.indexOf('helper = ""');
-      const includeIdx = block.indexOf("includeIf");
-      expect(resetIdx).toBeGreaterThanOrEqual(0);
-      expect(includeIdx).toBeGreaterThan(resetIdx);
+      expect(block).toContain("_managed.inc");
+      expect(block).not.toContain("[credential]");
       expect(block).toContain("/Users/x/Work/");
       expect(block).toContain("work.inc");
       expect(block).not.toContain("osxkeychain");
@@ -120,7 +117,7 @@ describe("identity includeIf", () => {
   });
 
   it("credential shim execs process.execPath, not PATH node (I11b)", () => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-shim-"));
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-shim-")));
     try {
       const shim = ensureCredentialShim({ ACCT_CONFIG_DIR: tmp });
       const body = fs.readFileSync(shim, "utf8");
@@ -137,8 +134,8 @@ describe("identity includeIf", () => {
     }
   });
 
-  it("rejects a bind path whose only illegal character is a double-quote", () => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+  it("escapes double-quotes in a binding path", () => {
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
     try {
       const config: AcctConfig = {
         version: 1,
@@ -148,14 +145,14 @@ describe("identity includeIf", () => {
       };
       expect(() =>
         buildIncludeIfBlock(config, { HOME: "/tmp", ACCT_CONFIG_DIR: tmp }),
-      ).toThrow(/Invalid bind path/);
+      ).not.toThrow();
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 
   it("rejects bind paths that would break out of includeIf quotes", () => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
     try {
       const config: AcctConfig = {
         version: 1,
@@ -177,7 +174,7 @@ describe("identity includeIf", () => {
   });
 
   it("rejects bind paths with gitdir glob metacharacters", () => {
-    const tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-inc-"));
+    const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-inc-")));
     try {
       const config: AcctConfig = {
         version: 1,

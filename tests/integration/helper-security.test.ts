@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -66,7 +67,7 @@ describe("credential helper security planes (I4/I6)", () => {
       }
     }
 
-    tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-helper-sec-"));
+    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-helper-sec-")));
     workDir = path.join(tmp, "work");
     unboundDir = path.join(tmp, "unbound");
     configDir = path.join(tmp, "config");

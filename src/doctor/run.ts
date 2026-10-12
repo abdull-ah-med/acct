@@ -1,3 +1,4 @@
+import {effectiveHelperChains} from "../identity/helpers.js";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -62,7 +63,7 @@ export async function runDoctor(
     });
   }
 
-  findings.push(...checkCredentialHelpers(env));
+  findings.push(...checkCredentialHelpers(cwd,env));
   findings.push(...checkManagedBlock(env));
   findings.push(...checkProfileIdCaseCollisions(config));
   findings.push(...checkStaleGhToken(cwd, env, config, opts));
@@ -171,110 +172,15 @@ export function effectiveCredentialHelpers(helpers: string[]): string[] {
   return result;
 }
 
-const COMPETING_HELPER_RE =
+export const COMPETING_HELPER_RE =
   /\b(osxkeychain|wincred|libsecret|manager-core|manager|store|cache|gh)\b/i;
 
-function isAcctHelper(helper: string): boolean {
+export function isAcctHelper(helper: string): boolean {
   return /git-credential-acct|credential-acct|\bacct\b/i.test(helper);
 }
 
-function checkCredentialHelpers(env: NodeJS.ProcessEnv): DoctorFinding[] {
-  const findings: DoctorFinding[] = [];
-  let helpers: string[] = [];
-  try {
-    // Prefer --show-origin so includeIf / system / global chain is visible.
-    // Cite: https://git-scm.com/docs/git-config#Documentation/git-config.txt---show-origin
-    let out = "";
-    try {
-      out = execFileSync(
-        "git",
-        ["config", "--show-origin", "--get-all", "credential.helper"],
-        {
-          encoding: "utf8",
-          env,
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      ).trim();
-    } catch {
-      out = execFileSync(
-        "git",
-        ["config", "--global", "--get-all", "credential.helper"],
-        {
-          encoding: "utf8",
-          env,
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      ).trim();
-    }
-    // --show-origin lines look like: file:/path/to/.gitconfig\thelpervalue
-    helpers = out
-      .replace(/\r/g, "")
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const tab = line.indexOf("\t");
-        return tab >= 0 ? line.slice(tab + 1) : line;
-      });
-  } catch {
-    findings.push({
-      severity: "ok",
-      code: "no-global-helper",
-      message: "No credential.helper set",
-    });
-    return findings;
-  }
-
-  const effective = effectiveCredentialHelpers(helpers);
-  const competing = effective.filter(
-    (h) => COMPETING_HELPER_RE.test(h) && !isAcctHelper(h),
-  );
-  const hasAcct = effective.some(isAcctHelper);
-
-  if (competing.some((h) => /\bgh\b/i.test(h))) {
-    findings.push({
-      severity: "warn",
-      code: "gh-credential-helper",
-      message:
-        "Effective git credential.helper includes gh — active gh account can leak across directories",
-      fix: "Prefer acct-managed helpers via includeIf; avoid gh auth setup-git for multi-account",
-    });
-  }
-
-  if (competing.some((h) => /osxkeychain|wincred|libsecret|manager/i.test(h))) {
-    findings.push({
-      severity: "warn",
-      code: "competing-os-helper",
-      message: `Effective credential helpers still include OS/store helpers: ${competing.join(", ")} — wrong-account HTTPS auth is possible outside acct fail-closed paths`,
-      fix: "Run acct install (writes helper=\"\" then acct). Outside bound trees with enforce=off, competing helpers may answer.",
-    });
-  }
-
-  if (!hasAcct && competing.length > 0) {
-    findings.push({
-      severity: "warn",
-      code: "acct-helper-missing",
-      message:
-        "acct credential helper is not in the effective helper chain — machine keychain entries (any account) can answer HTTPS for github.com after uninstall or before install",
-      fix: "acct install  # restores helper=\"\" then acct. To erase a cached github.com cred: printf 'protocol=https\\nhost=github.com\\n\\n' | git credential reject  (https://git-scm.com/docs/gitcredentials)",
-    });
-  }
-
-  if (effective.length > 1) {
-    findings.push({
-      severity: "warn",
-      code: "multiple-helpers",
-      message: `Multiple effective credential helpers: ${effective.join(", ")}`,
-      fix: "acct install rewrites helpers; review git config --get-all credential.helper",
-    });
-  } else if (hasAcct && competing.length === 0) {
-    findings.push({
-      severity: "ok",
-      code: "helper-acct-only",
-      message: "Effective credential helper chain is acct-only (after resets)",
-    });
-  }
-
-  return findings;
+function checkCredentialHelpers(cwd:string,env:NodeJS.ProcessEnv):DoctorFinding[] {
+  return effectiveHelperChains(cwd,env).map(chain => ({severity:chain.ok ? "ok":"error",code:chain.ok ? "helper-acct-only":"helper-chain-mismatch",message:`Effective credential helper chain for ${chain.host}: ${chain.ok ? "acct-only" : "does not equal the acct shim"}`,fix:chain.ok ? undefined:"acct install"}));
 }
 
 function checkHooksBypassable(): DoctorFinding[] {
@@ -324,7 +230,7 @@ function checkManagedBlock(env: NodeJS.ProcessEnv): DoctorFinding[] {
   const begin = text.indexOf("# >>> acct managed begin >>>");
   const end = text.indexOf("# <<< acct managed end <<<", begin);
   const managed = begin >= 0 && end > begin ? text.slice(begin, end) : "";
-  if (!managed.includes('helper = ""') || !/helper = /.test(managed)) {
+  if (!managed.includes("_managed.inc")) {
     findings.push({
       severity: "error",
       code: "managed-helper-reset-missing",
@@ -708,7 +614,7 @@ function checkOrphanIncFiles(
   const known = new Set(config.profiles.map((p) => `${p.id}.inc`));
   const orphans: string[] = [];
   for (const name of fs.readdirSync(gdir)) {
-    if (name.endsWith(".inc") && !known.has(name)) orphans.push(name);
+    if (name.endsWith(".inc") && name !== "_managed.inc" && !known.has(name)) orphans.push(name);
   }
   if (!orphans.length) return [];
   return [

@@ -1,3 +1,4 @@
+import {effectiveHelperChains} from "../identity/helpers.js";
 import { Command } from "commander";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -15,6 +16,8 @@ import {
 } from "../config/store.js";
 import type { EnforceMode, Profile, Protocol } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
+import {resolveGitContext} from "../resolution/gitContext.js";
+import {localSet, localClear} from "../identity/local.js";
 import { normalizePath } from "../util/paths.js";
 import {
   assertValidProfileId,
@@ -105,7 +108,7 @@ export function configureHooksPath(
 
   // Do not walk into a parent repo when bindDir/cwd is not itself the toplevel
   // (e.g. binding a plain directory under the acct checkout in CI).
-  if (path.resolve(toplevel) !== targetDir) {
+  if (normalizePath(toplevel) !== normalizePath(targetDir)) {
     console.log(`Hooks written to ${hooks}`);
     console.log(
       `Directory ${targetDir} is not a git toplevel (found ${toplevel}) — skipped core.hooksPath.`,
@@ -213,7 +216,7 @@ export function unsetAcctHooksPath(
     );
     return;
   }
-  if (path.resolve(toplevel) !== targetDir) {
+  if (normalizePath(toplevel) !== normalizePath(targetDir)) {
     console.error(
       `warning: ${targetDir} is not a git toplevel — skipped local core.hooksPath unset.`,
     );
@@ -567,6 +570,8 @@ export async function runCli(argv: string[]): Promise<void> {
       }
       const bindPath = path.resolve(dir);
       assertSafeBindPath(bindPath);
+      const ctx=fs.existsSync(bindPath) ? resolveGitContext(bindPath,process.env) : null;
+      if(ctx?.workTree && normalizePath(bindPath) !== ctx.workTree) throw new Error("bind the repository root or a directory containing repositories; includeIf cannot apply to a subdirectory of a repository");
       config = upsertBinding(config, {
         path: bindPath,
         profileId,
@@ -616,10 +621,13 @@ export async function runCli(argv: string[]): Promise<void> {
       console.log(`reason: ${resolved.reason}`);
       console.log(`enforce: ${resolved.enforce}`);
       if (resolved.bindingPath) console.log(`binding: ${resolved.bindingPath}`);
+      if(resolved.ignoredLocalAcct) console.log(`ignored .acct below repository root: ${resolved.ignoredLocalAcct}`);
+      if(resolved.conflict) console.log(resolved.conflict.detail);
       if (!resolved.profile) {
         console.log("profile: (unbound)");
         return;
       }
+      for(const chain of effectiveHelperChains(process.cwd(),process.env)) if(!chain.ok) console.log(`helper-chain-mismatch: ${chain.host}; run acct install`);
       const p = resolved.profile;
       console.log(`profile: ${p.id}`);
       console.log(`github: ${p.githubUser}@${p.host}`);
@@ -762,6 +770,7 @@ export async function runCli(argv: string[]): Promise<void> {
             `Git HTTPS still follows the directory/.acct. Pass --allow-cross-profile to inject the other account's GH_TOKEN for gh only.`,
         );
       }
+      if(resolved.reason === "conflict" && resolved.enforce === "strict") throw new Error(resolved.conflict!.detail);
       if (opts.profile && !resolved.profile) throw new Error(`Unknown profile: ${opts.profile}`);
       const depth = Number(process.env.ACCT_EXEC_DEPTH ?? 0) + 1;
       if (!Number.isFinite(depth) || depth > 2) throw new Error("acct exec recursion depth exceeded");
@@ -952,7 +961,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .argument("<hook>", "pre-commit|pre-merge-commit|post-commit|pre-push")
     .argument("[remote]")
     .argument("[url]")
-    .action(async (hook, remote, _url) => {
+    .action(async (hook, remote, url) => {
       if (["pre-commit", "pre-merge-commit", "post-commit"].includes(hook)) {
         const result = hook === "post-commit" ? await checkRecordedCommit(process.cwd(), process.env) : await checkCommitIdentity();
         if (!result.ok) {
@@ -966,7 +975,7 @@ export async function runCli(argv: string[]): Promise<void> {
               resolved.enforce,
               process.cwd(),
               process.env,
-              { bindingPath: resolved.bindingPath },
+              { bindingPath: resolved.bindingPath, queryPrincipal: false },
             );
             if (report.issues.length > 0) {
               console.error("");
@@ -981,7 +990,7 @@ export async function runCli(argv: string[]): Promise<void> {
         const chunks: Buffer[] = [];
         for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
         const outgoing = await checkOutgoingCommits(process.cwd(), process.env, remote ?? "origin", Buffer.concat(chunks).toString("utf8"));
-        const result = await checkPushAuth();
+        const result = await checkPushAuth(process.cwd(), process.env, defaultGitConfigReader, url);
         result.messages.push(...outgoing.messages);
         result.ok = result.ok && outgoing.ok;
         if (!result.ok) {
@@ -995,7 +1004,7 @@ export async function runCli(argv: string[]): Promise<void> {
               resolved.enforce,
               process.cwd(),
               process.env,
-              { bindingPath: resolved.bindingPath },
+              { bindingPath: resolved.bindingPath, queryPrincipal: false },
             );
             if (report.issues.length > 0) {
               console.error("");
@@ -1022,5 +1031,8 @@ export async function runCli(argv: string[]): Promise<void> {
       if (!r.ok) process.exitCode = 1;
     });
 
+  const local=program.command("local").description("Manage the repository marker and native Git include");
+  local.command("set").argument("[profileId]").option("--unbound").action((id,opts) => localSet(process.cwd(),id,!!opts.unbound,process.env));
+  local.command("clear").action(() => localClear(process.cwd(),process.env));
   await program.parseAsync(argv);
 }

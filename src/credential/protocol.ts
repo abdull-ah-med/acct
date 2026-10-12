@@ -173,7 +173,7 @@ export function hostAllowed(
   const req = splitHostPort(requestedHost);
   const prof = splitHostPort(profileHost);
   if (!req.hostname || !prof.hostname) return false;
-  if (req.hostname.toLowerCase() !== prof.hostname.toLowerCase()) return false;
+  if (req.hostname.toLowerCase() !== prof.hostname.toLowerCase() && !(req.hostname.toLowerCase() === "gist.github.com" && prof.hostname.toLowerCase() === "github.com")) return false;
 
   if (prof.port !== undefined) {
     // git-credential includes the port only when the URL specified it

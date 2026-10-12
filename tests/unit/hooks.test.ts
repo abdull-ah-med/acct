@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,7 +13,7 @@ describe("enforce hooks (I11b)", () => {
   let prev: string | undefined;
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-hooks-"));
+    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-hooks-")));
     prev = process.env.ACCT_CONFIG_DIR;
     process.env.ACCT_CONFIG_DIR = path.join(tmp, "config");
   });

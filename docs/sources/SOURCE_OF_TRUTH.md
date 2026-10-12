@@ -18,7 +18,7 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| git-rev-parse | https://git-scm.com/docs/git-rev-parse | 2026-08-24 (`--show-toplevel` is the work-tree root; error when none) |
+| git-rev-parse | https://git-scm.com/docs/git-rev-parse | 2026-10-12 (`--show-toplevel` is the work-tree root; error when none) |
 | Conditional includes (source) | https://github.com/git/git/blob/master/Documentation/config.adoc | 2026-08-08 |
 | direnv nearest-config walk (`find_up`) | https://github.com/direnv/direnv/blob/master/README.md | 2026-08-08 |
 
@@ -26,9 +26,9 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| ssh_config IdentitiesOnly / IdentityFile | https://man.openbsd.org/ssh_config.5 | 2026-08-08 |
+| ssh_config IdentitiesOnly / IdentityFile | https://man.openbsd.org/ssh_config.5 | 2026-10-12 |
 | ssh_config (Linux man) | https://man7.org/linux/man-pages/man5/ssh_config.5.html | 2026-08-08 |
-| Git core.sshCommand | https://git-scm.com/docs/git-config#Documentation/git-config.txt-coresshCommand | 2026-08-08 |
+| Git core.sshCommand | https://git-scm.com/docs/git-config#Documentation/git-config.txt-coresshCommand | 2026-10-12 |
 
 ## GitHub CLI / tokens
 

@@ -64,9 +64,14 @@ export type ResolveReason =
   | "env"
   | "local"
   | "binding"
-  | "unbound";
+  | "unbound"
+  | "conflict";
 
 export interface ResolveResult {
+  anchor: string;
+  gitContext: import("./resolution/gitContext.js").GitContext | null;
+  conflict?: {directoryProfile?: string; gitProfile?: string; detail: string};
+  ignoredLocalAcct?: string;
   profile: Profile | null;
   reason: ResolveReason;
   bindingPath?: string;

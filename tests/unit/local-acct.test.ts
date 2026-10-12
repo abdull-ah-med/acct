@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -7,7 +8,7 @@ describe("readLocalAcct (I3 empty fail-closed)", () => {
   let tmp: string;
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-local-acct-"));
+    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-local-acct-")));
   });
 
   afterEach(() => {
@@ -60,7 +61,7 @@ describe("findLocalAcct (nearest walk-up)", () => {
   let tmp: string;
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-find-acct-"));
+    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-find-acct-")));
   });
 
   afterEach(() => {

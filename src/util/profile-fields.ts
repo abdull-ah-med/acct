@@ -6,7 +6,7 @@ import path from "node:path";
  */
 
 const MAX_LEN = 256;
-const UNSAFE_CHARS = /[\r\n\0\\"]/;
+const UNSAFE_CHARS = /[\r\n\0]/;
 
 const HOST_RE =
   /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:\d{1,5})?$/;
@@ -76,7 +76,7 @@ export function assertSafeProfileFields(opts: {
  * Cite: https://git-scm.com/docs/git-config (SYNTAX; Conditional includes)
  * Cite: https://git-scm.com/docs/gitignore
  */
-const BIND_UNSAFE = /[\r\n\0\\"\[\]*?]/;
+const BIND_UNSAFE = /[\r\n\0\[\]*?]/;
 
 export function assertSafeBindPath(dir: string): void {
   if (dir.length === 0) {

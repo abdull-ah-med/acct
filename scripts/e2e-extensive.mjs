@@ -69,7 +69,7 @@ async function main() {
   console.log("=== acct extensive harness (synthetic, NO MAIR) ===\n");
 
   // Isolated dirs inside workspace
-  const base = fs.mkdtempSync(path.join(ROOT, ".tmp-e2e-"));
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-e2e-")));
   assertSafe("base", base);
   const configDir = path.join(base, "config");
   const gitconfig = path.join(base, "gitconfig");
@@ -215,6 +215,7 @@ async function main() {
     // nested longer binding
     const nested = path.join(personalRoot, "nested-work-override");
     fs.mkdirSync(nested, { recursive: true });
+    run("git", ["init"], {cwd:nested, env});
     acct(["bind", nested, SECONDARY.id], env);
     r = acct(["status"], env, nested);
     if (r.stdout.includes(SECONDARY.githubUser)) ok("longest binding wins");
@@ -243,7 +244,7 @@ async function main() {
     else fail("local .acct", r.stdout);
 
     // Non-git .acct under bound tree
-    const nogit = path.join(personalRoot, "not-a-repo");
+    const nogit = path.join(base, "not-a-repo");
     fs.mkdirSync(nogit, { recursive: true });
     fs.writeFileSync(path.join(nogit, ".acct"), `profile: ${SECONDARY.id}\n`);
     r = acct(["status"], env, nogit);
@@ -342,14 +343,14 @@ async function main() {
     if (!r.stdout.includes("USER_A")) ok("work response has no user-a token");
     else fail("cross token", r.stdout);
 
-    // Wrong host → quit
+    // Unmanaged hosts retain their own credential helpers
     r = helper(
       "get",
       "protocol=https\nhost=evil.example\npath=x/y.git\n\n",
       personalRoot,
     );
-    if (r.stdout.includes("quit=1") && !r.stdout.includes("password="))
-      ok("wrong host → quit=1 fail-closed");
+    if (r.stdout === "" && r.status === 0)
+      ok("unmanaged host → empty success");
     else fail("wrong host", JSON.stringify(r.stdout));
 
     // Empty host → quit

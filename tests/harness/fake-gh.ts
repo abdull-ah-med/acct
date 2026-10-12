@@ -1,3 +1,4 @@
+import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -227,5 +228,5 @@ export function ensureDistBuild(): void {
 }
 
 export function tmpRoot(prefix = "acct-test-"): string {
-  return fs.mkdtempSync(path.join(process.cwd(), `.tmp-${prefix}`));
+  return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), `.tmp-${prefix}`)));
 }

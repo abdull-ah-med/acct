@@ -1,3 +1,4 @@
+import os from "node:os";
 /**
  * Security regression harness (synthetic tokens + real resolution/helper).
  * Asserts I4 ambient env cannot cross accounts; I6 unbound quit; I8b dual plane;
@@ -48,7 +49,7 @@ function helper(op, body, cwd, env) {
   });
 }
 
-const base = fs.mkdtempSync(path.join(ROOT, ".tmp-sec-"));
+const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-sec-")));
 const configDir = path.join(base, "config");
 const gitconfig = path.join(base, "gitconfig");
 const ghConfigDir = path.join(base, "gh-config");
@@ -158,8 +159,9 @@ acct(["install"], env, personal);
   const gc = fs.readFileSync(gitconfig, "utf8");
   const begin = gc.indexOf("acct managed begin");
   const inc = gc.indexOf("includeIf", begin);
-  const reset = gc.indexOf('helper = ""', begin);
-  if (reset >= 0 && reset < inc) ok("global helper reset before includeIf (I8)");
+  const managed = fs.readFileSync(path.join(configDir,"git","_managed.inc"),"utf8");
+  const reset = managed.indexOf('helper = ""');
+  if (reset >= 0 && gc.indexOf("_managed.inc",begin) < inc && !managed.includes("[credential]")) ok("scoped helper reset include before includeIf (I8)");
   else fail("I8 global reset", gc.slice(0, 400));
 }
 
@@ -283,7 +285,7 @@ acct(["install"], env, personal);
 
 {
   // Non-git directory: .acct must still win (nearest walk-up)
-  const dir = path.join(personal, "not-a-repo");
+  const dir = path.join(base, "not-a-repo");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, ".acct"), `profile: ${SECONDARY.id}\n`);
   let r = acct(["status"], env, dir);
@@ -313,10 +315,10 @@ acct(["install"], env, personal);
   fs.writeFileSync(path.join(pkg, ".acct"), `profile: ${SECONDARY.id}\n`);
   r = acct(["status"], env, pkg);
   if (
-    new RegExp(`profile: ${escapeRe(SECONDARY.id)}`).test(r.stdout) &&
-    /reason: local/.test(r.stdout)
+    new RegExp(`profile: ${escapeRe(PRIMARY.id)}`).test(r.stdout) &&
+    /reason: local/.test(r.stdout) && /ignored/.test(r.stdout)
   )
-    ok("I3 nearest nested .acct wins over toplevel");
+    ok("I3 repository root marker wins; nested marker ignored");
   else fail("I3 nested .acct", r.stdout);
 }
 

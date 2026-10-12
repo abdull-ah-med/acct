@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -42,7 +43,7 @@ describe("shell-env exports (T2/T5)", () => {
   };
 
   beforeEach(async () => {
-    tmp = fs.mkdtempSync(path.join(process.cwd(), ".tmp-shell-env-"));
+    tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-shell-env-")));
     workDir = path.join(tmp, "work");
     personalDir = path.join(tmp, "personal");
     unboundDir = path.join(tmp, "unbound");
@@ -116,7 +117,7 @@ describe("shell-env exports (T2/T5)", () => {
 describe("PreferKeyringStore clears file copy on set", () => {
   it("deletes file fallback after successful primary set", async () => {
     const primary = new MemorySecretStore();
-    const dir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-pref-key-"));
+    const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-pref-key-")));
     const file = new FileSecretStore(path.join(dir, "secrets.json"));
     await file.set("github.com::u", "gho_TEST_ONLY_old");
     const store = new PreferKeyringStore(primary, file);

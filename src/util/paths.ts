@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -20,15 +21,28 @@ export function acctConfigDir(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(homeDir(env), ".config", "acct");
 }
 
-export function normalizePath(p: string): string {
-  return path.resolve(p).replace(/\\/g, "/");
+/** Physical path identity, including a missing suffix beneath an existing ancestor. */
+export function canonicalPath(p: string): string {
+  let ancestor = path.resolve(p);
+  const suffix: string[] = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync.native(ancestor), ...suffix).replace(/\\/g, "/"); }
+    catch (error) {
+      if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) throw error;
+      suffix.unshift(path.basename(ancestor)); ancestor = parent;
+    }
+  }
 }
-
+export const normalizePath = canonicalPath;
 export function pathIsPrefix(prefix: string, candidate: string): boolean {
-  const a = normalizePath(prefix).replace(/\/+$/, "");
-  const b = normalizePath(candidate).replace(/\/+$/, "");
-  if (a === b) return true;
-  return b.startsWith(a + "/");
+  const fold = (p: string) => {
+    const value = canonicalPath(p).replace(/\/+$/, "");
+    return process.platform === "darwin" || process.platform === "win32" ? value.toLowerCase() : value;
+  };
+  const a = fold(prefix), b = fold(candidate);
+  return a === b || b.startsWith(a + "/");
 }
 
 /**

@@ -1,5 +1,8 @@
 import { stdin as input, stdout as output } from "node:process";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {loadConfig} from "../config/store.js";
+import {profileHosts} from "../identity/includeIf.js";
+import {canonicalHost} from "../secrets/store.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { getProfileToken, deleteProfileToken } from "../secrets/store.js";
 import { resolveProfileToken } from "../gh/token.js";
@@ -8,6 +11,7 @@ import {
   formatCredentialOutput,
   isSafeHost,
   hostAllowed,
+  splitHostPort,
 } from "./protocol.js";
 import { debugLog } from "../util/paths.js";
 
@@ -76,6 +80,7 @@ async function credentialOperation(argv: string[]): Promise<void> {
 
   // I4: never allowEnvProfile for the credential helper
   const resolved = resolveFromCwd(cwd, process.env, { allowEnvProfile: false });
+  if (isSafeHost(attrs.host) && !loadConfig().profiles.some(p => profileHosts(p).some(host => splitHostPort(host).hostname === splitHostPort(canonicalHost(attrs.host!)).hostname))) return;
   const profile = resolved.profile;
   const enforce = resolved.enforce;
 

@@ -34,8 +34,7 @@ export function assertSafeSshHost(host: string): string {
 export function sshCommandFor(profile: Profile): string | null {
   if (!profile.sshKeyPath) return null;
   const key = profile.sshKeyPath.replace(/\\/g, "/");
-  const host = assertSafeSshHost(splitHostPort(profile.host).hostname);
-  return `ssh -i ${posixShellSingleQuote(key)} -o IdentitiesOnly=yes -o HostName=${host}`;
+  return `ssh -i ${posixShellSingleQuote(key)} -o IdentitiesOnly=yes`;
 }
 
 /**
@@ -86,71 +85,19 @@ export function githubKnownHostsPath(): string {
  * For github.com uses StrictHostKeyChecking=yes + bundled known_hosts.
  * Other hosts keep accept-new with a warning.
  */
-export function testSshAuth(profile: Profile): {
-  ok: boolean;
-  output: string;
-} {
-  if (!profile.sshKeyPath) {
-    return {
-      ok: false,
-      output:
-        "No sshKeyPath on profile — attach with: acct profile ssh-key <id> --path <key> or --generate",
-    };
-  }
-  try {
-    assertSafeSshHost(profile.host);
-  } catch (err) {
-    return {
-      ok: false,
-      output: err instanceof Error ? err.message : String(err),
-    };
-  }
-  if (!fs.existsSync(profile.sshKeyPath)) {
-    return { ok: false, output: `SSH key file missing: ${profile.sshKeyPath}` };
-  }
-
-  const isGithub = profile.host.toLowerCase() === "github.com";
-  const knownHosts = githubKnownHostsPath();
-  const hostKeyArgs =
-    isGithub && fs.existsSync(knownHosts)
-      ? [
-          "-o",
-          "StrictHostKeyChecking=yes",
-          "-o",
-          `UserKnownHostsFile=${knownHosts}`,
-          "-o",
-          "GlobalKnownHostsFile=/dev/null",
-        ]
-      : ["-o", "StrictHostKeyChecking=accept-new"];
-
-  let warning = "";
-  if (!isGithub) {
-    warning =
-      "warning: non-github.com host — using StrictHostKeyChecking=accept-new (TOFU)\n";
-  }
-
-  try {
-    const out = execFileSync(
-      "ssh",
-      [
-        "-i",
-        profile.sshKeyPath,
-        "-o",
-        "IdentitiesOnly=yes",
-        "-o",
-        "BatchMode=yes",
-        ...hostKeyArgs,
-        "-T",
-        `git@${profile.host}`,
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return { ok: true, output: warning + out };
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string };
-    const output = `${e.stdout ?? ""}${e.stderr ?? ""}`;
-    // GitHub returns exit 1 even on success: "Hi user! You've successfully authenticated"
-    const ok = /successfully authenticated/i.test(output);
-    return { ok, output: warning + output };
-  }
+/** GitHub returns exit 1 on successful authentication; the greeting identifies the account.
+ * https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection
+ */
+export function parseSshLogin(output: string): string | null { return /\bHi ([A-Za-z0-9-]+)!/.exec(output)?.[1] ?? null; }
+export function testSshAuth(profile: Profile): {ok:boolean;output:string} {
+  if(!profile.sshKeyPath) return {ok:false,output:"No sshKeyPath on profile — attach with: acct profile ssh-key <id> --path <key> or --generate"};
+  const host=assertSafeSshHost(splitHostPort(profile.host).hostname);
+  if(!fs.existsSync(profile.sshKeyPath)) return {ok:false,output:`SSH key file missing: ${profile.sshKeyPath}`};
+  const known=githubKnownHostsPath();
+  const hostKeyArgs=host.toLowerCase() === "github.com" ? ["-o","StrictHostKeyChecking=yes","-o",`UserKnownHostsFile=${known}`,"-o","GlobalKnownHostsFile=/dev/null"] : ["-o","StrictHostKeyChecking=accept-new"];
+  let output="";
+  try { output=execFileSync("ssh",["-i",profile.sshKeyPath,"-o","IdentitiesOnly=yes","-T","-o","BatchMode=yes","-o","ConnectTimeout=10",...hostKeyArgs,`git@${host}`],{encoding:"utf8",stdio:["ignore","pipe","pipe"],timeout:15000}); }
+  catch(error) { const e=error as {stdout?:string;stderr?:string}; output=(e.stdout??"")+(e.stderr??""); }
+  const login=parseSshLogin(output);
+  return {ok:login?.toLowerCase() === profile.githubUser.toLowerCase(),output:`expected=${profile.githubUser} actual=${login ?? "unknown"}\n${output}`};
 }
