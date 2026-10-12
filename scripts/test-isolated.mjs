@@ -58,7 +58,11 @@ try {
     ACCT_FAKE_GH_STATE: path.join(root, "gh-state.json"),
     PATH: path.join(root, "bin") + path.delimiter + process.env.PATH,
     npm_config_cache: cache,
-    npm_config_offline: "true",
+    // Offline only when asked (network-less sandboxes); CI runners start
+    // with an empty cache and must reach the registry.
+    ...(process.env.ACCT_TEST_OFFLINE === "1"
+      ? { npm_config_offline: "true" }
+      : {}),
     npm_config_audit: "false",
     npm_config_fund: "false",
     npm_config_update_notifier: "false",

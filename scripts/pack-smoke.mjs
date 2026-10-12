@@ -49,14 +49,16 @@ try {
     process.exit(init.status ?? 1);
   }
   // Test the tarball against the same runtime dependency versions validated by CI.
-  // npm ci primes these exact packages in the cache; offline avoids semver drift.
+  // Pinning exact versions avoids semver drift. Set ACCT_TEST_OFFLINE=1 to
+  // resolve them from the local npm cache only (for sandboxes without network).
   const lock = JSON.parse(
     fs.readFileSync(path.join(root, "package-lock.json"), "utf8"),
   );
   const runtime = Object.keys(pkg.dependencies).map(
     (name) => `${name}@${lock.packages[`node_modules/${name}`].version}`,
   );
-  const install = run("npm", ["install", "--offline", tgz, ...runtime], {
+  const offline = process.env.ACCT_TEST_OFFLINE === "1" ? ["--offline"] : [];
+  const install = run("npm", ["install", ...offline, tgz, ...runtime], {
     cwd: tmp,
   });
   if (install.status !== 0) {
