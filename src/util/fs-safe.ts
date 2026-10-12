@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
+import { posixShellSingleQuote } from "./paths.js";
 
 /**
  * Ensure an acct-owned directory exists with mode 0700.
@@ -65,7 +66,24 @@ interface LockOwner {
 }
 function owner(file: string): LockOwner | null {
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as LockOwner;
+    const record = JSON.parse(
+      fs.readFileSync(file, "utf8"),
+    ) as Partial<LockOwner> | null;
+    if (
+      !record ||
+      typeof record !== "object" ||
+      Array.isArray(record) ||
+      !Number.isSafeInteger(record.pid) ||
+      (record.pid ?? 0) <= 0 ||
+      typeof record.hostname !== "string" ||
+      !record.hostname ||
+      typeof record.nonce !== "string" ||
+      !record.nonce ||
+      typeof record.createdAt !== "number" ||
+      !Number.isFinite(record.createdAt)
+    )
+      return null;
+    return record as LockOwner;
   } catch {
     return null;
   }
@@ -85,7 +103,18 @@ function dead(record: LockOwner | null): boolean {
     return (error as NodeJS.ErrnoException).code === "ESRCH";
   }
 }
-/** wx acquisition; only a provably dead owner may be recovered. No age-based stealing.
+function oldOwnerlessLock(file: string, record: LockOwner | null): boolean {
+  if (record) return false;
+  try {
+    return fs.statSync(file).mtimeMs < Date.now() - 60000;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+/** wx acquisition; recover dead owners or invalid owner records older than 60s.
+ * Valid owners are never stolen based on age. Re-check under the recovery lock.
+ * https://nodejs.org/api/fs.html#fsstatsyncpath-options (mtimeMs)
  * https://nodejs.org/api/process.html#processkillpid-signal
  */
 export function acquireFileLock(
@@ -103,13 +132,16 @@ export function acquireFileLock(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const record = owner(file);
-      if (dead(record)) {
+      if (dead(record) || oldOwnerlessLock(file, record)) {
         const recovery = file + ".recovery";
         let recoveryFd: number | undefined;
         try {
           recoveryFd = fs.openSync(recovery, "wx", 0o600);
           const current = owner(file);
-          if (current?.nonce === record?.nonce && dead(current))
+          if (
+            (record && current?.nonce === record.nonce && dead(current)) ||
+            (!record && oldOwnerlessLock(file, current))
+          )
             fs.unlinkSync(file);
         } catch (error) {
           if (
@@ -127,7 +159,7 @@ export function acquireFileLock(
       }
       if (Date.now() >= deadline)
         throw new Error(
-          `Timed out waiting for lock ${file}; owner pid ${record?.pid ?? "unknown"}`,
+          `Timed out waiting for lock ${file}; owner pid ${record?.pid ?? "unknown"}. After confirming no acct process is running, remove it manually: rm ${posixShellSingleQuote(file)}`,
         );
       sleepSync(Math.min(delay, Math.max(1, deadline - Date.now())));
       delay = Math.min(200, delay * 2);

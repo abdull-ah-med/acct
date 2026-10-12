@@ -95,6 +95,7 @@ describe("phase 3 transaction and lifecycle contracts", () => {
         createdAt: 0,
       }),
     );
+    fs.utimesSync(lock, new Date(0), new Date(0));
     const r = harness.run(args, harness.root, { ACCT_LOCK_TIMEOUT_MS: "150" });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain(String(process.pid));
