@@ -9,40 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-10-12
 
+Run `acct install` once after upgrading. Profiles and bindings carry over unchanged.
+Full notes: [docs/releases/v0.2.0.md](docs/releases/v0.2.0.md).
+
 ### Security
 
-- Fail closed on corrupt credentials/config and strict missing gh tokens; scope
-  helper resets to managed hosts and keep gist mapping explicit.
-- Share canonical Git resolution across worktrees, includes, helpers and hooks.
-  Detect worktree/gitdir conflicts; root-local markers keep Git identity aligned.
-- Check effective and recorded author/committer identity and authenticate the
-  actual HTTPS or SSH push transport. Preserve SSH aliases and host key policy.
-- Validate all token inputs; remove plaintext backup copies; migrate fallback
-  entries and protect shared account/SSH references during profile deletion.
+- gh no longer falls back to its global active account in a bound folder when the
+  token check is inconclusive; acct uses gh's token for the folder's user, and
+  blocks gh in `strict` folders that have no token.
+- Credential-helper errors emit `quit=1`, so git never falls through to a later helper.
+- Commit checks use the effective author/committer (`git var`), cover merge commits,
+  and `pre-push` re-checks every outgoing commit.
+- `pre-push` verifies the account the push actually authenticates as, over HTTPS
+  or SSH (GitHub greeting), instead of an unrelated token.
+- `acct exec` refuses unknown profiles and strict profiles without a token, and
+  blocks `gh auth --hostname … token` / `gh auth status --show-token`.
+- `GH_HOST` is always set to the profile's host.
+- Plaintext token copies are migrated to the keychain and deleted; no `.bak` copies.
+  Secret errors never echo file contents. Shared tokens and SSH keys survive
+  removing one of the profiles that use them.
+- A failed shell refresh clears acct's variables instead of keeping the previous
+  folder's token.
 
 ### Changed
 
-- Serialize config edits with owner/nonce locks, transactional rollback and
-  Git-compatible symlink/mode-preserving gitconfig writes.
-- Install global v3 shims for all client hooks, chain previous hooks, and restore
-  owned paths on uninstall. Bake global/per-repository chain paths, avoid Git in
-  common-path pass-through hooks, and keep post-commit as pure pass-through.
-  Edits after uninstall do not reinstall artifacts.
-- Recover invalid ownerless locks older than 60 seconds after a recovery-lock
-  re-check; valid live owners are never stolen based on age.
-- Silence unbound gh shim calls while retaining the direct `acct exec` note.
-- Clarify helper section ordering and allow first-access plaintext migration
-  in all processes without changing existing token values or persisting gh tokens.
-- Report measured hook/auth state, missing bindings and stale generated paths;
-  add subtree rebind, native Fish output, refresh recovery and cancellable wizards.
-- Pin reviewed CI actions and separate read-only release builds from publication
-  of downloaded tarballs, with the reviewed download-artifact v4.3.0 commit pin.
+- The credential helper is scoped to the GitHub hosts in your profiles; other
+  HTTPS hosts keep their own helpers.
+- Hooks install globally by default and chain to existing hooks (`.git/hooks`,
+  a previous `core.hooksPath`). New `acct install --repo` covers repositories with
+  their own local `core.hooksPath`. `acct uninstall` restores the previous path.
+- Resolution starts at the repository root. `.acct` below the root is ignored and
+  reported. Linked worktrees that git and acct would assign differently are refused
+  in `strict`.
+- Bindings are canonical (symlinks resolved; case-insensitive on macOS/Windows), and
+  nested bindings are emitted so the most specific folder wins.
+- Git config values are quoted and escaped; the SSH command no longer forces a
+  `HostName` onto every SSH remote.
+- Config edits are serialized and transactional; locks record their owner and are
+  never stolen from a live process; ownerless locks older than 60 s are recovered.
+- `~/.gitconfig` is written with git's own lock, keeping symlinks and permissions.
+- Editing profiles or bindings after `acct uninstall` no longer reinstalls acct.
+- The config file is validated on load; enum flags only accept valid values.
+- GitHub usernames are compared case-insensitively.
+- `acct exec` passes child options through (`acct exec gh --version`), and the gh
+  wrapper resolves the real gh without recursion.
+- `acct whoami` exits 0 (match), 1 (mismatch) or 2 (unknown). Status and doctor
+  report hook coverage, auth state and helper order as measured.
 
-### Upgrading
+### Added
 
-- Run `acct install` once after updating to regenerate includes and v3 hooks.
-  Existing profiles/bindings retain config version 1. See the versioned release
-  notes for changed resolution rules and client-side enforcement limits.
+- `acct rebind <old> <new>` for moved folders.
+- `acct local set <profile> | --unbound` and `acct local clear` for single repositories.
+- Doctor warnings for an unloaded shell hook, missing binding paths, stale generated
+  shims, and credential helpers that override acct.
+- `acct_refresh` shell function; native Fish output (`acct shell-env --fish`).
+
+### Build
+
+- Vitest 4.1.11 (clears dev-only advisories). Prettier formatting with a CI check.
+- Release builds run read-only; the publish job only uploads the verified tarballs.
+  All GitHub Actions are pinned to commit SHAs.
 
 ## [0.1.13] - 2026-09-27
 
@@ -278,6 +304,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI matrix (Ubuntu / macOS / Windows × Node 20 / 22) with lint, test, package, and e2e gates
 - Tagged npm publish with provenance
 
+[0.2.0]: https://github.com/abdull-ah-med/acct/releases/tag/v0.2.0
+[0.1.13]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.13
 [0.1.12]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.12
 [0.1.11]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.11
 [0.1.10]: https://github.com/abdull-ah-med/acct/releases/tag/v0.1.10

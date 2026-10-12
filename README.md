@@ -70,8 +70,9 @@ Also on [GitHub Packages](https://github.com/abdull-ah-med/acct/pkgs/npm/acct-sh
 acct
 # or: acct init
 
-# Shell hook (zsh)
-eval "$(acct hook zsh)"
+# Shell hook — add once to your startup file so every new terminal gets it
+echo 'command -v acct >/dev/null && eval "$(acct hook zsh)"' >> ~/.zshrc
+# bash/fish/PowerShell: see shell/README.md
 
 # Inside the bound tree
 cd ~/Work/some-repo
@@ -93,7 +94,9 @@ When something is off (`token: missing`, `LEAK RISK`, identity mismatch, wrong `
 
 Standing in a binding directory that is **not a git repo** is not an identity error (`includeIf gitdir` only matches inside repos). `acct` does **not** run `gh auth switch` (that is global). Status prints `gh active` from stored gh config separately from the profile principal; use `acct exec` / the shell hook, or switch only if you want raw `gh` to follow that account everywhere.
 
-In `strict` mode a missing profile token or a mismatched `gh` principal **blocks push**. A commit still uses `includeIf` `user.name` / `user.email` (not `gh`), so it will not pick up the other GitHub login. Raw `gh` without `acct exec` *can* still be the wrong user — that's the leak risk.
+In `strict` mode a missing profile token or a mismatched `gh` principal **blocks push**. A commit still uses `includeIf` `user.name` / `user.email` (not `gh`), so it will not pick up the other GitHub login.
+
+`gh` follows the folder only where `GH_TOKEN` is set — by the shell hook, `acct exec`, or the optional gh wrapper. In a shell without the hook (or in an IDE task or script that doesn't load your startup file), raw `gh` uses gh's global active account; `acct status` warns when the hook isn't loaded. With the hook, a `strict` folder whose account has no token blocks `gh` instead of falling back to another account.
 
 ```bash
 acct status            # cwd dump + diagnosis when unhealthy (exit 1)
@@ -112,7 +115,7 @@ Doctor also reports credential-helper competition, missing install blocks, orpha
 | **Identity** | `includeIf` git config — `user.name` / `user.email` per directory |
 | **HTTPS** | `git-credential-acct` returns *this* profile’s token; `quit=true` on strict failure |
 | **SSH** | `core.sshCommand` with `IdentitiesOnly=yes` |
-| **gh** | Injects `GH_TOKEN` from the OS keychain — no `gh auth switch` |
+| **gh** | Injects `GH_TOKEN` for the folder's account (gh's own token for that user, else the OS keychain) — no `gh auth switch` |
 | **Enforce** | pre-commit, pre-merge-commit and pre-push checks; all client hooks chain to existing hooks |
 
 ## Resolution order
@@ -136,10 +139,11 @@ acct --help
 |---------|---------|
 | `acct init` | Profile + binding + install |
 | `acct profile add\|list\|show\|remove\|token\|ssh-key` | Profiles |
-| `acct bind` / `unbind` / `rebind <old> <new>` | Directory → profile |
+| `acct bind` / `unbind` / `rebind <old> <new>` | Directory → profile (`rebind` after moving a folder) |
+| `acct local set <id>` / `--unbound` / `clear` | Mark a single repository; aligns its git identity |
 | `acct status` / `whoami` | Current resolution; status explains problems + fix + commit/push impact |
 | `acct doctor` | Conflict / keychain scan + cwd diagnosis when unhealthy |
-| `acct exec -- <cmd>` | Run with correct `GH_TOKEN`; direct unbound calls explain that gh is unmanaged, while the gh shim stays silent |
+| `acct exec -- <cmd>` | Run a command with the folder's `GH_TOKEN` (refuses in `strict` when there's no token) |
 | `acct clone <url>` | Clone under current profile env |
 | `acct enforce strict\|warn\|off` | Enforcement mode |
 | `acct hook bash\|zsh\|fish\|powershell` | Shell integration |

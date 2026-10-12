@@ -7,7 +7,7 @@ startup file shown below; acct does not edit startup files for you.
 |---|---|---|
 | zsh | `~/.zshrc` | `eval "$(acct hook zsh)"` |
 | bash | `~/.bashrc` | `eval "$(acct hook bash)"` |
-| fish | `~/.config/fish/config.fish` | `acct hook fish | source` |
+| fish | `~/.config/fish/config.fish` | `acct hook fish \| source` |
 | PowerShell | `$PROFILE` | `Invoke-Expression (acct hook powershell)` |
 
 Restart the shell or evaluate the line once. The hook exports `ACCT_SHELL_HOOK`
