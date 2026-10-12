@@ -124,8 +124,9 @@ function principalMatches(profile: Profile, login: string | null): boolean {
 /**
  * Token for git HTTPS / GH_TOKEN injection.
  * When follow-gh is on, prefer a live `gh auth token --user` (no `gh auth switch`).
- * Keychain writes require a matching `gh api user` login (never persist a
- * PATH-`gh` token for a different principal). Helper `get` passes persist:false.
+ * Persisting a gh token requires a matching `gh api user` login (never persist
+ * a PATH-`gh` token for a different principal). Helper `get` passes persist:false.
+ * First-access plaintext migration independently moves existing token values.
  * Cite: https://cli.github.com/manual/gh_auth_token
  */
 export async function resolveProfileToken(
@@ -142,7 +143,7 @@ export async function resolveProfileToken(
   if (live === stored) return live;
 
   if (!persist) {
-    // Helper get: return live for this request; do not write the keychain.
+    // Helper get: return live for this request without gh token-value persistence.
     return live;
   }
 

@@ -88,7 +88,7 @@ describe("follow-gh at the credential-helper seam", () => {
     }
   });
 
-  it("I17 HTTPS get returns the live token without writing secrets.json", () => {
+  it("I17 HTTPS get returns the live token without gh token-value persistence", () => {
     const ws = makeWorkspace(work);
     const gh = installFakeGh(ws.root, {
       tokens: { "github.com::user-a": "gho_TEST_ONLY_live_unpersisted" },

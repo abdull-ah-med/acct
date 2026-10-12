@@ -22,6 +22,9 @@ describe("reviewed release delivery contract", () => {
     );
   });
   it("publishes only built artifacts in a protected separate job", () => {
+    expect(read(".github/workflows/release.yml")).toContain(
+      "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+    );
     const workflow = YAML.parse(read(".github/workflows/release.yml"));
     const build = workflow.jobs.build,
       publish = workflow.jobs.publish;

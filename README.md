@@ -101,6 +101,8 @@ acct doctor            # helper/keychain scan + the same cwd diagnosis
 acct doctor --online   # also verify ambient GH_TOKEN vs cwd profile via gh api
 ```
 
+Offline doctor makes no API calls and performs no token-value persistence. The one-time plaintext-to-keychain migration is allowed in every process, including the helper, offline doctor and shell-env. It moves existing secrets into the keychain and deletes plaintext copies; it never changes a token value or persists a gh token.
+
 Doctor also reports credential-helper competition, missing install blocks, orphan bindings, sticky `GH_TOKEN`, enforce fallthrough, and whether the native keyring backend loads on this machine. Exit code `1` if any **error** findings.
 
 ## What it wires
@@ -137,7 +139,7 @@ acct --help
 | `acct bind` / `unbind` / `rebind <old> <new>` | Directory → profile |
 | `acct status` / `whoami` | Current resolution; status explains problems + fix + commit/push impact |
 | `acct doctor` | Conflict / keychain scan + cwd diagnosis when unhealthy |
-| `acct exec -- <cmd>` | Run with correct `GH_TOKEN` |
+| `acct exec -- <cmd>` | Run with correct `GH_TOKEN`; direct unbound calls explain that gh is unmanaged, while the gh shim stays silent |
 | `acct clone <url>` | Clone under current profile env |
 | `acct enforce strict\|warn\|off` | Enforcement mode |
 | `acct hook bash\|zsh\|fish\|powershell` | Shell integration |
@@ -187,7 +189,7 @@ export ACCT_SECRET_BACKEND=file   # → ~/.config/acct/secrets.json (0600)
 
 - Tokens live in the **OS keychain** by default — never in `config.yaml`. HTTPS and `acct exec` follow `gh auth token --hostname --user` for that profile (no `gh auth switch`), so `gh auth refresh` is enough; you do not need to re-run `acct profile token --import-gh`. A PAT stored with `--stdin` is not overwritten (`followGh: false`). Set `ACCT_FOLLOW_GH=0` to disable.
 - Credential helper rejects empty / non-allowlisted hosts
-- Helper resets apply only to managed HTTPS hosts, plus gist.github.com for github.com. Other hosts keep their helpers. Strict storage/config errors stop helper fallthrough.
+- Helper resets apply only to managed HTTPS hosts, plus gist.github.com for github.com. Other hosts keep their helpers. Strict storage/config errors stop helper fallthrough. A `credential.https://<host>.helper` section before the managed block is harmless; one appended after it is a real override. Running `gh auth setup-git` after acct can append such a section. Doctor reports the override; `acct install` re-appends the managed block.
 - Shell hooks use the shared Git resolver, ignore sticky `ACCT_PROFILE`, clear tokens on failure/unbound, and export a blocking sentinel when a bound strict profile lacks a token. `acct exec` refuses gh in that case.
 - IdentitiesOnly stops agent keys; keys configured for that host in ~/.ssh/config are still offered — acct verifies the authenticated account on push.
 - Tokens reject whitespace/NUL. Rotation/deletion leaves no secret backup; automatic keyring migration preserves the primary value and removes migrated file copies.

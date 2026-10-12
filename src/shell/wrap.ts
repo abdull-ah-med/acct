@@ -51,13 +51,16 @@ export function installWrapShims(env: NodeJS.ProcessEnv = process.env): string {
     const { node, acctJs } = resolveAcctCliPaths(env);
     fs.writeFileSync(
       path.join(dir, "gh.cmd"),
-      renderCmdNodeInvoke(node, acctJs, "exec gh %*"),
+      renderCmdNodeInvoke(node, acctJs, "exec gh %*").replace(
+        "@echo off",
+        '@echo off\r\nsetlocal\r\nset "ACCT_VIA_SHIM=1"',
+      ),
     );
     fs.writeFileSync(path.join(dir, "git.cmd"), renderGitCmd());
   } else {
     const { node, acctJs } = resolveAcctCliPaths(env);
     const invoke = `${posixShellSingleQuote(node)} ${posixShellSingleQuote(acctJs)}`;
-    const gh = `#!/bin/sh\nexec ${invoke} exec gh "$@"\n`;
+    const gh = `#!/bin/sh\nexport ACCT_VIA_SHIM=1\nexec ${invoke} exec gh "$@"\n`;
     fs.writeFileSync(path.join(dir, "gh"), gh, { mode: 0o755 });
     // Do not shadow git by default — credential helper + hooks are enough.
     // Provide acct-git for explicit wrapping.

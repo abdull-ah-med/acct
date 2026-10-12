@@ -24,16 +24,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Serialize config edits with owner/nonce locks, transactional rollback and
   Git-compatible symlink/mode-preserving gitconfig writes.
-- Install global v2 shims for all client hooks, chain previous hooks, and restore
-  owned paths on uninstall. Edits after uninstall do not reinstall artifacts.
+- Install global v3 shims for all client hooks, chain previous hooks, and restore
+  owned paths on uninstall. Bake global/per-repository chain paths, avoid Git in
+  common-path pass-through hooks, and keep post-commit as pure pass-through.
+  Edits after uninstall do not reinstall artifacts.
+- Recover invalid ownerless locks older than 60 seconds after a recovery-lock
+  re-check; valid live owners are never stolen based on age.
+- Silence unbound gh shim calls while retaining the direct `acct exec` note.
+- Clarify helper section ordering and allow first-access plaintext migration
+  in all processes without changing existing token values or persisting gh tokens.
 - Report measured hook/auth state, missing bindings and stale generated paths;
   add subtree rebind, native Fish output, refresh recovery and cancellable wizards.
 - Pin reviewed CI actions and separate read-only release builds from publication
-  of downloaded tarballs. Keep download-artifact's reviewer pin TODO explicit.
+  of downloaded tarballs, with the reviewed download-artifact v4.3.0 commit pin.
 
 ### Upgrading
 
-- Run `acct install` once after updating to regenerate includes and v2 hooks.
+- Run `acct install` once after updating to regenerate includes and v3 hooks.
   Existing profiles/bindings retain config version 1. See the versioned release
   notes for changed resolution rules and client-side enforcement limits.
 

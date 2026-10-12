@@ -50,7 +50,7 @@ describe("phase 4 truthful diagnostics and usability", () => {
       expect(r.stdout).toContain("~/.zshrc");
     }
   });
-  it("offline doctor makes no API calls or token writes", () => {
+  it("offline doctor makes no API calls or gh token-value persistence", () => {
     setup();
     const fake = installFakeGh(harness.root, {
       tokens: { "github.com::alice": "fake-live" },

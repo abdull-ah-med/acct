@@ -806,7 +806,7 @@ export async function runCli(argv: string[]): Promise<void> {
             ),
           )
         : { ...process.env };
-      if (!resolved.profile)
+      if (!resolved.profile && process.env.ACCT_VIA_SHIM === undefined)
         console.error(
           "acct note: unbound directory — acct is not managing gh here",
         );
