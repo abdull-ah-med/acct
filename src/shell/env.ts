@@ -38,7 +38,7 @@ export async function buildShellEnvExports(
   } else {
     if(resolved.reason === "conflict" && resolved.enforce === "strict") {
       for(const key of TOKEN_KEYS) exports[key]=null;
-      exports.ACCT_PROFILE=null; exports.GH_TOKEN="acct-blocked-no-token";
+      exports.ACCT_PROFILE=null; exports.GH_TOKEN="acct-blocked-no-token"; exports.GH_ENTERPRISE_TOKEN="acct-blocked-no-token";
       console.error("acct: " + resolved.conflict?.detail);
       return exports;
     }

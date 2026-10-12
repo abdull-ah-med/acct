@@ -6,6 +6,7 @@ import {
   secretStoreOverriddenForTests,
   isGithubDotComFamily,
   canonicalHost,
+  assertValidToken,
 } from "../secrets/store.js";
 
 import { resolveRealGh } from "./real.js";
@@ -35,8 +36,9 @@ export function readGhAuthToken(
   delete env.GITHUB_TOKEN;
   delete env.GH_ENTERPRISE_TOKEN;
   delete env.GITHUB_ENTERPRISE_TOKEN;
+  let out: string;
   try {
-    const out = execFileSync(
+    out = execFileSync(
       resolveRealGh(env),
       [
         "auth",
@@ -52,11 +54,15 @@ export function readGhAuthToken(
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 3000,
       },
-    ).trim();
-    return out || null;
+    );
   } catch {
     return null;
   }
+  // Strip the command terminator only; whitespace inside a token is invalid.
+  out = out.replace(/\n$/, "");
+  if (!out) return null;
+  assertValidToken(out);
+  return out;
 }
 
 /**

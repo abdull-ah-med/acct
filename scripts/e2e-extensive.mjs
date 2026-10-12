@@ -68,7 +68,7 @@ function acct(args, env, cwd) {
 async function main() {
   console.log("=== acct extensive harness (synthetic, NO MAIR) ===\n");
 
-  // Isolated dirs inside workspace
+  // Isolated fixtures under the OS temporary directory
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-e2e-")));
   assertSafe("base", base);
   const configDir = path.join(base, "config");
@@ -87,7 +87,7 @@ async function main() {
   run("git", ["init"], { cwd: personalRoot });
   run("git", ["init"], { cwd: workRoot });
 
-  // Do NOT override HOME (breaks macOS keychain). Isolate via ACCT_* + GIT_CONFIG_GLOBAL.
+  // npm test:e2e supplies a temporary HOME and fake gh via test-isolated.mjs.
   // Isolate gh hosts so status `gh auth status` (GH_TOKEN stripped) cannot print a
   // live login. Cite: https://cli.github.com/manual/gh_help_environment (GH_CONFIG_DIR)
   // Use file secret backend so we never touch OS keychain entries (including any mair tokens).

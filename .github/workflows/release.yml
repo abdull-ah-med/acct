@@ -2,148 +2,169 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v0.1.0). Leave empty when triggered by a tag push."
+        description: "Existing vX.Y.Z tag to release; empty uses the triggering tag."
         required: false
         type: string
 
 permissions:
-  contents: write
-  id-token: write
-  packages: write
+  contents: read
 
 jobs:
-  publish:
-    name: Publish to npm + GitHub Packages
+  build:
+    name: Verify and pack
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      owner: ${{ steps.tag.outputs.owner }}
     steps:
-      - uses: actions/checkout@v5
+      # Validate before the tag is used as a checkout ref, path, or command argument.
+      # https://docs.github.com/en/actions/reference/security/secure-use
+      - name: Validate release tag
+        id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+          TRIGGER_TAG: ${{ github.ref_name }}
+          PACKAGE_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-$TRIGGER_TAG}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected a vX.Y.Z tag' >&2; exit 1; }
+          owner="$(printf '%s' "$PACKAGE_OWNER" | tr '[:upper:]' '[:lower:]')"
+          [[ "$owner" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo 'Invalid package owner' >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref }}
-
-      - uses: actions/setup-node@v5
+          ref: ${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          # Trusted publishing needs Node ≥22.14 and npm ≥11.5.1
           node-version: 24
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-
+          cache: npm
       - run: npm ci
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      - run: npm run test:security
+      - run: npm run test:e2e
       - run: npm run pack:check
       - run: npm run pack:smoke
-      - run: npm run test:security
+      - name: Pack both registry artifacts
         env:
-          ACCT_SECRET_BACKEND: file
-      - run: npm run test:e2e
-        env:
-          ACCT_SECRET_BACKEND: file
-
-      - name: Resolve release tag
-        id: tag
-        env:
-          REQUESTED_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+          PACKAGE_OWNER: ${{ steps.tag.outputs.owner }}
         run: |
           set -euo pipefail
-          if [ -n "$REQUESTED_TAG" ]; then
-            tag="$REQUESTED_TAG"
-          else
-            tag="${GITHUB_REF_NAME}"
-          fi
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Tag must look like vX.Y.Z (got: $tag)" >&2
-            exit 1
-          fi
-          version="${tag#v}"
-          pkg="$(node -p "require('./package.json').version")"
-          if [ "$version" != "$pkg" ]; then
-            echo "Tag $tag does not match package.json version $pkg" >&2
-            exit 1
-          fi
-          test -s "docs/releases/$tag.md"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          test "$(node -p 'require("./package.json").version')" = "$RELEASE_VERSION"
+          test -s "docs/releases/$RELEASE_TAG.md"
+          mkdir release
+          npm pack --ignore-scripts --pack-destination release
+          # Prepare the GitHub Packages twin in the read-only build job too.
+          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.name=`@${process.env.PACKAGE_OWNER}/acct-sh`; fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n");'
+          npm pack --ignore-scripts --pack-destination release
+          cp "docs/releases/$RELEASE_TAG.md" release/release.md
+          (cd release && sha256sum *.tgz > SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-packages
+          path: release/
+          if-no-files-found: error
 
-      - name: Publish to npmjs.org (skip if version already exists)
+  publish:
+    name: Publish verified tarballs
+    needs: build
+    runs-on: ubuntu-latest
+    # Configure required reviewers on this environment in repository settings.
+    # https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4 # TODO(pin): resolve SHA
+        with:
+          name: release-packages
+          path: release
+      - name: Validate downloaded artifacts
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          PACKAGE_OWNER: ${{ needs.build.outputs.owner }}
         run: |
           set -euo pipefail
-          version="${{ steps.tag.outputs.version }}"
-          if npm view "acct-sh@$version" version >/dev/null 2>&1; then
-            echo "acct-sh@$version already on npmjs.org — skipping"
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "${RELEASE_TAG#v}" = "$RELEASE_VERSION"
+          [[ "$PACKAGE_OWNER" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          (cd release && sha256sum --check SHA256SUMS)
+          test -f "release/acct-sh-$RELEASE_VERSION.tgz"
+          test -f "release/$PACKAGE_OWNER-acct-sh-$RELEASE_VERSION.tgz"
+      - name: Publish npm artifact
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          if npm view "acct-sh@$RELEASE_VERSION" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo 'npm version already exists; skipping'
           else
-            # Auth via npm Trusted Publishing (OIDC).
-            # setup-node + registry-url injects NODE_AUTH_TOKEN from secrets.NPM_TOKEN
-            # when present; classic tokens override OIDC and fail with E403/E404
-            # (npm also restricts tokens that bypass 2FA for direct publish).
-            # https://docs.npmjs.com/trusted-publishers/
-            # https://github.com/actions/setup-node/issues/1551
+            # OIDC trusted publishing: https://docs.npmjs.com/trusted-publishers/
             unset NODE_AUTH_TOKEN
             if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
               sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
             fi
-            npm publish --access public
+            npm publish "release/acct-sh-$RELEASE_VERSION.tgz" --registry=https://registry.npmjs.org --access public --provenance --ignore-scripts
           fi
-
-      # GitHub Packages requires a scope matching the repo owner.
-      # Keep npmjs name as acct-sh; publish a scoped twin here.
-      - name: Publish to GitHub Packages
+      - name: Publish GitHub Packages artifact
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          PACKAGE_OWNER: ${{ needs.build.outputs.owner }}
         run: |
           set -euo pipefail
-          version="${{ steps.tag.outputs.version }}"
-          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          scoped="@${owner}/acct-sh"
-
-          {
-            echo "@${owner}:registry=https://npm.pkg.github.com"
-            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
-          } >> .npmrc
-
-          if npm view "${scoped}@${version}" --registry=https://npm.pkg.github.com version >/dev/null 2>&1; then
-            echo "${scoped}@${version} already on GitHub Packages — skipping"
-            exit 0
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/acct-release.npmrc"
+          printf '@%s:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' "$PACKAGE_OWNER" > "$NPM_CONFIG_USERCONFIG"
+          if npm view "@$PACKAGE_OWNER/acct-sh@$RELEASE_VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo 'GitHub Packages version already exists; skipping'
+          else
+            npm publish "release/$PACKAGE_OWNER-acct-sh-$RELEASE_VERSION.tgz" --registry=https://npm.pkg.github.com --access public --ignore-scripts
           fi
-
-          npm pkg set "name=${scoped}"
-          # Already built + tested above; avoid re-running prepublishOnly
-          npm publish --registry=https://npm.pkg.github.com --access public --ignore-scripts
-
-      - name: Verify both registry versions
+      - name: Verify registry versions
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
-          PACKAGE_OWNER: ${{ github.repository_owner }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          PACKAGE_OWNER: ${{ needs.build.outputs.owner }}
         run: |
           set -euo pipefail
-          owner="$(printf '%s' "$PACKAGE_OWNER" | tr '[:upper:]' '[:lower:]')"
-          # Newly published versions can take time to become visible. Revalidate
-          # cached metadata and retry within a bounded window; never accept a
-          # different version or mark a failed lookup as verified.
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/acct-release.npmrc"
           for attempt in 1 2 3 4 5 6; do
             npm_version="$(npm view "acct-sh@$RELEASE_VERSION" version --registry=https://registry.npmjs.org --prefer-online)" || npm_version=""
-            github_version="$(npm view "@$owner/acct-sh@$RELEASE_VERSION" version --registry=https://npm.pkg.github.com --prefer-online)" || github_version=""
+            github_version="$(npm view "@$PACKAGE_OWNER/acct-sh@$RELEASE_VERSION" version --registry=https://npm.pkg.github.com --prefer-online)" || github_version=""
             if [ "$npm_version" = "$RELEASE_VERSION" ] && [ "$github_version" = "$RELEASE_VERSION" ]; then
-              echo "Verified acct-sh@$npm_version on npm and @$owner/acct-sh@$github_version on GitHub Packages"
+              echo "Verified both registries at $RELEASE_VERSION"
               exit 0
             fi
-            echo "Registry metadata not ready (attempt $attempt/6)"
             if [ "$attempt" -lt 6 ]; then sleep 10; fi
           done
-          echo "Could not verify both registry versions within the retry window" >&2
+          echo 'Registry verification failed' >&2
           exit 1
-
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: acct-sh ${{ steps.tag.outputs.tag }}
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: acct-sh ${{ needs.build.outputs.tag }}
           generate_release_notes: false
-          body_path: docs/releases/${{ steps.tag.outputs.tag }}.md
+          body_path: release/release.md

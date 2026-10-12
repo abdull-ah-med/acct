@@ -33,7 +33,8 @@ Expected values come from outside the module under test:
 
 1. **Unit** (`tests/unit`) — pure decisions with literal expected values (resolution, protocol parse, deny-list).
 2. **Behavior** (`tests/behavior`) — spawn real bins against a temp config dir and a fake `gh` on `PATH`.
-3. **Live e2e** (`scripts/e2e-*.mjs`) — optional dual real GitHub accounts. Synthetic harnesses must never mention real people.
+3. **Integration** (`tests/integration`) — real Git repositories, commits, credentials and hooks, plus real bash/zsh when installed. Exercise nested/canonical bindings, worktree conflicts, transports, concurrency, rollback and lifecycle boundaries.
+4. **Synthetic e2e** (`scripts/e2e-*.mjs`) — fake identities and file secrets; no real accounts or network. Live dual-account probes remain optional and outside the default gate.
 
 `ACCT_SECRET_BACKEND=file` does **not** follow gh (protects CI from the developer’s real `gh`). Behavior tests that need follow-gh set `ACCT_FOLLOW_GH=1` and put the fake binary first on `PATH`.
 
@@ -44,6 +45,17 @@ Expected values come from outside the module under test:
 3. If you need `gh`, use `tests/harness/fake-gh.ts` (a `.cjs` binary — this package is ESM, so a shebang `.js` file under the repo would crash). If the fake was never invoked, the test failed.
 
 A test that still passes after you delete the assertion’s corresponding production line is not a test.
+
+## Isolation
+
+Default npm test, security, e2e and package-smoke commands use
+`scripts/test-isolated.mjs`: fresh temporary HOME/USERPROFILE, acct/XDG/gh/Git
+config, file secrets, fake gh first on PATH, cleared ambient tokens and Git
+overrides, and offline npm with a temporary cache. Package smoke clones existing
+cache entries read-only and installs locked runtime versions from the tarball.
+Fixtures clean up their temporary directories; no keychain, user gitconfig or
+global npm mutation is part of the gate. Native Windows fixture launchers forward
+flags to their JS script before Node parses them.
 
 ## CI evidence gate
 

@@ -19,6 +19,11 @@ function removeOwned(cwd:string,env:NodeJS.ProcessEnv) {
 export function localSet(cwd:string,id:string|undefined,unbound:boolean,env:NodeJS.ProcessEnv) {
   const ctx=context(cwd,env), config=loadConfig(env), p=config.profiles.find(p=>p.id===id);
   if(!unbound && !p) throw new Error("Unknown or missing profile; use acct local set <id> or --unbound");
+  if (!config.installed) {
+    fs.writeFileSync(path.join(ctx.workTree!,".acct"), unbound ? "" : `# acct managed marker\nprofile: ${p!.id}\n`);
+    console.error("acct is not installed — run acct install to apply");
+    return;
+  }
   removeOwned(cwd,env);
   if(p && !unbound) {
     const include=writeProfileInclude(p,env);
@@ -30,6 +35,8 @@ export function localSet(cwd:string,id:string|undefined,unbound:boolean,env:Node
   failAt("local",env);
 }
 export function localClear(cwd:string,env:NodeJS.ProcessEnv) {
-  const ctx=context(cwd,env); removeOwned(cwd,env);
+  const ctx=context(cwd,env);
+  if (loadConfig(env).installed) removeOwned(cwd,env);
+  else console.error("acct is not installed — run acct install to apply");
   if(readLocalAcct(ctx.workTree!) != null) fs.rmSync(path.join(ctx.workTree!,".acct"));
 }

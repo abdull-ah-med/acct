@@ -112,3 +112,12 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 |-------|-----|---------------|
 | Fish quoting | https://fishshell.com/docs/current/language.html#quotes | 2026-10-12 |
 | readline EOF / SIGINT | https://nodejs.org/api/readline.html | 2026-10-12 |
+
+## Release delivery
+
+| Topic | URL | last_verified |
+|---|---|---|
+| Action pinning and expression injection | https://docs.github.com/en/actions/reference/security/secure-use | 2026-10-12 |
+| Protected environments | https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments | 2026-10-12 |
+| npm tarball publication / ignore-scripts | https://docs.npmjs.com/cli/v11/commands/npm-publish/ | 2026-10-12 |
+| npm trusted publishers | https://docs.npmjs.com/trusted-publishers/ | 2026-10-12 |

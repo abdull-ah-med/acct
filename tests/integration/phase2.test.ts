@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
+import {installNativeCommand} from "../harness/native-command.js";
 import {isolated} from "../harness/isolation.js";
 let h: ReturnType<typeof isolated>;
 beforeEach(() => { h = isolated(); for (const [id, name] of [["a", "Alice # Team"], ["b", "Bob"]]) { const r=h.run(["profile","add","--id",id!,"--user",id!,"--name",name!,"--email",id+"@example.com"]); expect(r.status,r.stderr).toBe(0); } expect(h.run(["install"]).status).toBe(0); });
@@ -77,8 +78,8 @@ describe("phase 2 real Git configuration and transport contracts", () => {
   });
   it.each([["a",0],["other",1]])("SSH push verifies greeting %s without PAT", (login,code) => {
     const dir=repo(path.join(h.root,"repo")); bind(dir);
-    const ssh=path.join(h.fake.binDir,"ssh"); fs.writeFileSync(ssh,`#!/bin/sh\ncase " $* " in *" -G "*) echo hostname github.com;; *) echo "Hi ${login}! You've successfully authenticated" >&2; exit 1;; esac\n`,{mode:0o755});
-    const r=h.run(["hook-run","pre-push","origin","git@work-alias:owner/repo.git"],dir,{},""); expect(r.status,r.stderr).toBe(code);
+    const native=installNativeCommand(h.fake.binDir,"ssh",`if(process.argv.includes("-G"))console.log("hostname github.com");else {console.error("Hi ${login}! You've successfully authenticated");process.exitCode=1;}`);
+    const r=h.run(["hook-run","pre-push","origin","git@work-alias:owner/repo.git"],dir,native.env,""); expect(r.status,r.stderr).toBe(code);
   });
   it("local pushes need no token", () => {
     const dir=repo(path.join(h.root,"repo")); bind(dir); expect(h.run(["hook-run","pre-push","origin",path.join(h.root,"remote.git")],dir,{},"").status).toBe(0);

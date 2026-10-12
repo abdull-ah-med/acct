@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-12
+
+### Security
+
+- Fail closed on corrupt credentials/config and strict missing gh tokens; scope
+  helper resets to managed hosts and keep gist mapping explicit.
+- Share canonical Git resolution across worktrees, includes, helpers and hooks.
+  Detect worktree/gitdir conflicts; root-local markers keep Git identity aligned.
+- Check effective and recorded author/committer identity and authenticate the
+  actual HTTPS or SSH push transport. Preserve SSH aliases and host key policy.
+- Validate all token inputs; remove plaintext backup copies; migrate fallback
+  entries and protect shared account/SSH references during profile deletion.
+
+### Changed
+
+- Serialize config edits with owner/nonce locks, transactional rollback and
+  Git-compatible symlink/mode-preserving gitconfig writes.
+- Install global v2 shims for all client hooks, chain previous hooks, and restore
+  owned paths on uninstall. Edits after uninstall do not reinstall artifacts.
+- Report measured hook/auth state, missing bindings and stale generated paths;
+  add subtree rebind, native Fish output, refresh recovery and cancellable wizards.
+- Pin reviewed CI actions and separate read-only release builds from publication
+  of downloaded tarballs. Keep download-artifact's reviewer pin TODO explicit.
+
+### Upgrading
+
+- Run `acct install` once after updating to regenerate includes and v2 hooks.
+  Existing profiles/bindings retain config version 1. See the versioned release
+  notes for changed resolution rules and client-side enforcement limits.
+
 ## [0.1.13] - 2026-09-27
 
 ### Fixed

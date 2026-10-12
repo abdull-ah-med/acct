@@ -177,7 +177,7 @@ export async function runCli(argv: string[]): Promise<void> {
   let mutation:ReturnType<typeof beginConfigMutation>|undefined;
   program.hook("preAction",(_root,action)=>{
     const mutating=["init","bind","unbind","rebind","install","uninstall","enforce"].includes(action.name()) || action.parent?.name() === "local" || (action.parent?.name() === "profile" && ["add","remove","token","ssh-key"].includes(action.name())) || (action === program && process.stdin.isTTY);
-    if(mutating)mutation=beginConfigMutation(process.cwd(),process.env,action.args.filter((a):a is string=>typeof a === "string").map(a=>path.resolve(a)));
+    if(mutating)mutation=beginConfigMutation(process.cwd(),process.env,action.args.filter((a):a is string=>typeof a === "string").map(a=>path.resolve(a)), action.name() === "unbind" ? path.resolve(String(action.args[0])) : undefined);
   });
   program.hook("postAction", (_root, action) => {
     if (["bind", "unbind", "rebind"].includes(action.name()) || (action.parent?.name() === "profile" && ["add", "remove", "token", "ssh-key"].includes(action.name())) || action.parent?.name() === "local") console.error("note: open shells keep their current acct env until you cd or run acct_refresh");
@@ -431,7 +431,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .description("Remove a directory → profile binding")
     .argument("<dir>", "Directory previously passed to bind")
     .action((dir) => {
-      let config = loadConfig();
+      let config = loadConfig(process.env, path.resolve(dir));
       config = removeBinding(config, path.resolve(dir));
       updateConfig(process.env, () => config);
       console.log(`Unbound ${normalizePath(dir)}`);
@@ -676,9 +676,11 @@ export async function runCli(argv: string[]): Promise<void> {
         forcedProfileId: opts.profile,
         allowEnvProfile: false,
       });
+      if (opts.profile && !resolved.profile) throw new Error(`Unknown profile: ${opts.profile}`);
+      if (resolved.reason === "conflict" && resolved.enforce === "strict") throw new Error(resolved.conflict!.detail);
       const env = stripGitConfigEnvOverrides(
         resolved.profile
-          ? await envForProfile(resolved.profile)
+          ? await envForProfile(resolved.profile, process.env, resolved.enforce)
           : { ...process.env },
       );
       const args = ["clone", url, ...cloneArgs];

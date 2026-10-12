@@ -41,7 +41,7 @@
 `user.name` / `user.email` are not auth.  
 `gh auth switch` is global.  
 HTTPS credentials are host-scoped by default.  
-SSH agents offer every key unless you force `IdentitiesOnly`.
+SSH agents and host-specific key configuration can authenticate the wrong account.
 
 Cross a directory boundary and you can silently push as the wrong person.
 
@@ -111,13 +111,13 @@ Doctor also reports credential-helper competition, missing install blocks, orpha
 | **HTTPS** | `git-credential-acct` returns *this* profile’s token; `quit=true` on strict failure |
 | **SSH** | `core.sshCommand` with `IdentitiesOnly=yes` |
 | **gh** | Injects `GH_TOKEN` from the OS keychain — no `gh auth switch` |
-| **Enforce** | pre-commit / pre-push hooks in `strict` mode |
+| **Enforce** | pre-commit, pre-merge-commit, post-commit and pre-push checks; all client hooks chain to existing hooks |
 
 ## Resolution order
 
 1. CLI `--profile` (explicit; gh plane / status)
-2. Repo-local `.acct`
-3. Longest matching directory binding
+2. Nearest `.acct` from the Git worktree root upward (cwd outside Git); markers below the root are ignored and reported
+3. Longest canonical directory binding; worktree/gitdir disagreement without a marker is a strict conflict
 4. Unbound
 
 Local always beats global. Ambient `ACCT_PROFILE` does **not** override git credential helper or hooks — directory wins.
@@ -134,14 +134,36 @@ acct --help
 |---------|---------|
 | `acct init` | Profile + binding + install |
 | `acct profile add\|list\|show\|remove\|token\|ssh-key` | Profiles |
-| `acct bind` / `unbind` | Directory → profile |
+| `acct bind` / `unbind` / `rebind <old> <new>` | Directory → profile |
 | `acct status` / `whoami` | Current resolution; status explains problems + fix + commit/push impact |
 | `acct doctor` | Conflict / keychain scan + cwd diagnosis when unhealthy |
 | `acct exec -- <cmd>` | Run with correct `GH_TOKEN` |
 | `acct clone <url>` | Clone under current profile env |
 | `acct enforce strict\|warn\|off` | Enforcement mode |
 | `acct hook bash\|zsh\|fish\|powershell` | Shell integration |
-| `acct install` / `uninstall` | Wire / remove git includeIf + hooks |
+| `acct install [--repo]` / `uninstall` | Global hooks by default, optional local override; chain and restore existing hooks |
+
+## Upgrading to 0.2.0
+
+After updating the npm package, run `acct install` once to regenerate the scoped
+includes and v2 hook shims. Profiles and bindings retain schema version 1.
+Installation is now global by default and chains existing repository hooks. Use
+`acct install --repo` where a local hooksPath overrides it. `acct uninstall`
+restores recorded hook paths and preserves unrelated Git configuration.
+
+`acct local set <id>` places `.acct` at the repository root and installs the
+matching local include. `acct local clear` removes only acct's local include.
+When a directory moves, use `acct rebind <old> <new>`; doctor reports missing paths.
+
+Persist the shell hook using [shell/README.md](shell/README.md). Bash runs it at
+the next prompt: `cd repo && gh ...` runs before refresh. Use `acct exec -- gh ...`
+or the generated gh wrapper for immediate resolution. Run `acct_refresh` after
+changing config in an open shell.
+
+`acct whoami` exits 0 for a match, 1 for mismatch, and 2 when unknown. Offline
+diagnostics cannot establish remote authentication. Recorded-author checks use
+local operation/reflog evidence for cherry-picks and similar operations; imported
+history without that evidence can be refused in strict mode.
 
 ## Platforms & OS keychain
 
@@ -153,7 +175,7 @@ Tokens are stored via [`@napi-rs/keyring`](https://www.npmjs.com/package/@napi-r
 | **Linux** | Secret Service via **libsecret** (GNOME Keyring / KWallet) | Unit + e2e in CI (`ubuntu-latest`) use `ACCT_SECRET_BACKEND=file`. Headless/CI hosts often lack a session keyring — prefer the file backend there, or unlock a Secret Service session for keyring mode. |
 | **Windows** | Credential Manager | Unit tests in CI (`windows-latest`). Keychain UX differs from macOS; run `acct doctor` after install. |
 
-**Tested in CI:** Node 20 + 22 × Ubuntu / macOS / Windows (lint, unit, package). Security regression + directory e2e on Ubuntu and macOS with `ACCT_SECRET_BACKEND=file`. Live keychain writes are exercised on developer macOS; treat Linux/Windows keyring paths as supported via the native module but less battle-tested in the wild.
+**CI matrix:** Node 20 + 22 × Ubuntu / macOS / Windows. Security regression and directory e2e run on Ubuntu and macOS. Tests use temporary home/config directories, a fake gh, and `ACCT_SECRET_BACKEND=file`; CI does not establish live keychain or real-account coverage.
 
 Explicit opt-in for plaintext storage (CI / locked-down hosts):
 
@@ -165,8 +187,12 @@ export ACCT_SECRET_BACKEND=file   # → ~/.config/acct/secrets.json (0600)
 
 - Tokens live in the **OS keychain** by default — never in `config.yaml`. HTTPS and `acct exec` follow `gh auth token --hostname --user` for that profile (no `gh auth switch`), so `gh auth refresh` is enough; you do not need to re-run `acct profile token --import-gh`. A PAT stored with `--stdin` is not overwritten (`followGh: false`). Set `ACCT_FOLLOW_GH=0` to disable.
 - Credential helper rejects empty / non-allowlisted hosts
-- Bound profiles reset competing helpers, then install `acct` only
-- Shell hook rebinds from cwd (ignores sticky `ACCT_PROFILE`) and clears tokens when unbound
+- Helper resets apply only to managed HTTPS hosts, plus gist.github.com for github.com. Other hosts keep their helpers. Strict storage/config errors stop helper fallthrough.
+- Shell hooks use the shared Git resolver, ignore sticky `ACCT_PROFILE`, clear tokens on failure/unbound, and export a blocking sentinel when a bound strict profile lacks a token. `acct exec` refuses gh in that case.
+- IdentitiesOnly stops agent keys; keys configured for that host in ~/.ssh/config are still offered — acct verifies the authenticated account on push.
+- Tokens reject whitespace/NUL. Rotation/deletion leaves no secret backup; automatic keyring migration preserves the primary value and removes migrated file copies.
+- Config edits serialize across processes and roll back on failure. Editing after uninstall saves config without reinstalling Git artifacts.
+- Client hooks can be bypassed with `--no-verify` or a different hooksPath. Use server-side controls for mandatory policy. `acct exec` does not sandbox arbitrary programs that read their injected environment.
 
 See [threat model](https://github.com/abdull-ah-med/acct/blob/main/docs/threat-model.md) and [invariants](https://github.com/abdull-ah-med/acct/blob/main/docs/invariants.md).
 

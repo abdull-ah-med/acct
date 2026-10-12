@@ -438,6 +438,11 @@ function checkSshKeys(
       }
       continue;
     }
+    findings.push({
+      severity: "warn",
+      code: "ssh-configured-keys",
+      message: "IdentitiesOnly stops agent keys; keys configured for that host in ~/.ssh/config are still offered — acct verifies the authenticated account on push.",
+    });
     if (!fs.existsSync(p.sshKeyPath)) {
       findings.push({
         severity: "error",

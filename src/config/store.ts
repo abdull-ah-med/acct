@@ -36,13 +36,23 @@ export function hooksDir(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(acctConfigDir(env), "hooks");
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): AcctConfig {
+export function loadConfig(env: NodeJS.ProcessEnv = process.env, unbindPath?: string): AcctConfig {
   const file = configPath(env);
   if (!fs.existsSync(file)) return defaultConfig();
   const raw = fs.readFileSync(file, "utf8");
   let parsed:unknown;
   try {parsed=YAML.parse(raw);}catch {throw new Error("Invalid acct config: YAML syntax; run acct doctor");}
   if(!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid acct config: root");
+  // Only unbind may remove its requested entry before validation, making the
+  // documented repair for a dangling reference usable. All remaining fields
+  // still pass the normal validator; every read-only command stays strict.
+  if (unbindPath && "bindings" in parsed && Array.isArray(parsed.bindings)) {
+    const target = normalizePath(unbindPath);
+    parsed.bindings = parsed.bindings.filter((binding: unknown) => {
+      if (!binding || typeof binding !== "object" || !("path" in binding) || typeof binding.path !== "string") return true;
+      return !(pathIsPrefix(binding.path, target) && pathIsPrefix(target, binding.path));
+    });
+  }
   validateConfig(parsed);const config=parsed;
   return {...config,bindings:config.bindings.map(b=>({...b,path:normalizePath(b.path)}))};
 }

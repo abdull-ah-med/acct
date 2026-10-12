@@ -1,6 +1,6 @@
 {
   "name": "acct-sh",
-  "version": "0.1.13",
+  "version": "0.2.0",
   "description": "Directory-scoped GitHub identity and auth — one account, one identity, one directory tree",
   "type": "module",
   "main": "./dist/cli/index.js",
@@ -31,14 +31,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "vitest run",
-    "test:e2e": "npm run build && node scripts/e2e-extensive.mjs",
-    "test:security": "npm run build && node scripts/e2e-security-regression.mjs",
+    "test": "node scripts/test-isolated.mjs node node_modules/vitest/vitest.mjs run",
+    "test:e2e": "npm run build && node scripts/test-isolated.mjs node scripts/e2e-extensive.mjs",
+    "test:security": "npm run build && node scripts/test-isolated.mjs node scripts/e2e-security-regression.mjs",
     "cleanup:e2e-repos": "node scripts/cleanup-e2e-repos.mjs",
-    "test:watch": "vitest",
+    "test:watch": "node scripts/test-isolated.mjs node node_modules/vitest/vitest.mjs",
     "lint": "tsc -p tsconfig.json --noEmit",
     "pack:check": "npm pack --dry-run",
-    "pack:smoke": "node scripts/pack-smoke.mjs",
+    "pack:smoke": "node scripts/test-isolated.mjs --copy-cache node scripts/pack-smoke.mjs",
     "postinstall": "node ./scripts/postinstall.mjs",
     "prepublishOnly": "npm run lint && npm run build && npm test && npm run pack:check && npm run pack:smoke"
   },
