@@ -3,7 +3,7 @@ import path from "node:path";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {isolated} from "../harness/isolation.js";
 let h: ReturnType<typeof isolated>;
-beforeEach(() => { h = isolated(); for (const [id, name] of [["a", "Alice # Team"], ["b", "Bob"]]) { const r=h.run(["profile","add","--id",id!,"--user",id!,"--name",name!,"--email",id+"@example.com"]); expect(r.status,r.stderr).toBe(0); } });
+beforeEach(() => { h = isolated(); for (const [id, name] of [["a", "Alice # Team"], ["b", "Bob"]]) { const r=h.run(["profile","add","--id",id!,"--user",id!,"--name",name!,"--email",id+"@example.com"]); expect(r.status,r.stderr).toBe(0); } expect(h.run(["install"]).status).toBe(0); });
 afterEach(() => h.close());
 function repo(dir: string) { fs.mkdirSync(dir,{recursive:true}); expect(h.git(["init","-q",dir]).status).toBe(0); return dir; }
 function bind(dir: string, id="a") { const r=h.run(["bind",dir,id]); expect(r.status,r.stderr).toBe(0); }

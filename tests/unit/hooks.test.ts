@@ -30,7 +30,7 @@ describe("enforce hooks (I11b)", () => {
       "/usr/local/bin/node",
       "/opt/acct/bin/acct.js",
     );
-    expect(script).toContain("exec '/usr/local/bin/node' '/opt/acct/bin/acct.js' hook-run pre-commit");
+    expect(script).toContain("'/usr/local/bin/node' '/opt/acct/bin/acct.js' hook-run pre-commit");
     expect(script).not.toMatch(/^acct /m);
   });
 
@@ -44,7 +44,7 @@ describe("enforce hooks (I11b)", () => {
     expect(body).toContain(node);
     expect(body).toContain(acctJs);
     if (process.platform === "win32") {
-      expect(fs.existsSync(path.join(dir, "pre-commit.cmd"))).toBe(true);
+      expect(body).toContain("# acct managed hook v2");
     } else {
       expect(fs.statSync(path.join(dir, "pre-commit")).mode & 0o111).toBeTruthy();
     }

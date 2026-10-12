@@ -1,3 +1,5 @@
+import {writeGlobalGitconfig} from "../util/gitconfig.js";
+import {failAt} from "../util/transaction.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +16,6 @@ import {
 import {
   atomicWriteFileSync,
   ensureAcctDir,
-  withFileLock,
 } from "../util/fs-safe.js";
 import { renderCmdNodeInvoke } from "../util/cmd-escape.js";
 
@@ -162,21 +163,19 @@ export function globalGitconfigPath(
   return path.join(homeDir(env), ".gitconfig");
 }
 
-function gitconfigLockPath(env: NodeJS.ProcessEnv): string {
-  return path.join(acctConfigDir(env), "gitconfig.lock");
-}
 
 export function installIncludeIf(
   config: AcctConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  withFileLock(gitconfigLockPath(env), () => {
+  (() => {
     for (const profile of config.profiles) {
       writeProfileInclude(profile, env);
     }
     const hosts=[...new Set(config.profiles.flatMap(profileHosts))].sort();
     const helper=gitConfigValue(quoteHelper(ensureCredentialShim(env)));
     atomicWriteFileSync(path.join(gitIncDir(env),"_managed.inc"), hosts.map(host => `[credential ${gitConfigSubsection("https://"+host)}]\n\thelper = ""\n\thelper = ${helper}\n`).join(""), 0o600);
+    failAt("includes",env);
     const block = buildIncludeIfBlock(config, env);
     const gitconfig = globalGitconfigPath(env);
     let existing = fs.existsSync(gitconfig)
@@ -194,32 +193,19 @@ export function installIncludeIf(
     existing = stripManagedBlock(existing);
     const next = existing.trimEnd() + "\n\n" + block;
     const final = next.startsWith("\n") ? next.slice(1) : next;
-    // Write via tmp in same dir as gitconfig for atomic rename
-    const tmp = `${gitconfig}.acct.tmp.${process.pid}`;
-    fs.writeFileSync(tmp, final, "utf8");
-    try {
-      const fd = fs.openSync(tmp, "r+");
-      try {
-        fs.fsyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
-    } catch {
-      // fsync best-effort
-    }
-    fs.renameSync(tmp, gitconfig);
-  });
+    writeGlobalGitconfig(gitconfig,final,env);
+    failAt("gitconfig",env);
+  })();
 }
 
 export function uninstallIncludeIf(env: NodeJS.ProcessEnv = process.env): void {
-  withFileLock(gitconfigLockPath(env), () => {
+  (() => {
     const gitconfig = globalGitconfigPath(env);
     if (fs.existsSync(gitconfig)) {
       const existing = fs.readFileSync(gitconfig, "utf8");
       const next = stripManagedBlock(existing);
-      const tmp = `${gitconfig}.acct.tmp.${process.pid}`;
-      fs.writeFileSync(tmp, next, "utf8");
-      fs.renameSync(tmp, gitconfig);
+      writeGlobalGitconfig(gitconfig,next,env);
+      failAt("gitconfig",env);
     }
     ensureAcctDir(acctConfigDir(env));
     // Clean orphan .inc files under git/
@@ -235,7 +221,7 @@ export function uninstallIncludeIf(env: NodeJS.ProcessEnv = process.env): void {
         }
       }
     }
-  });
+  })();
 }
 
 export function restoreGitconfigBackup(
@@ -244,10 +230,10 @@ export function restoreGitconfigBackup(
   const backupFile = path.join(backupDir(env), "gitconfig.pre-acct");
   const gitconfig = globalGitconfigPath(env);
   if (!fs.existsSync(backupFile)) return false;
-  return withFileLock(gitconfigLockPath(env), () => {
-    fs.copyFileSync(backupFile, gitconfig);
+  return (() => {
+    writeGlobalGitconfig(gitconfig,fs.readFileSync(backupFile,"utf8"),env);
     return true;
-  });
+  })();
 }
 
 export function stripManagedBlock(text: string): string {

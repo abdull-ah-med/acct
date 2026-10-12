@@ -253,14 +253,15 @@ describe("configureHooksPath", () => {
     fs.rmSync(path.dirname(repo), { recursive: true, force: true });
   });
 
-  it("refuses existing non-acct core.hooksPath without --force", () => {
+  it("chains existing non-acct core.hooksPath", () => {
     execFileSync("git", ["config", "core.hooksPath", ".githooks"], {
       cwd: repo,
       stdio: "ignore",
     });
     expect(() =>
       configureHooksPath(hooks, { bindDir: repo }),
-    ).toThrow(/Refusing to overwrite/);
+    ).not.toThrow();
+    expect(execFileSync("git",["config","--local","--get","acct.chainHooksPath"],{cwd:repo,encoding:"utf8"}).trim()).toBe(".githooks");
   });
 
   it("overwrites with --force", () => {
@@ -293,10 +294,10 @@ describe("configureHooksPath", () => {
     expect(() => configureHooksPath(hooks, { bindDir: repo })).not.toThrow();
   });
 
-  it("skips when bindDir is not a git toplevel (parent walk-up)", () => {
+  it("repo hook installation accepts a subdirectory of its worktree", () => {
     const nested = path.join(repo, "subdir");
     fs.mkdirSync(nested, { recursive: true });
-    // Must not set hooksPath on the parent repo
+    // Repo-local hooks apply to the entire repository.
     expect(() =>
       configureHooksPath(hooks, { bindDir: nested }),
     ).not.toThrow();
@@ -309,7 +310,7 @@ describe("configureHooksPath", () => {
     } catch {
       v = "";
     }
-    expect(v).toBe("");
+    expect(v).toBe(hooks);
   });
 
   it("updates when existing hooksPath is another acct hooks dir", () => {
@@ -317,7 +318,7 @@ describe("configureHooksPath", () => {
     fs.mkdirSync(otherHooks, { recursive: true });
     fs.writeFileSync(
       path.join(otherHooks, "pre-commit"),
-      "#!/bin/sh\nexec /usr/bin/node /tmp/acct.js hook-run pre-commit\n",
+      "#!/bin/sh\n# acct managed hook v2\nexec /usr/bin/node /tmp/acct.js hook-run pre-commit\n",
     );
     execFileSync("git", ["config", "core.hooksPath", otherHooks], {
       cwd: repo,
@@ -345,7 +346,7 @@ describe("unsetAcctHooksPath (I14)", () => {
     execFileSync("git", ["init"], { cwd: repo, stdio: "ignore" });
     fs.writeFileSync(
       path.join(hooks, "pre-commit"),
-      "#!/bin/sh\nexec /usr/bin/node /tmp/acct.js hook-run pre-commit\n",
+      "#!/bin/sh\n# acct managed hook v2\nexec /usr/bin/node /tmp/acct.js hook-run pre-commit\n",
     );
   });
 

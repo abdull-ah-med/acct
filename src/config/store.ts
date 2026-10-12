@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
+import {validateConfig} from "./validate.js";
 import type { AcctConfig, LocalAcctFile, Profile, Binding } from "../types.js";
 import { acctConfigDir, normalizePath, pathIsPrefix, TOKEN_SHAPE } from "../util/paths.js";
 import { ensureAcctDir, atomicWriteFileSync } from "../util/fs-safe.js";
@@ -39,30 +40,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AcctConfig {
   const file = configPath(env);
   if (!fs.existsSync(file)) return defaultConfig();
   const raw = fs.readFileSync(file, "utf8");
-  const parsed = YAML.parse(raw) as Partial<AcctConfig> | null;
-  if (!parsed || parsed.version !== 1) {
-    throw new Error(`Invalid acct config at ${file}: expected version 1`);
-  }
-  return {
-    ...defaultConfig(),
-    ...parsed,
-    profiles: parsed.profiles ?? [],
-    bindings: (parsed.bindings ?? []).map((b) => ({
-      ...b,
-      path: normalizePath(b.path),
-    })),
-  };
+  let parsed:unknown;
+  try {parsed=YAML.parse(raw);}catch {throw new Error("Invalid acct config: YAML syntax; run acct doctor");}
+  if(!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid acct config: root");
+  validateConfig(parsed);const config=parsed;
+  return {...config,bindings:config.bindings.map(b=>({...b,path:normalizePath(b.path)}))};
 }
 
 export function saveConfig(
   config: AcctConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
+  validateConfig({...defaultConfig(),...config});
   assertNoSecretsInConfig(config);
   const dir = acctConfigDir(env);
   ensureAcctDir(dir);
   const file = configPath(env);
   const toWrite: AcctConfig = {
+    ...defaultConfig(),
     ...config,
     bindings: config.bindings.map((b) => ({
       ...b,

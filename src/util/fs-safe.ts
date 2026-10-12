@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import {randomUUID} from "node:crypto";
 
 /**
  * Ensure an acct-owned directory exists with mode 0700.
@@ -47,63 +49,46 @@ export function atomicWriteFileSync(
   }
 }
 
-const DEFAULT_LOCK_TIMEOUT_MS = 5000;
-const LOCK_RETRY_MS = 25;
-
-function sleepSync(ms: number): void {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    /* spin — avoid Atomics.wait (SharedArrayBuffer may be blocked) */
+export function lockTimeout(env:NodeJS.ProcessEnv=process.env):number {
+  return (env.NODE_ENV === "test" || env.VITEST) && env.ACCT_LOCK_TIMEOUT_MS ? Number(env.ACCT_LOCK_TIMEOUT_MS) : 10000;
+}
+export function sleepSync(ms:number):void { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms); }
+interface LockOwner {pid:number;hostname:string;nonce:string;createdAt:number}
+function owner(file:string):LockOwner|null {try {return JSON.parse(fs.readFileSync(file,"utf8")) as LockOwner;}catch{return null;}}
+function dead(record:LockOwner|null):boolean {
+  if(!record || record.hostname !== os.hostname() || !Number.isInteger(record.pid) || record.pid <= 0) return false;
+  try {process.kill(record.pid,0);return false;}catch(error){return (error as NodeJS.ErrnoException).code === "ESRCH";}
+}
+/** wx acquisition; only a provably dead owner may be recovered. No age-based stealing.
+ * https://nodejs.org/api/process.html#processkillpid-signal
+ */
+export function acquireFileLock(file:string,timeout=lockTimeout()):()=>void {
+  ensureAcctDir(path.dirname(file)); const nonce=randomUUID(),deadline=Date.now()+timeout;
+  let delay=10;
+  for(;;) {
+    let fd:number;
+    try {fd=fs.openSync(file,"wx",0o600);}catch(error) {
+      if((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const record=owner(file);
+      if(dead(record)) {
+        const recovery=file+".recovery"; let recoveryFd:number|undefined;
+        try {
+          recoveryFd=fs.openSync(recovery,"wx",0o600);
+          const current=owner(file);
+          if(current?.nonce === record?.nonce && dead(current)) fs.unlinkSync(file);
+        } catch(error) {if((error as NodeJS.ErrnoException).code !== "EEXIST" && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;}
+        finally {if(recoveryFd !== undefined) {fs.closeSync(recoveryFd);fs.rmSync(recovery,{force:true});}}
+        if(!fs.existsSync(file)) continue;
+      }
+      if(Date.now()>=deadline) throw new Error(`Timed out waiting for lock ${file}; owner pid ${record?.pid ?? "unknown"}`);
+      sleepSync(Math.min(delay,Math.max(1,deadline-Date.now())));delay=Math.min(200,delay*2);continue;
+    }
+    try {fs.writeFileSync(fd,JSON.stringify({pid:process.pid,hostname:os.hostname(),nonce,createdAt:Date.now()}));fs.fsyncSync(fd);}catch(error){fs.closeSync(fd);fs.rmSync(file,{force:true});throw error;}
+    fs.closeSync(fd);
+    return ()=>{if(owner(file)?.nonce === nonce) fs.rmSync(file,{force:true});};
   }
 }
-
-/**
- * Serialize critical sections with an exclusive lockfile (`wx`).
- * Cite: https://nodejs.org/docs/latest-v22.x/api/fs.html#fsopensyncpath-flags-mode
- */
-export function withFileLock<T>(
-  lockPath: string,
-  fn: () => T,
-  timeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
-): T {
-  ensureAcctDir(path.dirname(lockPath));
-  const deadline = Date.now() + timeoutMs;
-  let fd: number | undefined;
-  for (;;) {
-    try {
-      fd = fs.openSync(lockPath, "wx");
-      break;
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") throw err;
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `Timed out after ${timeoutMs}ms waiting for lock ${lockPath}`,
-        );
-      }
-      // Stale lock from a dead process: if older than 2× timeout, steal.
-      try {
-        const st = fs.statSync(lockPath);
-        if (Date.now() - st.mtimeMs > timeoutMs * 2) {
-          fs.unlinkSync(lockPath);
-          continue;
-        }
-      } catch {
-        // raced away
-      }
-      sleepSync(LOCK_RETRY_MS);
-    }
-  }
-  const release = () => {
-    try { if (fd !== undefined) fs.closeSync(fd); } catch { /* closed */ }
-    try { fs.unlinkSync(lockPath); } catch { /* removed */ }
-  };
-  try {
-    const result = fn();
-    if (result && typeof (result as {then?: unknown}).then === "function") {
-      return (Promise.resolve(result).finally(release) as T);
-    }
-    release();
-    return result;
-  } catch (error) { release(); throw error; }
+export function withFileLock<T>(file:string,fn:()=>T,timeout=lockTimeout()):T {
+  const release=acquireFileLock(file,timeout);
+  try {const result=fn();if(result && typeof (result as {then?:unknown}).then === "function") return Promise.resolve(result).finally(release) as T;release();return result;}catch(error){release();throw error;}
 }

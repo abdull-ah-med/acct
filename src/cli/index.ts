@@ -1,3 +1,6 @@
+import {beginConfigMutation,updateConfig} from "../config/mutation.js";
+import {failAt} from "../util/transaction.js";
+import {readGhAuthToken} from "../gh/token.js";
 import {effectiveHelperChains} from "../identity/helpers.js";
 import { Command } from "commander";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
@@ -6,7 +9,6 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   loadConfig,
-  saveConfig,
   upsertProfile,
   removeProfile,
   upsertBinding,
@@ -25,14 +27,12 @@ import {
 } from "../util/profile-id.js";
 import { assertSafeProfileFields, assertSafeBindPath } from "../util/profile-fields.js";
 import {
-  installIncludeIf,
   uninstallIncludeIf,
   restoreGitconfigBackup,
-  writeProfileInclude,
   removeProfileArtifacts,
 } from "../identity/includeIf.js";
-import { setProfileToken, deleteProfileToken, accountKey } from "../secrets/store.js";
-import { importAndStoreToken, envForProfile, isDangerousGhArgv, ghApiLogin, ghActiveLogin, stripGitConfigEnvOverrides } from "../gh/env.js";
+import { setProfileToken, deleteProfileToken, assertValidToken, accountKey } from "../secrets/store.js";
+import { envForProfile, isDangerousGhArgv, ghApiLogin, ghActiveLogin, stripGitConfigEnvOverrides } from "../gh/env.js";
 import { generateSshKey, readPublicKey, testSshAuth } from "../ssh/keys.js";
 import {
   checkCommitIdentity,
@@ -67,192 +67,32 @@ const { version: CLI_VERSION } = require("../../package.json") as {
   version: string;
 };
 
-export function configureHooksPath(
-  hooks: string,
-  opts: {
-    global?: boolean;
-    force?: boolean;
-    /** When set, run git -C against this directory instead of cwd. */
-    bindDir?: string;
-  } = {},
-): void {
-  if (opts.global) {
-    execFileSync("git", ["config", "--global", "core.hooksPath", hooks]);
-    console.log(`core.hooksPath=${hooks} (global)`);
-    console.log(
-      "Warning: a global hooksPath replaces hooks for every repository. Prefer per-repo install without --global.",
-    );
-    return;
-  }
-
-  const targetDir = path.resolve(opts.bindDir ?? process.cwd());
-  const gitArgsPrefix = ["-C", targetDir] as string[];
-
-  let toplevel = "";
-  try {
-    toplevel = execFileSync(
-      "git",
-      [...gitArgsPrefix, "rev-parse", "--show-toplevel"],
-      {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    ).trim();
-  } catch {
-    console.log(`Hooks written to ${hooks}`);
-    console.log(
-      "Not inside a git repo — skipped core.hooksPath. Re-run `acct install` inside a repo, or pass --global.",
-    );
-    return;
-  }
-
-  // Do not walk into a parent repo when bindDir/cwd is not itself the toplevel
-  // (e.g. binding a plain directory under the acct checkout in CI).
-  if (normalizePath(toplevel) !== normalizePath(targetDir)) {
-    console.log(`Hooks written to ${hooks}`);
-    console.log(
-      `Directory ${targetDir} is not a git toplevel (found ${toplevel}) — skipped core.hooksPath.`,
-    );
-    return;
-  }
-
-  let existing = "";
-  try {
-    existing = execFileSync(
-      "git",
-      [...gitArgsPrefix, "config", "--local", "--get", "core.hooksPath"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-  } catch {
-    existing = "";
-  }
-
-  const hooksResolved = path.resolve(hooks);
-  if (existing) {
-    const existingResolved = path.resolve(existing);
-    if (existingResolved === hooksResolved) {
-      console.log(`core.hooksPath already points to acct hooks (${hooks})`);
-      return;
-    }
-    // Another acct-managed hooks dir (e.g. prior ACCT_CONFIG_DIR) may be updated.
-    if (isAcctHooksDir(existingResolved)) {
-      console.log(
-        `Updating acct core.hooksPath from ${existing} to ${hooks}`,
-      );
-    } else if (!opts.force) {
-      throw new Error(
-        `Refusing to overwrite existing core.hooksPath=${existing}. ` +
-          `Pass --force to replace it with ${hooks}, or unset it first: ` +
-          `git -C ${targetDir} config --unset core.hooksPath`,
-      );
-    } else {
-      console.warn(
-        `Overwriting existing core.hooksPath=${existing} with ${hooks} (--force)`,
-      );
-    }
-  }
-
-  execFileSync("git", [...gitArgsPrefix, "config", "core.hooksPath", hooks]);
-  console.log(
-    `core.hooksPath=${hooks} (local repo${opts.bindDir ? ` via -C ${opts.bindDir}` : ""})`,
-  );
-}
-
-/** True when dir looks like acct-installed hooks (I11b absolute hook-run). */
-function isAcctHooksDir(dir: string): boolean {
-  try {
-    const body = fs.readFileSync(path.join(dir, "pre-commit"), "utf8");
-    return body.includes("hook-run") && /\bexec\b/.test(body);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Unset core.hooksPath when it points at acct hooks.
- * Local and global are separate git config files — unsetting --global does
- * not clear a per-repo hooksPath.
- * Cite: https://git-scm.com/docs/git-config#Documentation/git-config.txt-corehooksPath
+/** Preserve an existing hooks directory as the chain target.
+ * https://git-scm.com/docs/git-config#Documentation/git-config.txt-corehooksPath
  */
-export function unsetAcctHooksPath(
-  opts: { global?: boolean; bindDir?: string } = {},
-): void {
-  if (opts.global) {
-    let existing = "";
-    try {
-      existing = execFileSync("git", ["config", "--global", "--get", "core.hooksPath"], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      }).trim();
-    } catch {
-      existing = "";
-    }
-    if (!existing) return;
-    if (!isAcctHooksDir(path.resolve(existing))) {
-      console.error(
-        `warning: global core.hooksPath=${existing} is not acct-managed; left in place.`,
-      );
-      return;
-    }
-    try {
-      execFileSync("git", ["config", "--global", "--unset", "core.hooksPath"]);
-    } catch {
-      // not set
-    }
-    return;
-  }
-
-  const targetDir = path.resolve(opts.bindDir ?? process.cwd());
-  let toplevel = "";
-  try {
-    toplevel = execFileSync(
-      "git",
-      ["-C", targetDir, "rev-parse", "--show-toplevel"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-  } catch {
-    console.error(
-      "warning: not a git repo — if you installed hooks without --global, run `acct uninstall` from that repo, or: git config --unset core.hooksPath",
-    );
-    return;
-  }
-  if (normalizePath(toplevel) !== normalizePath(targetDir)) {
-    console.error(
-      `warning: ${targetDir} is not a git toplevel — skipped local core.hooksPath unset.`,
-    );
-    return;
-  }
-
-  let existing = "";
-  try {
-    existing = execFileSync(
-      "git",
-      ["-C", targetDir, "config", "--local", "--get", "core.hooksPath"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-  } catch {
-    existing = "";
-  }
-  if (!existing) return;
-  if (!isAcctHooksDir(path.resolve(existing))) {
-    console.error(
-      `warning: local core.hooksPath=${existing} is not acct-managed; left in place.`,
-    );
-    return;
-  }
-  try {
-    execFileSync("git", [
-      "-C",
-      targetDir,
-      "config",
-      "--local",
-      "--unset",
-      "core.hooksPath",
-    ]);
-    console.log(`Unset local core.hooksPath (${existing})`);
-  } catch {
-    // ignore
-  }
+export function configureHooksPath(hooks:string,opts:{global?:boolean;repo?:boolean;force?:boolean;bindDir?:string}={}):void {
+  const global=opts.global === true || (!opts.repo && opts.global !== false && !opts.bindDir);
+  const cwd=opts.bindDir ?? process.cwd(),scope=global ? "--global":"--local";
+  const git=(args:string[])=>execFileSync("git",["config",scope,...args],{cwd,encoding:"utf8",stdio:["ignore","pipe","pipe"]});
+  let existing="";try{existing=git(["--get","core.hooksPath"]).trimEnd();}catch{/* unset */}
+  if(existing && normalizePath(path.resolve(cwd,existing)) !== normalizePath(hooks)) git(["--replace-all","acct.chainHooksPath",existing]);
+  git(["--replace-all","core.hooksPath",hooks]);failAt("hook-config");
+  console.log(`core.hooksPath=${hooks} (${global ? "global":"local repo"})`);
+}
+export function unsetAcctHooksPath(opts:{global?:boolean;bindDir?:string}={}):void {
+  const cwd=opts.bindDir ?? process.cwd();if(!fs.existsSync(cwd))return;
+  const scope=opts.global ? "--global":"--local";
+  const git=(args:string[])=>execFileSync("git",["config",scope,...args],{cwd,encoding:"utf8",stdio:["ignore","pipe","pipe"]});
+  let existing="",chain="";try{existing=git(["--get","core.hooksPath"]).trimEnd();}catch{return;}
+  const target=path.resolve(cwd,existing);
+  let owned=false;try{owned=fs.readFileSync(path.join(target,"pre-commit"),"utf8").includes("# acct managed hook v2");}catch{/* not owned */}
+  if(!owned)return;
+  try{chain=git(["--get","acct.chainHooksPath"]).trimEnd();}catch{/* default repo hooks */}
+  if(chain)git(["--replace-all","core.hooksPath",chain]);else git(["--unset-all","core.hooksPath"]);
+  try{git(["--unset-all","acct.chainHooksPath"]);}catch{/* no record */}
+}
+function preflightToken(profile:Profile):string {
+  const token=readGhAuthToken(profile);if(!token)throw new Error(`No gh token for ${profile.id}; run gh auth login or use acct profile token --stdin`);assertValidToken(token);return token;
 }
 
 async function performInit(plan: InitPlan): Promise<void> {
@@ -265,6 +105,8 @@ async function performInit(plan: InitPlan): Promise<void> {
   });
   const bindPath = path.resolve(plan.bind);
   assertSafeBindPath(bindPath);
+  const ctx=fs.existsSync(bindPath) ? resolveGitContext(bindPath,process.env) : null;
+  if(ctx?.workTree && normalizePath(bindPath) !== ctx.workTree) throw new Error("bind the repository root or a directory containing repositories; includeIf cannot apply to a subdirectory of a repository");
 
   let config = loadConfig();
   assertNoProfileIdCaseCollision(config.profiles, plan.id);
@@ -283,25 +125,21 @@ async function performInit(plan: InitPlan): Promise<void> {
     profileId: profile.id,
   });
   assertNoSecretsInConfig(config);
-  saveConfig(config);
-  if (plan.importGh) {
-    await importAndStoreToken(profile);
-    console.log(`Imported token for ${profile.githubUser} into OS keychain`);
-  }
-  installIncludeIf(config);
+  const token=plan.importGh ? preflightToken(profile):null;
+  config.installed=true;
+  updateConfig(process.env, () => config);
   const hooks = installHooks();
   try {
     configureHooksPath(hooks, {
       bindDir: bindPath,
-      global: !!plan.globalHooks,
+      global: true,
       force: !!plan.force,
     });
   } catch (e) {
     console.warn(`Could not set core.hooksPath: ${e}`);
     throw e;
   }
-  config.installed = true;
-  saveConfig(config);
+  if(token)await setProfileToken(profile,token);
   console.log(
     `Initialized profile "${profile.id}" bound to ${normalizePath(plan.bind)}`,
   );
@@ -334,6 +172,11 @@ async function runWizardAndInit(cwd: string): Promise<void> {
 export async function runCli(argv: string[]): Promise<void> {
   const program = new Command();
   program.enablePositionalOptions();
+  let mutation:ReturnType<typeof beginConfigMutation>|undefined;
+  program.hook("preAction",(_root,action)=>{
+    const mutating=["init","bind","unbind","rebind","install","uninstall","enforce"].includes(action.name()) || action.parent?.name() === "local" || (action.parent?.name() === "profile" && ["add","remove","token","ssh-key"].includes(action.name())) || (action === program && process.stdin.isTTY);
+    if(mutating)mutation=beginConfigMutation(process.cwd(),process.env,action.args.filter((a):a is string=>typeof a === "string").map(a=>path.resolve(a)));
+  });
   program.hook("postAction", (_root, action) => {
     if (["bind", "unbind", "rebind"].includes(action.name()) || (action.parent?.name() === "profile" && ["add", "remove", "token", "ssh-key"].includes(action.name())) || action.parent?.name() === "local") console.error("note: open shells keep their current acct env until you cd or run acct_refresh");
   });
@@ -368,7 +211,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--import-gh", "Import token via gh auth token --user")
     .option(
       "--global-hooks",
-      "Set core.hooksPath globally (discouraged; replaces hooks in all repos)",
+      "Accepted alias for the default global chaining hooks",
     )
     .option(
       "--force",
@@ -427,11 +270,11 @@ export async function runCli(argv: string[]): Promise<void> {
         protocol: (opts.protocol || "https") as Protocol,
         enforce: "strict",
       };
+      const token=opts.importGh ? preflightToken(profile):null;
       config = upsertProfile(config, profile);
       assertNoSecretsInConfig(config);
-      saveConfig(config);
-      writeProfileInclude(profile);
-      if (opts.importGh) await importAndStoreToken(profile);
+      updateConfig(process.env, () => config);
+      if(token) await setProfileToken(profile,token);
       console.log(`Added profile ${profile.id}`);
     });
 
@@ -467,11 +310,10 @@ export async function runCli(argv: string[]): Promise<void> {
       const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       const remaining = config.profiles.filter(other => other.id !== p.id);
-      if (!remaining.some(other => accountKey(other) === accountKey(p))) await deleteProfileToken(p);
       removeProfileArtifacts(p, process.env, remaining);
       config = removeProfile(config, id);
-      saveConfig(config);
-      installIncludeIf(config);
+      updateConfig(process.env, () => config);
+      if (!remaining.some(other => accountKey(other) === accountKey(p))) await deleteProfileToken(p);
       console.log(`Removed profile ${id}`);
     });
 
@@ -486,10 +328,11 @@ export async function runCli(argv: string[]): Promise<void> {
       const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
       if (opts.importGh) {
+        const token=preflightToken(p);
         p.followGh = true;
         config = upsertProfile(config, p);
-        saveConfig(config);
-        await importAndStoreToken(p);
+        updateConfig(process.env, () => config);
+        await setProfileToken(p,token);
         console.log("Token imported into OS keychain (follows gh auth token --user)");
         return;
       }
@@ -498,10 +341,12 @@ export async function runCli(argv: string[]): Promise<void> {
         for await (const c of process.stdin) {
           chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
         }
+        const token=Buffer.concat(chunks).toString("utf8").replace(/\n$/, "");
+        assertValidToken(token);
         p.followGh = false;
         config = upsertProfile(config, p);
-        saveConfig(config);
-        await setProfileToken(p, Buffer.concat(chunks).toString("utf8").replace(/\n$/, ""));
+        updateConfig(process.env, () => config);
+        await setProfileToken(p,token);
         console.log("Token stored in OS keychain (follow-gh off — will not overwrite from gh)");
         return;
       }
@@ -532,8 +377,7 @@ export async function runCli(argv: string[]): Promise<void> {
           p.protocol = "ssh";
         }
         config = upsertProfile(config, p);
-        saveConfig(config);
-        writeProfileInclude(p);
+        updateConfig(process.env, () => config);
         console.log(`Generated ${privateKey}`);
         console.log(`Public key:\n${readPublicKey(privateKey)}`);
         console.log(`(also at ${publicKey})`);
@@ -549,8 +393,7 @@ export async function runCli(argv: string[]): Promise<void> {
           p.protocol = opts.protocol as Protocol;
         }
         config = upsertProfile(config, p);
-        saveConfig(config);
-        writeProfileInclude(p);
+        updateConfig(process.env, () => config);
         console.log(`Attached ${p.sshKeyPath}`);
         return;
       }
@@ -577,8 +420,7 @@ export async function runCli(argv: string[]): Promise<void> {
         profileId,
         enforce: opts.enforce as EnforceMode | undefined,
       });
-      saveConfig(config);
-      installIncludeIf(config);
+      updateConfig(process.env, () => config);
       console.log(`Bound ${normalizePath(dir)} → ${profileId}`);
     });
 
@@ -589,8 +431,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .action((dir) => {
       let config = loadConfig();
       config = removeBinding(config, path.resolve(dir));
-      saveConfig(config);
-      installIncludeIf(config);
+      updateConfig(process.env, () => config);
       console.log(`Unbound ${normalizePath(dir)}`);
     });
 
@@ -854,7 +695,7 @@ export async function runCli(argv: string[]): Promise<void> {
       }
       const config = loadConfig();
       config.defaultEnforce = m as EnforceMode;
-      saveConfig(config);
+      updateConfig(process.env, () => config);
       console.log(`defaultEnforce=${m}`);
     });
 
@@ -899,22 +740,22 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("install")
-    .description("Wire includeIf; set core.hooksPath (local repo by default)")
+    .description("Wire includes and global chaining hooks; --repo handles a local override")
+    .option("--repo", "Install chaining hooks for this repository")
     .option(
       "--global",
-      "Set core.hooksPath globally (discouraged; replaces hooks in all repos)",
+      "Accepted alias for the default global chaining hooks",
     )
     .option(
       "--force",
-      "Overwrite an existing non-acct core.hooksPath in the current repo",
+      "Accepted compatibility flag; existing hooks are chained",
     )
     .action((opts) => {
       const config = loadConfig();
-      installIncludeIf(config);
-      const hooks = installHooks();
-      configureHooksPath(hooks, { global: !!opts.global, force: !!opts.force });
       config.installed = true;
-      saveConfig(config);
+      updateConfig(process.env, () => config);
+      const hooks = installHooks();
+      configureHooksPath(hooks, { global: !opts.repo, repo: !!opts.repo, force: !!opts.force });
       console.log("Installed acct git includes and hooks");
     });
 
@@ -936,7 +777,7 @@ export async function runCli(argv: string[]): Promise<void> {
       }
       const config = loadConfig();
       config.installed = false;
-      saveConfig(config);
+      updateConfig(process.env, () => config);
       console.log("Uninstalled acct managed gitconfig block");
       // I14 strips only the managed block — prior OS helpers often remain.
       // Cite: https://git-scm.com/docs/gitcredentials
@@ -1034,5 +875,18 @@ export async function runCli(argv: string[]): Promise<void> {
   const local=program.command("local").description("Manage the repository marker and native Git include");
   local.command("set").argument("[profileId]").option("--unbound").action((id,opts) => localSet(process.cwd(),id,!!opts.unbound,process.env));
   local.command("clear").action(() => localClear(process.cwd(),process.env));
-  await program.parseAsync(argv);
+  const choices=(command:Command)=>{
+    for(const option of command.options) {
+      if(option.long === "--enforce") option.choices(["strict","warn","off"]);
+      if(option.long === "--protocol") option.choices(["https","ssh"]);
+    }
+    for(const arg of command.registeredArguments) {
+      if(command.name() === "enforce")arg.choices(["strict","warn","off"]);
+      if(command.name() === "hook")arg.choices(["bash","zsh","fish","powershell"]);
+    }
+    for(const child of command.commands)choices(child);
+  };choices(program);
+  let success=false;
+  try {await program.parseAsync(argv);success=!process.exitCode;}
+  finally {mutation?.finish(success);}
 }

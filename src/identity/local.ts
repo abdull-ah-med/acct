@@ -1,3 +1,4 @@
+import {failAt} from "../util/transaction.js";
 import fs from "node:fs";
 import path from "node:path";
 import {execFileSync,spawnSync} from "node:child_process";
@@ -26,6 +27,7 @@ export function localSet(cwd:string,id:string|undefined,unbound:boolean,env:Node
   }
   git(cwd,env,["--replace-all","acct.localProfile",unbound?"":p!.id]);
   fs.writeFileSync(path.join(ctx.workTree!,".acct"),unbound ? "" : `# acct managed marker\nprofile: ${p!.id}\n`);
+  failAt("local",env);
 }
 export function localClear(cwd:string,env:NodeJS.ProcessEnv) {
   const ctx=context(cwd,env); removeOwned(cwd,env);
