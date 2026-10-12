@@ -42,7 +42,8 @@
     "postinstall": "node ./scripts/postinstall.mjs",
     "prepublishOnly": "npm run lint && npm run build && npm test && npm run pack:check && npm run pack:smoke",
     "format": "prettier --write src tests scripts bin",
-    "format:check": "prettier --check src tests scripts bin"
+    "format:check": "prettier --check src tests scripts bin",
+    "ci:local": "bash scripts/ci-local.sh"
   },
   "engines": {
     "node": ">=20"

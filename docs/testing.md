@@ -51,8 +51,9 @@ A test that still passes after you delete the assertion’s corresponding produc
 Default npm test, security, e2e and package-smoke commands use
 `scripts/test-isolated.mjs`: fresh temporary HOME/USERPROFILE, acct/XDG/gh/Git
 config, file secrets, fake gh first on PATH, cleared ambient tokens and Git
-overrides, and offline npm with a temporary cache. Package smoke clones existing
-cache entries read-only and installs locked runtime versions from the tarball.
+overrides, and a temporary npm cache. Package smoke installs the tarball with the
+locked runtime versions. Set `ACCT_TEST_OFFLINE=1` to run npm offline from a
+read-only copy of your existing cache (for sandboxes without network).
 Fixtures clean up their temporary directories; no keychain, user gitconfig or
 global npm mutation is part of the gate. Native Windows fixture launchers forward
 flags to their JS script before Node parses them.
@@ -71,3 +72,23 @@ CI (`.github/workflows/ci.yml`) is the same gate as `verification-before-complet
 | Gate | all of the above | The only allowed “CI passed” signal |
 
 Do not add `--passWithNoTests`, skip matrices, or treat lint as a substitute for `npm test`. Live dual-account e2e stays optional and off the default gate.
+
+## Before you push: `npm run ci:local`
+
+Run the CI gate locally before every push to `main`:
+
+```bash
+npm run ci:local
+```
+
+It runs the same steps as `ci.yml` (install, lint, format check, build, tests,
+package contents and smoke, security, e2e) in three cells: this machine natively,
+and Linux Node 20 and Node 22 in Docker (`node:<version>-trixie`, non-root, no
+zsh/fish, like `ubuntu-latest`). Each cell starts from a fresh copy of the files
+git would commit, so local `node_modules`, `dist` or npm caches can't hide a
+failure. `npm run ci:local -- linux` or `-- host` runs one side only.
+
+Windows can't run locally. For changes that touch paths, shells, processes,
+quoting or file permissions, push a branch first and merge to `main` only after
+its `windows-latest` jobs pass. A change is ready to land on `main` only when
+`ci:local` is green.
