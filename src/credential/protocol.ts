@@ -11,7 +11,7 @@ export type CredentialAttrs = Record<string, string>;
 /** HTTPS default port — only non-pinned profiles may accept this explicit port. */
 export const DEFAULT_HTTPS_PORT = "443";
 
-const SINGULAR_KEYS = new Set(["protocol", "host", "path", "username", "password"]);
+const SINGULAR_KEYS = new Set(["protocol", "host", "path", "username", "password", "url"]);
 
 /**
  * Split `host` / `host:port` / `[ipv6]:port` per git-credential host attribute.
@@ -125,7 +125,7 @@ export function parseCredentialInput(text: string): CredentialAttrs {
         }
       }
     } catch {
-      // ignore malformed url attr
+      conflict = true;
     }
   }
 

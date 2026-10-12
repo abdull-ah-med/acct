@@ -1,3 +1,4 @@
+import {shellHookWarning} from "../status/runtime.js";
 import {beginConfigMutation,updateConfig} from "../config/mutation.js";
 import {failAt} from "../util/transaction.js";
 import {readGhAuthToken} from "../gh/token.js";
@@ -20,7 +21,7 @@ import type { EnforceMode, Profile, Protocol } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import {resolveGitContext} from "../resolution/gitContext.js";
 import {localSet, localClear} from "../identity/local.js";
-import { normalizePath } from "../util/paths.js";
+import { normalizePath,pathIsPrefix } from "../util/paths.js";
 import {
   assertValidProfileId,
   assertNoProfileIdCaseCollision,
@@ -148,11 +149,12 @@ async function performInit(plan: InitPlan): Promise<void> {
   );
 }
 
-async function runWizardAndInit(cwd: string): Promise<void> {
+async function runWizardAndInit(cwd: string,seed?:Partial<InitPlan>): Promise<void> {
   const io = createStdioWizardIO();
   try {
     const plan = await collectInitPlan(io, {
       cwd,
+      seed,
       current: {
         name: defaultGitConfigReader("user.name", cwd),
         email: defaultGitConfigReader("user.email", cwd),
@@ -219,7 +221,7 @@ export async function runCli(argv: string[]): Promise<void> {
     )
     .action(async (opts) => {
       if (!(opts.id && opts.user && opts.email && opts.name)) {
-        await runWizardAndInit(path.resolve(String(opts.bind || process.cwd())));
+        await runWizardAndInit(path.resolve(String(opts.bind || process.cwd())),{id:opts.id,githubUser:opts.user,email:opts.email,name:opts.name,host:opts.host,protocol:opts.protocol,bind:opts.bind,force:opts.force,...(opts.importGh ? {importGh:true}:{})});
         return;
       }
       await performInit({
@@ -466,10 +468,12 @@ export async function runCli(argv: string[]): Promise<void> {
       if(resolved.conflict) console.log(resolved.conflict.detail);
       if (!resolved.profile) {
         console.log("profile: (unbound)");
+        if(loadConfig().bindings.some(b=>!fs.existsSync(b.path)))console.log("hint: binding path missing (moved or deleted?) — run acct doctor, acct rebind <old> <new>, or acct unbind <old>");
         return;
       }
       for(const chain of effectiveHelperChains(process.cwd(),process.env)) if(!chain.ok) console.log(`helper-chain-mismatch: ${chain.host}; run acct install`);
       const p = resolved.profile;
+      const shellWarning=shellHookWarning(p.host,process.env);if(shellWarning)console.log("warning: "+shellWarning);
       console.log(`profile: ${p.id}`);
       console.log(`github: ${p.githubUser}@${p.host}`);
       console.log(`identity: ${p.name} <${p.email}>`);
@@ -482,6 +486,8 @@ export async function runCli(argv: string[]): Promise<void> {
         { queryPrincipal: true, persistToken: true, bindingPath: resolved.bindingPath },
       );
       console.log(`token: ${input.hasToken ? "present (keychain)" : "missing"}`);
+      console.log(`auth state: ${input.authState}`);
+      if(input.inGitRepo && !input.hooksActive)console.log(`not enforced here (${input.hooksInactiveReason})`);
       console.log(
         `auth principal: ${input.authPrincipal ?? "(could not query)"}`,
       );
@@ -497,7 +503,7 @@ export async function runCli(argv: string[]): Promise<void> {
       }
       if (
         input.authPrincipal &&
-        input.authPrincipal !== p.githubUser
+        input.authPrincipal.toLowerCase() !== p.githubUser.toLowerCase()
       ) {
         console.log("LEAK RISK: auth principal ≠ profile github user");
       }
@@ -519,15 +525,17 @@ export async function runCli(argv: string[]): Promise<void> {
         allowEnvProfile: false,
       });
       if (!resolved.profile) {
-        console.log("unbound");
+        console.log(`actual=unknown (${resolved.conflict?.detail ?? "unbound directory"})`);
+        process.exitCode=2;
         return;
       }
       const env = await envForProfile(resolved.profile);
       const login = ghApiLogin(env);
       console.log(
-        `expected=${resolved.profile.githubUser} actual=${login ?? "?"} email=${resolved.profile.email}`,
+        `expected=${resolved.profile.githubUser} actual=${login ?? "unknown (could not verify principal)"} email=${resolved.profile.email}`,
       );
-      if (login && login !== resolved.profile.githubUser) {
+      if(!login)process.exitCode=2;
+      if (login && login.toLowerCase() !== resolved.profile.githubUser.toLowerCase()) {
         console.log(
           "mismatch — run `acct status` for what's wrong, the fix commands, and whether commit/push will go through",
         );
@@ -724,6 +732,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .command("wrap-path")
     .description("Print PATH export for wrap shims")
     .option("--powershell", "Emit PowerShell syntax")
+    .option("--fish", "Emit native Fish syntax")
     .action((opts) => {
       const dir = installWrapShims();
       process.stdout.write(wrapPathExport(dir, !!opts.powershell));
@@ -733,9 +742,10 @@ export async function runCli(argv: string[]): Promise<void> {
     .command("shell-env")
     .description("Print env exports for the cwd profile (used by shell hooks)")
     .option("--powershell", "Emit PowerShell syntax")
+    .option("--fish", "Emit native Fish syntax")
     .action(async (opts) => {
       const exports = await buildShellEnvExports();
-      process.stdout.write(shellEnvExports(exports, !!opts.powershell));
+      process.stdout.write(shellEnvExports(exports, !!opts.powershell,!!opts.fish));
     });
 
   program
@@ -872,6 +882,13 @@ export async function runCli(argv: string[]): Promise<void> {
       if (!r.ok) process.exitCode = 1;
     });
 
+  program.command("rebind").argument("<oldPath>").argument("<newPath>").action((oldPath,newPath)=>{
+    const old=normalizePath(oldPath),target=normalizePath(newPath);assertSafeBindPath(target);
+    let config=loadConfig();const moved=config.bindings.filter(b=>pathIsPrefix(old,b.path));if(!moved.length)throw new Error("No bindings at or under the old path");
+    config={...config,bindings:config.bindings.filter(b=>!pathIsPrefix(old,b.path))};
+    for(const binding of moved){const next=normalizePath(path.join(target,path.relative(old,normalizePath(binding.path))));assertSafeBindPath(next);const ctx=fs.existsSync(next)?resolveGitContext(next,process.env):null;if(ctx?.workTree && ctx.workTree!==next)throw new Error("bind the repository root or a directory containing repositories");config=upsertBinding(config,{...binding,path:next});}
+    updateConfig(process.env,()=>config);console.log(`Rebound ${old} → ${target}`);
+  });
   const local=program.command("local").description("Manage the repository marker and native Git include");
   local.command("set").argument("[profileId]").option("--unbound").action((id,opts) => localSet(process.cwd(),id,!!opts.unbound,process.env));
   local.command("clear").action(() => localClear(process.cwd(),process.env));

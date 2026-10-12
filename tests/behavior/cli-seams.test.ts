@@ -28,7 +28,7 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
     ensureDistBuild();
   });
 
-  it("status: missing token + other gh principal → leak, blocked push, legal gh flags", () => {
+  it("status: missing token reports auth mismatch and inactive hooks", () => {
     const ws = makeWorkspace(work);
     initGitIdentity(ws.workDir, work.name, work.email);
     const gh = installFakeGh(ws.root, { apiUser: "user-b" });
@@ -40,8 +40,8 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
       expect(out).toMatch(/token:\s+missing/);
       expect(out).toContain("user-b");
       expect(out).toMatch(/LEAK RISK/i);
-      expect(out).toMatch(/commit\s+allowed/);
-      expect(out).toMatch(/push\s+blocked/);
+      expect(out).toContain("not enforced here");
+      expect(out).not.toContain("will refuse");
       expect(out).not.toMatch(/gh auth login[^\n]*--user/);
       expect(out).not.toMatch(/gh auth refresh[^\n]*--user/);
       expect(illegalGhFlags(parseGhAuthInvocations(out.split("\n")))).toEqual(

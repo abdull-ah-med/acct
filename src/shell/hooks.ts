@@ -19,7 +19,7 @@ export function hookScript(
   shell: ShellKind,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const cmd = acctShellEnvCmd(shell === "powershell" ? " --powershell" : "", env);
+  const cmd = acctShellEnvCmd(shell === "powershell" ? " --powershell" : shell === "fish" ? " --fish":"", env);
   switch (shell) {
     case "bash":
     case "zsh":
@@ -53,11 +53,28 @@ acct_chpwd
 `;
     case "fish":
       return `# acct shell hook (fish)
-# Add to config.fish: acct hook fish | source
+# Add to ~/.config/fish/config.fish: acct hook fish | source
+set -gx ACCT_SHELL_HOOK fish
 function acct_chpwd --on-variable PWD
-  ${cmd.posix} | source
+  if test "$PWD" = "$_ACCT_LAST_PWD"; return; end
+  set -l _acct_exports (${cmd.posix})
+  if test $status -eq 0
+    if eval (string join \\n $_acct_exports)
+      set -g _ACCT_LAST_PWD "$PWD"
+      return
+    end
+  end
+  for key in GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST ACCT_PROFILE _ACCT_LAST_PWD
+    set -e $key
+  end
+  echo 'acct: shell refresh failed; managed credentials cleared' >&2
+  return 1
 end
-${cmd.posix} | source
+function acct_refresh
+  set -e _ACCT_LAST_PWD
+  acct_chpwd
+end
+acct_chpwd
 `;
     case "powershell":
       return `# acct shell hook (powershell)
@@ -102,12 +119,15 @@ acct_ApplyEnv
 export function shellEnvExports(
   exports: Record<string, string | null>,
   powershell = false,
+  fish = false,
 ): string {
   const lines: string[] = [];
   // T5: sticky GH_TOKEN after manual `acct shell-env` without a cd/prompt hook.
   // Cite: https://cli.github.com/manual/gh_help_environment
   // Cite: docs/research/xargs-sticky-uninstall-delete-cites-2026-08-08.md
-  if (powershell) {
+  if(fish) {
+    lines.push("# acct: persist the Fish hook with acct hook fish | source");
+  } else if (powershell) {
     lines.push(
       "# acct: install the prompt hook so env rebinds on cd — Invoke-Expression (acct hook powershell)",
     );
@@ -117,7 +137,10 @@ export function shellEnvExports(
     );
   }
   for (const [key, value] of Object.entries(exports)) {
-    if (powershell) {
+    if(fish) {
+      if(value === null)lines.push(`set -e ${key}`);
+      else lines.push(`set -gx ${key} ${fishQuote(value)}`);
+    } else if (powershell) {
       if (value === null) lines.push(`Remove-Item Env:${key} -ErrorAction SilentlyContinue`);
       else lines.push(`$env:${key} = '${value.replace(/'/g, "''")}'`);
     } else {
@@ -131,3 +154,6 @@ export function shellEnvExports(
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
+
+/** https://fishshell.com/docs/current/language.html#quotes */
+export function fishQuote(value:string):string {return "'"+value.replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'";}

@@ -7,6 +7,8 @@ import {
 
 function scenario(over: Partial<DiagnoseInput> = {}): DiagnoseInput {
   return {
+    hooksActive:true,
+    pushHooksActive:true,
     profileId: "work",
     githubUser: "user-a",
     host: "github.com",

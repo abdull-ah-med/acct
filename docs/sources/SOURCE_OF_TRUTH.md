@@ -105,3 +105,10 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 | Content Security Policy (without nonces) | https://nextjs.org/docs/app/guides/content-security-policy | 2026-08-16 (`'unsafe-inline'`; `'unsafe-eval'` in development) |
 | Open Graph protocol | https://ogp.me/ | 2026-08-16 (og:image:width/height optional; use actual pixel size) |
 | HTML script element restrictions | https://html.spec.whatwg.org/multipage/scripting.html#restrictions-for-contents-of-script-elements | 2026-08-16 (no raw `</` in script data; JSON-LD escape `<` → `\u003c`) |
+
+## Shell syntax and interactive input
+
+| Topic | URL | last_verified |
+|-------|-----|---------------|
+| Fish quoting | https://fishshell.com/docs/current/language.html#quotes | 2026-10-12 |
+| readline EOF / SIGINT | https://nodejs.org/api/readline.html | 2026-10-12 |

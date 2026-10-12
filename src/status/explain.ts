@@ -11,6 +11,10 @@ export type DiagnoseIssueCode =
   | "gh-active-mismatch";
 
 export interface DiagnoseInput {
+  hooksActive?:boolean;
+  pushHooksActive?:boolean;
+  hooksInactiveReason?:string;
+  authState?:"verified"|"unavailable"|"missing"|"mismatch";
   profileId: string;
   githubUser: string;
   host: string;
@@ -69,11 +73,11 @@ export interface DiagnoseReport {
 }
 
 function identityMatches(input: DiagnoseInput): boolean {
-  return input.commitEmail === input.email && input.commitName === input.name;
+  return input.commitEmail.toLowerCase() === input.email.toLowerCase() && input.commitName === input.name;
 }
 
 function principalMatches(input: DiagnoseInput): boolean {
-  return !!input.authPrincipal && input.authPrincipal === input.githubUser;
+  return !!input.authPrincipal && input.authPrincipal.toLowerCase() === input.githubUser.toLowerCase();
 }
 
 function isGitRepo(input: DiagnoseInput): boolean {
@@ -84,7 +88,7 @@ function storedActiveMismatches(input: DiagnoseInput): boolean {
   return (
     !!input.ghActiveChecked &&
     !!input.ghActiveUser &&
-    input.ghActiveUser !== input.githubUser
+    input.ghActiveUser.toLowerCase() !== input.githubUser.toLowerCase()
   );
 }
 
@@ -105,14 +109,14 @@ export function diagnose(input: DiagnoseInput): DiagnoseReport {
     });
   }
 
-  if (input.principalChecked && input.authPrincipal && input.authPrincipal !== input.githubUser) {
+  if (input.principalChecked && input.authPrincipal && input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()) {
     issues.push({
       code: "principal-mismatch",
       severity: "error",
       summary: `gh is authenticated as ${input.authPrincipal}, but this folder expects ${input.githubUser}`,
       detail: input.hasToken
         ? `The stored PAT for profile "${input.profileId}" belongs to ${input.authPrincipal}, not ${input.githubUser}.`
-        : `No profile token is stored, so gh falls through to your default GitHub login (${input.authPrincipal}).`,
+        : `No profile token is available; strict acct execution refuses gh and shell-env supplies a blocking token.`,
     });
   } else if (input.principalChecked && input.hasToken && !input.authPrincipal) {
     issues.push({
@@ -154,6 +158,16 @@ export function diagnose(input: DiagnoseInput): DiagnoseReport {
   const commit = commitOutlook(input);
   const push = pushOutlook(input);
   const gh = ghOutlook(input);
+  if(input.hooksActive !== true && isGitRepo(input)) {
+    commit.outlook="risk";commit.explanation=`not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"}). Effective identity: ${input.commitName} <${input.commitEmail}>.`;
+  }
+  if(input.pushHooksActive !== true && isGitRepo(input)) {
+    push.outlook="risk";push.explanation=`not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"}); push authentication depends on the remote transport.`;
+  }
+  if(input.protocol === "ssh") {
+    push.outlook=input.pushHooksActive !== true ? "risk":"n/a";
+    push.explanation=input.pushHooksActive !== true ? `not enforced here (${input.hooksInactiveReason ?? "acct hook inactive"})`:"SSH account is verified against the remote alias at push time; HTTPS auth state does not measure the SSH key.";
+  }
   const ok = issues.every((i) => i.severity !== "error");
 
   return { ok, issues, fixes, commit, push, gh };
@@ -233,7 +247,7 @@ function commitOutlook(input: DiagnoseInput): PlaneOutlook {
       explanation:
         `will go through as ${input.name} <${input.email}> ` +
         `(git author/committer from includeIf). Git commit does not use GitHub auth` +
-        (input.authPrincipal && input.authPrincipal !== input.githubUser
+        (input.authPrincipal && input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()
           ? ` — it will not use ${input.authPrincipal}.`
           : "."),
     };
@@ -266,7 +280,7 @@ function pushOutlook(input: DiagnoseInput): PlaneOutlook {
   const wrongPrincipal =
     input.principalChecked &&
     input.authPrincipal &&
-    input.authPrincipal !== input.githubUser
+    input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()
       ? input.authPrincipal
       : null;
   const unverified =
@@ -340,7 +354,7 @@ function ghOutlook(input: DiagnoseInput): PlaneOutlook {
       outlook: input.hasToken ? "allowed" : "risk",
       explanation: input.hasToken
         ? "live principal not checked (pass --online). acct exec still injects the profile token."
-        : "no profile token — raw gh uses your default gh login. Pass --online to see which user.",
+        : "no profile token — acct shell-env blocks gh in strict mode; run acct profile token <id> --import-gh.",
     };
   }
   if (storedActiveMismatches(input)) {
@@ -357,7 +371,7 @@ function ghOutlook(input: DiagnoseInput): PlaneOutlook {
       explanation: `acct exec / the shell hook injects ${input.githubUser}'s token. Raw gh without the hook still follows whatever GH_TOKEN / gh auth is in the shell.`,
     };
   }
-  if (input.authPrincipal && input.authPrincipal !== input.githubUser) {
+  if (input.authPrincipal && input.authPrincipal.toLowerCase() !== input.githubUser.toLowerCase()) {
     return {
       outlook: "leak",
       explanation:
@@ -369,7 +383,7 @@ function ghOutlook(input: DiagnoseInput): PlaneOutlook {
     return {
       outlook: "risk",
       explanation:
-        "no profile token, so raw gh uses your default gh login — not this profile. Use: acct exec -- gh … after importing a token.",
+        "no profile token — acct exec refuses gh in strict mode; shell-env exports a blocking token. Import this profile token.",
     };
   }
   return {

@@ -15,35 +15,41 @@ export interface WizardIO {
   say(line: string): void;
 }
 
+export class WizardCancelled extends Error {constructor(){super("Wizard cancelled (EOF or Ctrl-C)");this.name="WizardCancelled";}}
+
 export function createStdioWizardIO(): WizardIO & { close(): void } {
   const rl = readline.createInterface({
     input,
     crlfDelay: Infinity,
   });
   const buffer: string[] = [];
-  const waiters: Array<(line: string) => void> = [];
+  const waiters: Array<{resolve:(line:string)=>void;reject:(error:Error)=>void}> = [];
   let closed = false;
   rl.on("line", (line) => {
     const w = waiters.shift();
-    if (w) w(line);
+    if (w) w.resolve(line);
     else buffer.push(line);
   });
   rl.on("close", () => {
     closed = true;
-    while (waiters.length) waiters.shift()!("");
+    while (waiters.length) waiters.shift()!.reject(new WizardCancelled());
   });
+  const cancel=()=>{buffer.length=0;rl.close();};
+  rl.on("SIGINT",cancel);
+  process.once("SIGINT",cancel);
   return {
     async ask(prompt: string) {
       const p = prompt.endsWith(" ") ? prompt : `${prompt} `;
       output.write(p);
       if (buffer.length > 0) return buffer.shift()!;
-      if (closed) return "";
-      return await new Promise<string>((resolve) => waiters.push(resolve));
+      if (closed) throw new WizardCancelled();
+      return await new Promise<string>((resolve,reject) => waiters.push({resolve,reject}));
     },
     say(line: string) {
       output.write(`${line}\n`);
     },
     close() {
+      process.removeListener("SIGINT",cancel);
       rl.close();
     },
   };
@@ -117,16 +123,17 @@ async function askValidated(
  */
 export async function collectInitPlan(
   io: WizardIO,
-  ctx: { cwd: string; current: CurrentFolderIdentity },
+  ctx: { cwd: string; current: CurrentFolderIdentity; seed?:Partial<InitPlan> },
 ): Promise<InitPlan | null> {
-  const host = "github.com";
-  const bind = ctx.cwd;
+  const seed=ctx.seed ?? {};
+  const host = seed.host ?? "github.com";
+  const bind = seed.bind ?? ctx.cwd;
 
   io.say(`This folder: ${bind}`);
 
-  let name = "";
-  let email = "";
-  let githubUser = "";
+  let name = seed.name ?? "";
+  let email = seed.email ?? "";
+  let githubUser = seed.githubUser ?? "";
 
   if (ctx.current.name || ctx.current.email) {
     io.say(
@@ -141,7 +148,8 @@ export async function collectInitPlan(
     io.say("  gh:   (unset)");
   }
 
-  const useCurrent = await askYesNo(
+  const seeded=!!(seed.id || seed.githubUser || seed.email || seed.name);
+  const useCurrent = !seeded && await askYesNo(
     io,
     "Use the identity already in this folder?",
     currentIdentityUsable(ctx.current),
@@ -152,7 +160,7 @@ export async function collectInitPlan(
     githubUser = (ctx.current.githubUser ?? "").trim();
   }
 
-  const id = await askValidated(io, "id", "id", assertValidProfileId);
+  const id = seed.id ?? await askValidated(io, "id", "id", assertValidProfileId);
 
   if (!githubUser) {
     githubUser = await askValidated(
@@ -189,8 +197,10 @@ export async function collectInitPlan(
     email,
     name,
     host,
-    protocol: "https",
+    protocol: seed.protocol ?? "https",
     bind,
-    importGh: true,
+    importGh: seed.importGh ?? true,
+    ...(seed.force === undefined ? {}:{force:seed.force}),
+    ...(seed.globalHooks === undefined ? {}:{globalHooks:seed.globalHooks}),
   };
 }

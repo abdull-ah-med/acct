@@ -80,7 +80,7 @@ export function findProfileByUser(
   config: AcctConfig,
   user: string,
 ): Profile | undefined {
-  return config.profiles.find((p) => p.githubUser === user);
+  return config.profiles.find((p) => p.githubUser.toLowerCase() === user.toLowerCase());
 }
 
 /**

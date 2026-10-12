@@ -1,3 +1,5 @@
+import {checkShims} from "./shims.js";
+import {activeHook,shellHookWarning} from "../status/runtime.js";
 import {effectiveHelperChains} from "../identity/helpers.js";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -10,7 +12,6 @@ import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { secretsFilePath } from "../secrets/store.js";
 import { ghApiLogin } from "../gh/env.js";
 import { listProfileIdCaseCollisions } from "../util/profile-id.js";
-import { resolveAcctCliPaths } from "../enforce/hooks.js";
 import { diagnoseCwd } from "../status/collect.js";
 import {
   formatDiagnoseReport,
@@ -80,7 +81,11 @@ export async function runDoctor(
   findings.push(...checkOrphanIncFiles(config, env));
   findings.push(...checkPrePushHook(env));
   findings.push(...checkCredentialShim(env));
-  findings.push(...checkStaleHookNodePath(env));
+  findings.push(...checkShims(env));
+  const resolved=resolveFromCwd(cwd,env);
+  if(resolved.conflict)findings.push({severity:"error",code:"resolution-conflict",message:resolved.conflict.detail});
+  if(resolved.ignoredLocalAcct)findings.push({severity:"warn",code:"ignored-local-acct",message:`ignored .acct below repository root: ${resolved.ignoredLocalAcct}`});
+  if(resolved.profile){const warning=shellHookWarning(resolved.profile.host,env);if(warning)findings.push({severity:"warn",code:"shell-hook-missing",message:warning});const hook=activeHook(cwd,env);if(!hook.active && resolved.gitContext)findings.push({severity:"warn",code:"hooks-inactive",message:hook.reason,fix:"acct install --repo"});}
 
   const cwdReport = await checkCwdProfile(cwd, env, {
     queryPrincipal: !!opts.online,
@@ -367,7 +372,7 @@ function checkStaleGhToken(
   // Compare ambient token principal to cwd profile (gh environment: GH_TOKEN wins).
   // Cite: https://cli.github.com/manual/gh_help_environment
   const login = ghApiLogin(env, { timeoutMs: 3000 });
-  if (login && login !== resolved.profile.githubUser) {
+  if (login && login.toLowerCase() !== resolved.profile.githubUser.toLowerCase()) {
     return [
       {
         severity: "warn",
@@ -462,6 +467,7 @@ function checkSshKeys(
 function checkBindings(config: AcctConfig): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
   for (const b of config.bindings) {
+    if(!fs.existsSync(b.path))findings.push({severity:"warn",code:"binding-path-missing",message:`binding path missing (moved or deleted?): ${b.path}`,fix:`acct rebind "${b.path}" <new> / acct unbind "${b.path}"`});
     if (!config.profiles.some((p) => p.id === b.profileId)) {
       findings.push({
         severity: "error",
@@ -561,10 +567,9 @@ function checkGlobalHooksPath(env: NodeJS.ProcessEnv): DoctorFinding[] {
     if (normalized === acctHooks) {
       return [
         {
-          severity: "warn",
+          severity: "ok",
           code: "global-hooks-path",
-          message: `Global core.hooksPath=${value} — replaces hooks in every repository`,
-          fix: "Prefer per-repo: unset global hooksPath, then run `acct install` inside each repo",
+          message: `Global core.hooksPath=${value} — v2 shims chain existing repository hooks`,
         },
       ];
     }
@@ -690,30 +695,6 @@ function checkCredentialShim(env: NodeJS.ProcessEnv): DoctorFinding[] {
       severity: "ok",
       code: "credential-shim",
       message: "Credential shim is a regular executable (not a symlink)",
-    },
-  ];
-}
-
-function checkStaleHookNodePath(env: NodeJS.ProcessEnv): DoctorFinding[] {
-  const preCommit = path.join(hooksDir(env), "pre-commit");
-  if (!fs.existsSync(preCommit)) return [];
-  const body = fs.readFileSync(preCommit, "utf8");
-  const { node } = resolveAcctCliPaths(env);
-  if (!body.includes(node)) {
-    return [
-      {
-        severity: "warn",
-        code: "hooks-stale-node",
-        message: `Hooks bake a different node path than current process.execPath (${node})`,
-        fix: "acct install  # rewrite hooks with current node",
-      },
-    ];
-  }
-  return [
-    {
-      severity: "ok",
-      code: "hooks-node-path",
-      message: "Hook node path matches current process.execPath",
     },
   ];
 }

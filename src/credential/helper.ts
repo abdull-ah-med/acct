@@ -134,7 +134,7 @@ async function credentialOperation(argv: string[]): Promise<void> {
     // Always emit profile.githubUser so the password is paired with the correct
     // principal — never return another account's username with this token.
     // Cite: https://git-scm.com/docs/gitcredentials (helper may set username)
-    if (attrs.username && attrs.username !== profile.githubUser) {
+    if (attrs.username && attrs.username.toLowerCase() !== profile.githubUser.toLowerCase()) {
       debugLog(
         `credential get: ignoring requested username=${attrs.username}; using profile ${profile.githubUser}`,
       );
@@ -165,7 +165,7 @@ async function credentialOperation(argv: string[]): Promise<void> {
     if (!isHttpsProtocol(attrs.protocol)) {
       return;
     }
-    if (attrs.username && attrs.username !== profile.githubUser) {
+    if (attrs.username && attrs.username.toLowerCase() !== profile.githubUser.toLowerCase()) {
       return;
     }
     const current = await getProfileToken(profile);
