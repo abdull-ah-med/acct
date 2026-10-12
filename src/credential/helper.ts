@@ -49,6 +49,14 @@ function isHttpsProtocol(protocol: string | undefined): boolean {
  * Cite: docs/research/host-port-local-acct-cites-2026-08-08.md
  */
 export async function runCredentialHelper(argv: string[]): Promise<void> {
+  try { await credentialOperation(argv); }
+  catch {
+    if (argv[0] === "get") output.write("quit=1\n\n");
+    console.error("git-credential-acct: credential operation failed; run acct doctor");
+    process.exitCode = 1;
+  }
+}
+async function credentialOperation(argv: string[]): Promise<void> {
   const op = argv[0];
   if (!op || !["get", "store", "erase", "capability"].includes(op)) {
     // Unknown ops: silently ignore per gitcredentials docs
@@ -104,7 +112,7 @@ export async function runCredentialHelper(argv: string[]): Promise<void> {
     }
 
     // Follow live gh for this get, but do not write the keychain here (I17).
-    // Persist happens from status / shell-env / exec after principal check.
+    // Persist happens only from status / online doctor after principal check.
     // Cite: https://git-scm.com/docs/gitcredentials (read-only store)
     const token = await resolveProfileToken(profile, process.env, {
       persist: false,

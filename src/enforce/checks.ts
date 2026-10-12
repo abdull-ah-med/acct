@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { EnforceMode, Profile } from "../types.js";
 import { resolveFromCwd } from "../resolution/fromCwd.js";
 import { envForProfile, ghApiLogin } from "../gh/env.js";
@@ -80,7 +81,7 @@ export function hasLocalIdentityOverride(cwd: string): boolean {
 export async function checkCommitIdentity(
   cwd: string = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
-  readConfig: GitConfigReader = defaultGitConfigReader,
+  _readConfig: GitConfigReader = defaultGitConfigReader,
 ): Promise<CheckResult> {
   const resolved = resolveFromCwd(cwd, env);
   const messages: string[] = [];
@@ -91,20 +92,19 @@ export async function checkCommitIdentity(
     return { ok: true, mode: resolved.enforce, messages };
   }
 
-  const email = readConfig("user.email", cwd);
-  const name = readConfig("user.name", cwd);
   const profile = resolved.profile;
-
-  if (email !== profile.email) {
-    messages.push(
-      `Commit email is "${email || "(unset)"}" but profile "${profile.id}" requires "${profile.email}".`,
-    );
-  }
-  if (name !== profile.name) {
-    messages.push(
-      `Commit name is "${name || "(unset)"}" but profile "${profile.id}" requires "${profile.name}".`,
-    );
-  }
+  // https://git-scm.com/docs/git-var: effective identities include environment overrides.
+  const ident = (kind: string) => {
+    try {
+      const value = execFileSync("git", ["var", `GIT_${kind}_IDENT`], {cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]});
+      const match = /^(.*) <([^>]*)> \d+ [+-]\d+/.exec(value);
+      return match ? {name: match[1]!, email: match[2]!} : null;
+    } catch { return null; }
+  };
+  const author = ident("AUTHOR"), committer = ident("COMMITTER");
+  const matches = (id: ReturnType<typeof ident>) => id && id.name === profile.name && id.email.toLowerCase() === profile.email.toLowerCase();
+  if (!matches(committer)) messages.push(`Commit committer must be ${profile.name} <${profile.email}> for profile ${profile.id}. Run: acct local set ${profile.id} or acct bind`);
+  if (!matches(author) && !(matches(committer) && authorPreservingOperation(cwd, env))) messages.push(`Commit author must be ${profile.name} <${profile.email}> for profile ${profile.id}. Run: acct local set ${profile.id} or acct bind`);
 
   const ok = messages.length === 0;
   if (!ok && resolved.enforce === "warn") {
@@ -168,4 +168,56 @@ export function formatBlockMessage(
     );
   }
   return lines.join("\n");
+}
+
+/** https://git-scm.com/docs/git-rev-parse (--git-path resolves linked-worktree state). */
+export function authorPreservingOperation(cwd: string, env: NodeJS.ProcessEnv): boolean {
+  if (/^(cherry-pick|rebase|revert|am|merge)(?:[ :(-]|$)/i.test(env.GIT_REFLOG_ACTION ?? "")) return true;
+  return ["CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD", "rebase-merge", "rebase-apply"].some(state => {
+    try {
+      const file = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-path", state], {cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]}).trim();
+      return fs.existsSync(file);
+    } catch { return false; }
+  });
+}
+/** Inspect the commit object, not the configuration used for a future commit.
+ * https://git-scm.com/docs/git-log#_pretty_formats
+ */
+export async function checkRecordedCommit(cwd: string, env: NodeJS.ProcessEnv, sha = "HEAD"): Promise<CheckResult> {
+  const resolved = resolveFromCwd(cwd, env);
+  if (!resolved.profile || resolved.enforce === "off") return {ok: true, mode: resolved.enforce, messages: []};
+  const p = resolved.profile;
+  const messages: string[] = [];
+  try {
+    const fields = execFileSync("git", ["log", "-1", "--format=%an%x00%ae%x00%cn%x00%ce", sha], {cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]}).trimEnd().split("\0");
+    const matches = (name: string | undefined, email: string | undefined) => name === p.name && email?.toLowerCase() === p.email.toLowerCase();
+    const committer = matches(fields[2], fields[3]);
+    if (!committer) messages.push(`Commit ${sha} committer ${fields[2]} <${fields[3]}> differs from ${p.name} <${p.email}>.`);
+    let preserved = authorPreservingOperation(cwd, env);
+    if (!preserved && committer) {
+      // Reflog records locally performed author-preserving operations.
+      // https://git-scm.com/docs/git-reflog ; no provenance is stored in commit objects.
+      const object = execFileSync("git", ["rev-parse", sha], {cwd, env, encoding: "utf8"}).trim();
+      const reflog = execFileSync("git", ["reflog", "show", "--all", "--format=%H%x00%gs"], {cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]});
+      preserved = reflog.split("\n").some(line => line.startsWith(object + "\0") && /^(cherry-pick|rebase|revert|am|merge)(?:[ :(-]|$)/i.test(line.split("\0")[1] ?? ""));
+    }
+    if (!matches(fields[0], fields[1]) && !(committer && preserved)) messages.push(`Commit ${sha} author ${fields[0]} <${fields[1]}> differs from ${p.name} <${p.email}>.`);
+  } catch { messages.push(`Could not inspect commit ${sha}.`); }
+  return {ok: resolved.enforce === "warn" || messages.length === 0, mode: resolved.enforce, messages};
+}
+export async function checkOutgoingCommits(cwd: string, env: NodeJS.ProcessEnv, remote: string, input: string): Promise<CheckResult> {
+  const resolved = resolveFromCwd(cwd, env), messages: string[] = [];
+  for (const line of input.trim().split("\n").filter(Boolean)) {
+    const [, local, , old] = line.split(/\s+/);
+    if (!local || !old || !/^[a-f0-9]{40,64}$/i.test(local) || !/^[a-f0-9]{40,64}$/i.test(old)) { messages.push("Invalid pre-push ref input"); continue; }
+    if (/^0+$/.test(local)) continue;
+    try {
+      let known = false;
+      if (!/^0+$/.test(old)) { try { execFileSync("git", ["cat-file", "-e", old + "^{commit}"], {cwd, env, stdio: "ignore"}); known = true; } catch { /* not fetched */ } }
+      const range = known ? [old + ".." + local] : [local, "--not", "--remotes=" + remote];
+      const commits = execFileSync("git", ["rev-list", ...range], {cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]}).trim().split("\n").filter(Boolean);
+      for (const commit of commits) messages.push(...(await checkRecordedCommit(cwd, env, commit)).messages);
+    } catch { messages.push("Could not list outgoing commits"); }
+  }
+  return {ok: resolved.enforce !== "strict" || messages.length === 0, mode: resolved.enforce, messages};
 }

@@ -28,7 +28,7 @@ export async function buildShellEnvExports(
   const exports: Record<string, string | null> = {};
 
   if (resolved.profile) {
-    const profileEnv = await envForProfile(resolved.profile, envForResolve);
+    const profileEnv = await envForProfile(resolved.profile, envForResolve, resolved.enforce);
     exports.ACCT_PROFILE = resolved.profile.id;
     exports.GH_TOKEN = profileEnv.GH_TOKEN ?? null;
     exports.GITHUB_TOKEN = null;

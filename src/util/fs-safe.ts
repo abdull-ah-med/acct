@@ -94,18 +94,16 @@ export function withFileLock<T>(
       sleepSync(LOCK_RETRY_MS);
     }
   }
+  const release = () => {
+    try { if (fd !== undefined) fs.closeSync(fd); } catch { /* closed */ }
+    try { fs.unlinkSync(lockPath); } catch { /* removed */ }
+  };
   try {
-    return fn();
-  } finally {
-    try {
-      if (fd !== undefined) fs.closeSync(fd);
-    } catch {
-      // ignore
+    const result = fn();
+    if (result && typeof (result as {then?: unknown}).then === "function") {
+      return (Promise.resolve(result).finally(release) as T);
     }
-    try {
-      fs.unlinkSync(lockPath);
-    } catch {
-      // ignore
-    }
-  }
+    release();
+    return result;
+  } catch (error) { release(); throw error; }
 }

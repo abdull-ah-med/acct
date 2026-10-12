@@ -1,11 +1,14 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import type { Profile } from "../types.js";
+import type { Profile, EnforceMode } from "../types.js";
 import {
   isGithubDotComFamily,
+  canonicalHost,
   setProfileToken,
 } from "../secrets/store.js";
 import { importTokenFromGh, resolveProfileToken } from "./token.js";
+
+import { resolveRealGh } from "./real.js";
 
 export { importTokenFromGh } from "./token.js";
 
@@ -21,32 +24,14 @@ export async function importAndStoreToken(profile: Profile): Promise<void> {
 export async function envForProfile(
   profile: Profile,
   base: NodeJS.ProcessEnv = process.env,
+  mode: EnforceMode = profile.enforce ?? "strict",
 ): Promise<NodeJS.ProcessEnv> {
-  const env: NodeJS.ProcessEnv = { ...base };
-  env.ACCT_PROFILE = profile.id;
-  const token = await resolveProfileToken(profile, base);
-  if (token) {
-    if (isGithubDotComFamily(profile.host)) {
-      env.GH_TOKEN = token;
-      delete env.GITHUB_TOKEN;
-      delete env.GH_ENTERPRISE_TOKEN;
-      delete env.GITHUB_ENTERPRISE_TOKEN;
-    } else {
-      env.GH_ENTERPRISE_TOKEN = token;
-      env.GH_HOST = profile.host;
-      delete env.GH_TOKEN;
-      delete env.GITHUB_TOKEN;
-    }
-  } else {
-    // Clear stale tokens so they cannot override
-    delete env.GH_TOKEN;
-    delete env.GITHUB_TOKEN;
-    delete env.GH_ENTERPRISE_TOKEN;
-    delete env.GITHUB_ENTERPRISE_TOKEN;
-  }
-  if (profile.host !== "github.com") {
-    env.GH_HOST = profile.host;
-  }
+  const env = { ...base, ACCT_PROFILE: profile.id, GH_HOST: canonicalHost(profile.host) } as NodeJS.ProcessEnv;
+  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]) delete env[key];
+  let token = await resolveProfileToken(profile, base, {allowNetwork: false, persist: false});
+  if (!token && mode !== "off") console.error(`acct: no token for profile ${profile.id} — gh is blocked here; run: acct profile token ${profile.id} --import-gh`);
+  if (!token && mode === "strict") token = "acct-blocked-no-token";
+  if (token) env[isGithubDotComFamily(profile.host) ? "GH_TOKEN" : "GH_ENTERPRISE_TOKEN"] = token;
   return env;
 }
 
@@ -64,7 +49,7 @@ export function ghApiLogin(
   opts: { timeoutMs?: number } = {},
 ): string | null {
   try {
-    const out = execFileSync("gh", ["api", "user", "--jq", ".login"], {
+    const out = execFileSync(resolveRealGh(env), ["api", "user", "--jq", ".login"], {
       encoding: "utf8",
       env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -95,7 +80,7 @@ export function ghActiveLogin(
   delete env.GITHUB_ENTERPRISE_TOKEN;
   try {
     const out = execFileSync(
-      "gh",
+      resolveRealGh(env),
       ["auth", "status", "--hostname", host, "--active", "--json", "hosts"],
       {
         encoding: "utf8",
@@ -787,11 +772,17 @@ function shellCPositionalsDangerous(
 }
 
 /** Literal `gh auth <dangerous>` subsequence anywhere in argv. */
+function directGhAuthDangerous(argv: string[]): boolean {
+  const end = argv.indexOf("--", 1);
+  const words = argv.slice(1, end < 0 ? undefined : end).map(a => a.toLowerCase());
+  const first = words.findIndex(a => !a.startsWith("-"));
+  if (first < 0 || words[first] !== "auth") return false;
+  const rest = words.slice(first + 1);
+  return rest.some(a => DANGEROUS_GH_AUTH.has(a)) || (rest.includes("status") && rest.some(a => a === "-t" || a === "--show-token"));
+}
 function argvHasGhAuthDangerSubsequence(argv: string[]): boolean {
-  for (let j = 0; j < argv.length - 2; j++) {
-    if (commandBasename(argv[j]!) !== "gh") continue;
-    if (argv[j + 1]?.toLowerCase() !== "auth") continue;
-    if (DANGEROUS_GH_AUTH.has(argv[j + 2]!.toLowerCase())) return true;
+  for (let j = 0; j < argv.length; j++) {
+    if (commandBasename(argv[j]!) === "gh" && directGhAuthDangerous(argv.slice(j))) return true;
   }
   return false;
 }
@@ -988,11 +979,7 @@ export function isDangerousGhArgv(argv: string[]): boolean {
 
   const base = commandBasename(rest[0]!);
   if (base === "gh") {
-    return (
-      rest[1]?.toLowerCase() === "auth" &&
-      !!rest[2] &&
-      DANGEROUS_GH_AUTH.has(rest[2]!.toLowerCase())
-    );
+    return directGhAuthDangerous(rest);
   }
 
   if (

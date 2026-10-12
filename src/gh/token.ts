@@ -5,9 +5,13 @@ import {
   setProfileToken,
   secretStoreOverriddenForTests,
   isGithubDotComFamily,
+  canonicalHost,
 } from "../secrets/store.js";
 
+import { resolveRealGh } from "./real.js";
+
 export interface ResolveProfileTokenOptions {
+  allowNetwork?: boolean;
   /**
    * When false, return a live `gh auth token` without writing the keychain.
    * Credential helper `get` must be read-only for secrets (I17).
@@ -33,12 +37,12 @@ export function readGhAuthToken(
   delete env.GITHUB_ENTERPRISE_TOKEN;
   try {
     const out = execFileSync(
-      "gh",
+      resolveRealGh(env),
       [
         "auth",
         "token",
         "--hostname",
-        profile.host,
+        canonicalHost(profile.host),
         "--user",
         profile.githubUser,
       ],
@@ -69,14 +73,15 @@ export function loginForToken(
   delete env.GITHUB_TOKEN;
   delete env.GH_ENTERPRISE_TOKEN;
   delete env.GITHUB_ENTERPRISE_TOKEN;
+  env.GH_HOST = canonicalHost(host);
   if (isGithubDotComFamily(host)) {
     env.GH_TOKEN = token;
   } else {
     env.GH_ENTERPRISE_TOKEN = token;
-    env.GH_HOST = host;
+    env.GH_HOST = canonicalHost(host);
   }
   try {
-    const out = execFileSync("gh", ["api", "user", "--jq", ".login"], {
+    const out = execFileSync(resolveRealGh(env), ["api", "user", "--jq", ".login"], {
       encoding: "utf8",
       env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -118,8 +123,8 @@ export async function resolveProfileToken(
   env: NodeJS.ProcessEnv = process.env,
   opts: ResolveProfileTokenOptions = {},
 ): Promise<string | null> {
-  const persist = opts.persist !== false;
-  const stored = await getProfileToken(profile);
+  const persist = opts.persist === true && opts.allowNetwork === true;
+  const stored = await getProfileToken(profile, env);
   if (!shouldFollowGh(profile, env)) return stored;
 
   const live = readGhAuthToken(profile, env);
@@ -132,11 +137,13 @@ export async function resolveProfileToken(
   }
 
   const login = loginForToken(live, profile.host, env);
-  if (!principalMatches(profile, login)) {
+  if (login && !principalMatches(profile, login)) {
+    console.error(`acct warning: live gh token principal differs from profile ${profile.id}; using stored token`);
     return stored;
   }
+  if (!login) return live;
   try {
-    await setProfileToken(profile, live);
+    await setProfileToken(profile, live, env);
   } catch {
     // Still use the live token even if the keychain write fails.
   }

@@ -26,13 +26,13 @@ export function resolveAcctCliPaths(
 }
 
 export function renderHookScript(
-  hook: "pre-commit" | "pre-push",
+  hook: "pre-commit" | "pre-merge-commit" | "post-commit" | "pre-push",
   node: string,
   acctJs: string,
 ): string {
   return `#!/bin/sh
 # acct managed ${hook} — absolute paths (I11b); do not rely on PATH
-exec ${shellQuote(node)} ${shellQuote(acctJs)} hook-run ${hook}
+exec ${shellQuote(node)} ${shellQuote(acctJs)} hook-run ${hook} "$@"
 `;
 }
 
@@ -40,6 +40,9 @@ export function installHooks(env: NodeJS.ProcessEnv = process.env): string {
   const dir = hooksDir(env);
   ensureAcctDir(dir);
   const { node, acctJs } = resolveAcctCliPaths(env);
+  for (const hook of ["pre-merge-commit", "post-commit"] as const) {
+    fs.writeFileSync(path.join(dir, hook), renderHookScript(hook, node, acctJs), {mode: 0o755});
+  }
   const preCommit = path.join(dir, "pre-commit");
   const prePush = path.join(dir, "pre-push");
   fs.writeFileSync(preCommit, renderHookScript("pre-commit", node, acctJs), {

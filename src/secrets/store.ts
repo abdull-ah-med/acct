@@ -16,8 +16,18 @@ export interface SecretStore {
   delete(account: string): Promise<void>;
 }
 
-function accountKey(profile: Profile): string {
-  return `${profile.host}::${profile.githubUser}`;
+export function canonicalHost(host: string): string { return host.toLowerCase().replace(/:443$/, ""); }
+export function accountKey(profile: Profile): string {
+  return `${canonicalHost(profile.host)}::${profile.githubUser.toLowerCase()}`;
+}
+export class SecretStoreError extends Error {
+  constructor(readonly code: "NOT_FOUND" | "CORRUPT" | "DENIED" | "UNAVAILABLE") {
+    super(code === "CORRUPT" ? "Corrupt secrets.json; repair the secret store and re-import the token" : `Secret store ${code.toLowerCase()}`);
+    this.name = "SecretStoreError";
+  }
+}
+export function assertValidToken(token: unknown): asserts token is string {
+  if (typeof token !== "string" || !token || /[\s\0]/u.test(token)) throw new Error("Invalid token: expected a nonempty string without whitespace or NUL");
 }
 
 /** In-memory store for tests */
@@ -65,35 +75,35 @@ export class FileSecretStore implements SecretStore {
       ) {
         throw new Error("not an object");
       }
+      for (const value of Object.values(parsed)) { try { assertValidToken(value); } catch { throw new SecretStoreError("CORRUPT"); } }
       return parsed as Record<string, string>;
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Corrupt secrets.json at ${this.filePath} (${detail}). ` +
-          `Check ${this.backupPath()} for a prior good copy before rewriting.`,
-      );
-    }
+    } catch { throw new SecretStoreError("CORRUPT"); }
   }
 
   private writeUnlocked(data: Record<string, string>): void {
     ensureAcctDir(path.dirname(this.filePath));
-    if (fs.existsSync(this.filePath)) {
-      try {
-        fs.copyFileSync(this.filePath, this.backupPath());
-        try {
-          fs.chmodSync(this.backupPath(), 0o600);
-        } catch {
-          // best effort
-        }
-      } catch {
-        // backup best-effort
-      }
-    }
-    atomicWriteFileSync(this.filePath, JSON.stringify(data), 0o600);
+    fs.rmSync(this.backupPath(), {force: true});
+    if (Object.keys(data).length === 0) fs.rmSync(this.filePath, {force: true});
+    else atomicWriteFileSync(this.filePath, JSON.stringify(data), 0o600);
   }
 
   private withLock<T>(fn: () => T): T {
     return withFileLock(this.lockPath(), fn);
+  }
+
+  async migrateTo(primary: SecretStore): Promise<void> {
+    await this.withLock(async () => {
+      const data = this.readUnlocked();
+      for (const [legacy, secret] of Object.entries(data)) {
+        const [host, user] = legacy.split("::");
+        const key = user ? `${canonicalHost(host!)}::${user.toLowerCase()}` : legacy;
+        try {
+          if (await primary.get(key) == null) await primary.set(key, secret);
+          delete data[legacy];
+        } catch { console.error("acct warning: secret migration incomplete; run acct doctor"); }
+      }
+      this.writeUnlocked(data);
+    });
   }
 
   async get(account: string): Promise<string | null> {
@@ -101,6 +111,7 @@ export class FileSecretStore implements SecretStore {
   }
 
   async set(account: string, secret: string): Promise<void> {
+    assertValidToken(secret);
     this.withLock(() => {
       const data = this.readUnlocked();
       data[account] = secret;
@@ -132,28 +143,16 @@ function fileStorePath(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 async function keyringStore(): Promise<SecretStore> {
-  const { Entry } = await import("@napi-rs/keyring");
+  let Entry: typeof import("@napi-rs/keyring").Entry;
+  try { ({Entry} = await import("@napi-rs/keyring")); } catch { throw new SecretStoreError("UNAVAILABLE"); }
+  const failure = (e: unknown) => new SecretStoreError(/denied|permission|locked/i.test(e instanceof Error ? e.message : "") ? "DENIED" : "UNAVAILABLE");
+  // Installed @napi-rs/keyring index.d.ts: getPassword returns null for absence;
+  // deleteCredential returns false for absence. Other errors must propagate.
+  // https://github.com/Brooooooklyn/keyring-node
   return {
-    async get(account: string) {
-      try {
-        const entry = new Entry(SERVICE, account);
-        return entry.getPassword();
-      } catch {
-        return null;
-      }
-    },
-    async set(account: string, secret: string) {
-      const entry = new Entry(SERVICE, account);
-      entry.setPassword(secret);
-    },
-    async delete(account: string) {
-      try {
-        const entry = new Entry(SERVICE, account);
-        entry.deletePassword();
-      } catch {
-        // missing is fine
-      }
-    },
+    async get(account) { try { return new Entry(SERVICE, account).getPassword(); } catch (e) { throw failure(e); } },
+    async set(account, secret) { try { new Entry(SERVICE, account).setPassword(secret); } catch (e) { throw failure(e); } },
+    async delete(account) { try { new Entry(SERVICE, account).deleteCredential(); } catch (e) { throw failure(e); } },
   };
 }
 
@@ -163,35 +162,23 @@ async function keyringStore(): Promise<SecretStore> {
  * on disk after moving to keyring.
  */
 export class PreferKeyringStore implements SecretStore {
-  constructor(
-    private readonly primary: SecretStore,
-    private readonly fileFallback: SecretStore,
-  ) {}
-
+  private migration: Promise<void> | null = null;
+  constructor(private readonly primary: SecretStore, private readonly fileFallback: SecretStore) {}
+  private ready(): Promise<void> {
+    return this.migration ??= this.fileFallback instanceof FileSecretStore ? this.fileFallback.migrateTo(this.primary) : Promise.resolve();
+  }
   async get(account: string): Promise<string | null> {
-    try {
-      const v = await this.primary.get(account);
-      if (v != null) return v;
-    } catch {
-      // fall through to migration read
-    }
-    return this.fileFallback.get(account);
+    await this.ready();
+    return await this.primary.get(account) ?? await this.fileFallback.get(account);
   }
-
   async set(account: string, secret: string): Promise<void> {
-    await this.primary.set(account, secret);
-    await this.fileFallback.delete(account);
+    await this.ready(); await this.primary.set(account, secret); await this.fileFallback.delete(account);
   }
-
   async delete(account: string): Promise<void> {
-    try {
-      await this.primary.delete(account);
-    } catch {
-      // ignore
-    }
-    await this.fileFallback.delete(account);
+    await this.ready(); await this.primary.delete(account); await this.fileFallback.delete(account);
   }
 }
+const autoStores = new Map<string, Promise<SecretStore>>();
 
 export async function getSecretStore(
   env: NodeJS.ProcessEnv = process.env,
@@ -201,21 +188,21 @@ export async function getSecretStore(
   const file = new FileSecretStore(fileStorePath(env));
   if (backend === "file") return file;
   if (backend === "keyring") return keyringStore();
-  // auto: keyring required; file only for migration reads, never for new writes
-  try {
-    const primary = await keyringStore();
-    return new PreferKeyringStore(primary, file);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `OS keychain unavailable (${detail}). Set ACCT_SECRET_BACKEND=file only if you accept plaintext secrets.json under the acct config dir.`,
-    );
-  }
+  // One sweep on first access for this configuration directory in a process.
+  const key = fileStorePath(env);
+  let store = autoStores.get(key);
+  if (!store) { store = keyringStore().then(primary => new PreferKeyringStore(primary, file)); autoStores.set(key, store); }
+  return store;
 }
 
-export async function getProfileToken(profile: Profile): Promise<string | null> {
-  const store = await getSecretStore();
-  const token = await store.get(accountKey(profile));
+export async function getProfileToken(profile: Profile, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  const store = await getSecretStore(env);
+  let token = await store.get(accountKey(profile));
+  const legacy = `${profile.host}::${profile.githubUser}`;
+  if (!token && legacy !== accountKey(profile)) {
+    token = await store.get(legacy);
+    if (token) { await store.set(accountKey(profile), token); await store.delete(legacy); }
+  }
   if (token && process.env.ACCT_DEBUG) {
     // Never interpolate token material — even redacted prefixes are forbidden.
     debugLog(
@@ -228,19 +215,22 @@ export async function getProfileToken(profile: Profile): Promise<string | null> 
 export async function setProfileToken(
   profile: Profile,
   token: string,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
-  if (!token.trim()) throw new Error("Refusing to store empty token");
-  const store = await getSecretStore();
-  await store.set(accountKey(profile), token.trim());
+  assertValidToken(token);
+  const store = await getSecretStore(env);
+  await store.set(accountKey(profile), token);
 }
 
 export async function deleteProfileToken(profile: Profile): Promise<void> {
   const store = await getSecretStore();
   await store.delete(accountKey(profile));
+  const legacy = `${profile.host}::${profile.githubUser}`;
+  if (legacy !== accountKey(profile)) await store.delete(legacy);
 }
 
 export function isGithubDotComFamily(host: string): boolean {
-  const h = host.toLowerCase();
+  const h = canonicalHost(host);
   return h === "github.com" || h.endsWith(".ghe.com");
 }
 

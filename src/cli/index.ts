@@ -28,11 +28,13 @@ import {
   writeProfileInclude,
   removeProfileArtifacts,
 } from "../identity/includeIf.js";
-import { setProfileToken, deleteProfileToken } from "../secrets/store.js";
+import { setProfileToken, deleteProfileToken, accountKey } from "../secrets/store.js";
 import { importAndStoreToken, envForProfile, isDangerousGhArgv, ghApiLogin, ghActiveLogin, stripGitConfigEnvOverrides } from "../gh/env.js";
 import { generateSshKey, readPublicKey, testSshAuth } from "../ssh/keys.js";
 import {
   checkCommitIdentity,
+  checkRecordedCommit,
+  checkOutgoingCommits,
   checkPushAuth,
   formatBlockMessage,
   defaultGitConfigReader,
@@ -47,6 +49,8 @@ import {
 } from "./wizard.js";
 import { buildShellEnvExports } from "../shell/env.js";
 import { installWrapShims, wrapPathExport } from "../shell/wrap.js";
+import { resolveRealGh, withoutWrapPath } from "../gh/real.js";
+import { commandBasename, stripWrapperArgv } from "../gh/env.js";
 import { runDoctor } from "../doctor/run.js";
 import {
   diagnose,
@@ -326,6 +330,10 @@ async function runWizardAndInit(cwd: string): Promise<void> {
 
 export async function runCli(argv: string[]): Promise<void> {
   const program = new Command();
+  program.enablePositionalOptions();
+  program.hook("postAction", (_root, action) => {
+    if (["bind", "unbind", "rebind"].includes(action.name()) || (action.parent?.name() === "profile" && ["add", "remove", "token", "ssh-key"].includes(action.name())) || action.parent?.name() === "local") console.error("note: open shells keep their current acct env until you cd or run acct_refresh");
+  });
   program
     .name("acct")
     .description(
@@ -455,8 +463,9 @@ export async function runCli(argv: string[]): Promise<void> {
       let config = loadConfig();
       const p = findProfileById(config, id);
       if (!p) throw new Error(`Unknown profile: ${id}`);
-      await deleteProfileToken(p);
-      removeProfileArtifacts(p);
+      const remaining = config.profiles.filter(other => other.id !== p.id);
+      if (!remaining.some(other => accountKey(other) === accountKey(p))) await deleteProfileToken(p);
+      removeProfileArtifacts(p, process.env, remaining);
       config = removeProfile(config, id);
       saveConfig(config);
       installIncludeIf(config);
@@ -489,7 +498,7 @@ export async function runCli(argv: string[]): Promise<void> {
         p.followGh = false;
         config = upsertProfile(config, p);
         saveConfig(config);
-        await setProfileToken(p, Buffer.concat(chunks).toString("utf8"));
+        await setProfileToken(p, Buffer.concat(chunks).toString("utf8").replace(/\n$/, ""));
         console.log("Token stored in OS keychain (follow-gh off — will not overwrite from gh)");
         return;
       }
@@ -621,7 +630,7 @@ export async function runCli(argv: string[]): Promise<void> {
         resolved.enforce,
         process.cwd(),
         process.env,
-        { queryPrincipal: true, bindingPath: resolved.bindingPath },
+        { queryPrincipal: true, persistToken: true, bindingPath: resolved.bindingPath },
       );
       console.log(`token: ${input.hasToken ? "present (keychain)" : "missing"}`);
       console.log(
@@ -711,6 +720,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("exec")
+    .passThroughOptions()
     .description(
       "Run a command with profile GH_TOKEN (no gh auth switch/login/token). Git HTTPS still follows cwd/.acct.",
     )
@@ -752,11 +762,20 @@ export async function runCli(argv: string[]): Promise<void> {
             `Git HTTPS still follows the directory/.acct. Pass --allow-cross-profile to inject the other account's GH_TOKEN for gh only.`,
         );
       }
-      const env = stripGitConfigEnvOverrides(
-        resolved.profile
-          ? await envForProfile(resolved.profile)
-          : { ...process.env },
-      );
+      if (opts.profile && !resolved.profile) throw new Error(`Unknown profile: ${opts.profile}`);
+      const depth = Number(process.env.ACCT_EXEC_DEPTH ?? 0) + 1;
+      if (!Number.isFinite(depth) || depth > 2) throw new Error("acct exec recursion depth exceeded");
+      const effective = stripWrapperArgv(command);
+      const isGh = !!effective[0] && commandBasename(effective[0]) === "gh";
+      const env = resolved.profile
+        ? stripGitConfigEnvOverrides(await envForProfile(resolved.profile, process.env, resolved.enforce))
+        : { ...process.env };
+      if (!resolved.profile) console.error("acct note: unbound directory — acct is not managing gh here");
+      if (resolved.profile && resolved.enforce === "strict" && isGh && (!env.GH_TOKEN && !env.GH_ENTERPRISE_TOKEN || env.GH_TOKEN === "acct-blocked-no-token" || env.GH_ENTERPRISE_TOKEN === "acct-blocked-no-token")) throw new Error(`No token for profile ${resolved.profile.id}; refusing to spawn gh`);
+      env.PATH = withoutWrapPath(env);
+      env.ACCT_EXEC_DEPTH = String(depth);
+      const spawnCommand = [...command];
+      if (isGh) spawnCommand[command.length - effective.length] = resolveRealGh(env);
       if (
         opts.profile &&
         cwdResolved.profile &&
@@ -773,7 +792,7 @@ export async function runCli(argv: string[]): Promise<void> {
         );
       }
       const code = await new Promise<number>((resolve) => {
-        const child = spawn(command[0]!, command.slice(1), {
+        const child = spawn(spawnCommand[0]!, spawnCommand.slice(1), {
           stdio: "inherit",
           env,
           shell: false,
@@ -786,14 +805,15 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("clone")
+    .passThroughOptions()
     .description("git clone with the cwd profile's GH_TOKEN injected")
     .argument("<url>")
-    .argument("[dir]")
+    .argument("[args...]", "git clone arguments after the URL")
     .option(
       "--profile <id>",
       "Inject profile GH_TOKEN for helpers that honor it; git still uses cwd binding",
     )
-    .action(async (url, dir, opts) => {
+    .action(async (url, cloneArgs: string[], opts) => {
       const resolved = resolveFromCwd(process.cwd(), process.env, {
         forcedProfileId: opts.profile,
         allowEnvProfile: false,
@@ -803,8 +823,7 @@ export async function runCli(argv: string[]): Promise<void> {
           ? await envForProfile(resolved.profile)
           : { ...process.env },
       );
-      const args = ["clone", url];
-      if (dir) args.push(dir);
+      const args = ["clone", url, ...cloneArgs];
       const result = spawnSync("git", args, { stdio: "inherit", env });
       if (result.error) {
         console.error(`acct clone failed: ${result.error.message}`);
@@ -930,10 +949,12 @@ export async function runCli(argv: string[]): Promise<void> {
   program
     .command("hook-run")
     .description("Internal: run enforce hook (pre-commit|pre-push)")
-    .argument("<hook>", "pre-commit|pre-push")
-    .action(async (hook) => {
-      if (hook === "pre-commit") {
-        const result = await checkCommitIdentity();
+    .argument("<hook>", "pre-commit|pre-merge-commit|post-commit|pre-push")
+    .argument("[remote]")
+    .argument("[url]")
+    .action(async (hook, remote, _url) => {
+      if (["pre-commit", "pre-merge-commit", "post-commit"].includes(hook)) {
+        const result = hook === "post-commit" ? await checkRecordedCommit(process.cwd(), process.env) : await checkCommitIdentity();
         if (!result.ok) {
           const resolved = resolveFromCwd();
           console.error(
@@ -957,7 +978,12 @@ export async function runCli(argv: string[]): Promise<void> {
         return;
       }
       if (hook === "pre-push") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+        const outgoing = await checkOutgoingCommits(process.cwd(), process.env, remote ?? "origin", Buffer.concat(chunks).toString("utf8"));
         const result = await checkPushAuth();
+        result.messages.push(...outgoing.messages);
+        result.ok = result.ok && outgoing.ok;
         if (!result.ok) {
           const resolved = resolveFromCwd();
           console.error(

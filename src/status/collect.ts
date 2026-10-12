@@ -15,6 +15,7 @@ export interface CollectDiagnoseOptions {
    * already have a cheap reason to, i.e. always for status).
    */
   queryPrincipal?: boolean;
+  persistToken?: boolean;
   /** Directory binding; includeIf gitdir only matches repos under this path. */
   bindingPath?: string;
 }
@@ -26,7 +27,7 @@ export async function collectDiagnoseInput(
   env: NodeJS.ProcessEnv,
   opts: CollectDiagnoseOptions = {},
 ): Promise<DiagnoseInput> {
-  const hasToken = !!(await resolveProfileToken(profile, env));
+  const hasToken = !!(await resolveProfileToken(profile, env, {allowNetwork: opts.queryPrincipal !== false && opts.persistToken === true, persist: opts.persistToken === true}));
   const queryPrincipal = opts.queryPrincipal !== false;
   let authPrincipal: string | null = null;
   let ghActiveUser: string | null = null;

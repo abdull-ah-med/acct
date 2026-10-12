@@ -14,6 +14,12 @@ export function installNativeCommand(
   fs.mkdirSync(binDir, { recursive: true });
   const executable = path.join(binDir, process.platform === "win32" ? `${name}.exe` : name);
   const script = path.join(binDir, `${name}.cjs`);
+  if (process.platform !== "win32") {
+    fs.writeFileSync(script, source);
+    const q = (v: string) => "'" + v.replace(/'/g, "'\\''") + "'";
+    fs.writeFileSync(executable, `#!/bin/sh\nexec ${q(process.execPath)} ${q(script)} "$@"\n`, {mode: 0o755});
+    return {executable, env: {}};
+  }
   const bootstrap = path.join(binDir, `${name}-bootstrap.cjs`);
   fs.copyFileSync(process.execPath, executable, fs.constants.COPYFILE_FICLONE);
   fs.chmodSync(executable, 0o755);

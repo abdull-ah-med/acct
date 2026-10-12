@@ -5,7 +5,7 @@ import type { AcctConfig, Profile } from "../types.js";
 import { gitIncDir, backupDir, acctConfigDir } from "../config/store.js";
 import { assertSafeSshHost } from "../ssh/keys.js";
 import { splitHostPort } from "../credential/protocol.js";
-import { homeDir, normalizePath, posixShellSingleQuote } from "../util/paths.js";
+import { homeDir, normalizePath, posixShellSingleQuote, pathIsPrefix } from "../util/paths.js";
 import {
   assertSafeBindPath,
   assertSafeProfileFields,
@@ -96,6 +96,7 @@ export function writeProfileInclude(
 export function removeProfileArtifacts(
   profile: Profile,
   env: NodeJS.ProcessEnv = process.env,
+  remaining: Profile[] = [],
 ): void {
   const inc = profileIncPath(profile, env);
   try {
@@ -104,31 +105,10 @@ export function removeProfileArtifacts(
     // best effort
   }
   const sshDir = path.join(acctConfigDir(env), "ssh");
-  for (const name of [profile.id, `${profile.id}.pub`]) {
-    const p = path.join(sshDir, name);
-    try {
-      if (fs.existsSync(p)) fs.unlinkSync(p);
-    } catch {
-      // best effort
-    }
-  }
-  // Also remove if profile.sshKeyPath points inside acct ssh dir under another name
-  if (profile.sshKeyPath) {
-    const key = path.resolve(profile.sshKeyPath);
-    const under = path.resolve(sshDir);
-    if (key === under || key.startsWith(under + path.sep)) {
-      try {
-        if (fs.existsSync(key)) fs.unlinkSync(key);
-      } catch {
-        // ignore
-      }
-      const pub = key + ".pub";
-      try {
-        if (fs.existsSync(pub)) fs.unlinkSync(pub);
-      } catch {
-        // ignore
-      }
-    }
+  const key = profile.sshKeyPath ?? path.join(sshDir, profile.id);
+  const real = (p: string) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  if (pathIsPrefix(real(sshDir), real(key)) && !remaining.some(p => p.sshKeyPath && real(p.sshKeyPath) === real(key))) {
+    fs.rmSync(key, {force: true}); fs.rmSync(key + ".pub", {force: true});
   }
 }
 

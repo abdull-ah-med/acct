@@ -158,9 +158,7 @@ describe("acct status / whoami / shell-env at the CLI seam", () => {
       expect(r.stdout).not.toContain("sticky");
       expect(r.stdout).toMatch(/ACCT_PROFILE.*work/);
       const secrets = path.join(ws.configDir, "secrets.json");
-      expect(JSON.parse(fs.readFileSync(secrets, "utf8"))).toEqual({
-        "github.com::user-a": "gho_TEST_ONLY_live",
-      });
+      expect(fs.existsSync(secrets)).toBe(false);
     } finally {
       ws.close();
     }

@@ -27,12 +27,21 @@ export function hookScript(
 # Add to ~/.${shell}rc: eval "$(acct hook ${shell})"
 acct_chpwd() {
   [ "$PWD" = "\${_ACCT_LAST_PWD-}" ] && return
-  _ACCT_LAST_PWD=$PWD
-  eval "$(${cmd.posix})"
+  local _acct_exports
+  if _acct_exports="$(${cmd.posix})" && eval "$_acct_exports"; then
+    _ACCT_LAST_PWD=$PWD
+  else
+    unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST ACCT_PROFILE _ACCT_LAST_PWD
+    printf '%s\\n' 'acct: shell refresh failed; managed credentials cleared' >&2
+    return 1
+  fi
 }
+acct_refresh() { unset _ACCT_LAST_PWD; acct_chpwd; }
+export ACCT_SHELL_HOOK=${shell}
 if [[ -n "$ZSH_VERSION" ]]; then
   autoload -U add-zsh-hook 2>/dev/null
   add-zsh-hook chpwd acct_chpwd 2>/dev/null || true
+  add-zsh-hook precmd acct_chpwd 2>/dev/null || true
 fi
 if [[ -n "$BASH_VERSION" ]]; then
   case ":\${PROMPT_COMMAND-}:" in
@@ -53,9 +62,18 @@ ${cmd.posix} | source
     case "powershell":
       return `# acct shell hook (powershell)
 # Add to $PROFILE: Invoke-Expression (acct hook powershell)
+$env:ACCT_SHELL_HOOK = 'powershell'
 function acct_ApplyEnv {
-  Invoke-Expression (${cmd.pwsh} | Out-String)
+  if ($PWD.Path -eq $script:_ACCT_LAST_PWD) { return }
+  $exports = ${cmd.pwsh} | Out-String
+  if ($LASTEXITCODE -eq 0) {
+    try { Invoke-Expression $exports; $script:_ACCT_LAST_PWD = $PWD.Path; return } catch {}
+  }
+  'GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN','GH_HOST','ACCT_PROFILE' | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+  $script:_ACCT_LAST_PWD = $null
+  [Console]::Error.WriteLine('acct: shell refresh failed; managed credentials cleared')
 }
+function acct_refresh { $script:_ACCT_LAST_PWD = $null; acct_ApplyEnv }
 # Preserve an existing prompt if present; append acct env refresh once
 if (-not (Test-Path variable:acct__prevPrompt)) {
   if (Get-Command prompt -ErrorAction SilentlyContinue) {

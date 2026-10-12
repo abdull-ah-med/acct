@@ -6,8 +6,8 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| gitcredentials | https://git-scm.com/docs/gitcredentials | 2026-08-16 (helper executed by the shell; empty helper reset; read-only store) |
-| git-credential protocol | https://git-scm.com/docs/git-credential | 2026-08-16 (host includes port only when specified; newline/NUL forbidden) |
+| gitcredentials | https://git-scm.com/docs/gitcredentials | 2026-10-12 (helper executed by the shell; empty helper reset; read-only store) |
+| git-credential protocol | https://git-scm.com/docs/git-credential | 2026-10-12 (host includes port only when specified; newline/NUL forbidden) |
 | api-credentials (helpers) | https://git-scm.com/docs/api-credentials | 2026-08-08 |
 | GCM multiple users | https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/multiple-users.md | 2026-08-08 |
 | GCM credstores | https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/credstores.md | 2026-08-08 |
@@ -34,13 +34,13 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| gh environment | https://cli.github.com/manual/gh_help_environment | 2026-08-16 (re-fetched: GH_TOKEN precedence; GH_PATH is gh self-path, not caller pin) |
+| gh environment | https://cli.github.com/manual/gh_help_environment | 2026-10-12 (re-fetched: GH_TOKEN precedence; GH_PATH is gh self-path, not caller pin) |
 | gh auth login | https://cli.github.com/manual/gh_auth_login | 2026-08-13 (no `--user`; `--hostname` `--web` `--with-token`) |
 | gh auth logout | https://cli.github.com/manual/gh_auth_logout | 2026-08-13 (`--hostname` `--user`) |
 | gh auth refresh | https://cli.github.com/manual/gh_auth_refresh | 2026-08-13 (no `--user`; refreshes **active** account only — switch first) |
 | gh auth switch | https://cli.github.com/manual/gh_auth_switch | 2026-08-13 (`--hostname` `--user`) |
-| gh auth token | https://cli.github.com/manual/gh_auth_token | 2026-08-16 (re-fetched: outputs token; `--hostname`/`--user`; no PATH) |
-| gh api | https://cli.github.com/manual/gh_api | 2026-08-16 (authenticated request; `--jq`; endpoint `user` → GET /user) |
+| gh auth token | https://cli.github.com/manual/gh_auth_token | 2026-10-12 (re-fetched: outputs token; `--hostname`/`--user`; no PATH) |
+| gh api | https://cli.github.com/manual/gh_api | 2026-10-12 (authenticated request; `--jq`; endpoint `user` → GET /user) |
 | gh auth status | https://cli.github.com/manual/gh_auth_status | 2026-08-24 (`--active` `--hostname` `--json hosts`; `--json` always exits 0 even when an account's token is invalid; JSON `hosts[hostname][].login` / `.active`) |
 | REST GET /user (authenticated login) | https://docs.github.com/en/rest/users/users | 2026-08-16 (required `login`; 401 without auth) |
 | Node child_process PATH / execFileSync | https://nodejs.org/api/child_process.html | 2026-08-16 (`options.env.PATH` else `process.env.PATH`; `file` is name or path) |
@@ -60,7 +60,7 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 
 | Topic | URL | last_verified |
 |-------|-----|---------------|
-| githooks | https://git-scm.com/docs/githooks | 2026-08-08 |
+| githooks | https://git-scm.com/docs/githooks | 2026-10-12 |
 | init.templateDir | https://git-scm.com/docs/git-init#_template_directory | 2026-08-08 |
 | core.hooksPath | https://git-scm.com/docs/git-config#Documentation/git-config.txt-corehooksPath | 2026-08-08 |
 
@@ -69,7 +69,7 @@ Before implementing a subsystem, **fetch** the URLs listed for it. Update `last_
 | Topic | URL | last_verified |
 |-------|-----|---------------|
 | @napi-rs/keyring | https://www.npmjs.com/package/@napi-rs/keyring | 2026-08-08 |
-| keyring-node README | https://github.com/Brooooooklyn/keyring-node | 2026-08-08 |
+| keyring-node README | https://github.com/Brooooooklyn/keyring-node | 2026-10-12 |
 
 ## Security advisories (credential helpers)
 

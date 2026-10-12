@@ -112,6 +112,7 @@ async function checkCwdProfile(
     env,
     {
       queryPrincipal: !!opts.queryPrincipal,
+      persistToken: !!opts.queryPrincipal,
       bindingPath: resolved.bindingPath,
     },
   );
@@ -619,11 +620,7 @@ function checkKeyring(env: NodeJS.ProcessEnv): DoctorFinding[] {
       };
     };
     const entry = new Entry("acct-github", "__acct_doctor_probe__");
-    try {
-      entry.getPassword();
-    } catch {
-      // Missing entry is fine — we only care that the backend answers.
-    }
+    entry.getPassword();
     return [
       {
         severity: "ok",
@@ -631,13 +628,12 @@ function checkKeyring(env: NodeJS.ProcessEnv): DoctorFinding[] {
         message: `OS keyring available (${label}) via @napi-rs/keyring`,
       },
     ];
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+  } catch {
     return [
       {
         severity: "error",
         code: "keyring-unavailable",
-        message: `OS keyring unavailable on this host (${label}): ${detail}`,
+        message: `OS keyring unavailable or denied on this host (${label})`,
         fix:
           "Install platform keyring support (macOS: Keychain; Windows: Credential Manager; Linux: libsecret + GNOME Keyring or KWallet). " +
           "CI/locked-down hosts may set ACCT_SECRET_BACKEND=file (plaintext secrets.json — explicit opt-in only).",

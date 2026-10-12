@@ -15,6 +15,7 @@ const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
 const argv = process.argv.slice(2);
 const rec = {
   argv,
+  host: process.env.GH_HOST,
   hasGhToken: process.env.GH_TOKEN != null && process.env.GH_TOKEN !== "",
   hasGithubToken: process.env.GITHUB_TOKEN != null && process.env.GITHUB_TOKEN !== "",
 };
@@ -34,6 +35,7 @@ if (argv[0] === "auth" && argv[1] === "token") {
 }
 
 if (argv[0] === "api" && argv[1] === "user") {
+  if (state.apiFailure) process.exit(1);
   // GH_TOKEN wins over stored creds (https://cli.github.com/manual/gh_help_environment).
   const envToken = process.env.GH_TOKEN || process.env.GH_ENTERPRISE_TOKEN || "";
   let login = state.apiUser || "";
@@ -71,6 +73,7 @@ if (argv[0] === "auth" && argv[1] === "status") {
   process.exit(0);
 }
 
+if (state.passthrough) { process.stdout.write(JSON.stringify({argv, host: process.env.GH_HOST}) + "\\n"); process.exit(0); }
 process.stderr.write("fake-gh: unexpected " + argv.join(" ") + "\\n");
 process.exit(2);
 
@@ -86,10 +89,13 @@ export interface FakeGhState {
   log: string;
   apiUser?: string;
   activeUser?: string;
+  apiFailure?: boolean;
+  passthrough?: boolean;
 }
 
 export interface FakeGhCall {
   argv: string[];
+  host?: string;
   hasGhToken: boolean;
   hasGithubToken: boolean;
 }
@@ -109,6 +115,8 @@ export interface FakeGhOptions {
   apiUser?: string;
   /** Stored gh active account (auth status --json), independent of GH_TOKEN. */
   activeUser?: string;
+  apiFailure?: boolean;
+  passthrough?: boolean;
 }
 
 export function installFakeGh(dir: string, opts: FakeGhOptions = {}): FakeGh {
@@ -121,7 +129,7 @@ export function installFakeGh(dir: string, opts: FakeGhOptions = {}): FakeGh {
   let activeUser = opts.activeUser ?? "";
 
   const writeState = () => {
-    const state: FakeGhState = { tokens, log: logPath, apiUser, activeUser };
+    const state: FakeGhState = { tokens, log: logPath, apiUser, activeUser, apiFailure: opts.apiFailure, passthrough: opts.passthrough };
     fs.writeFileSync(statePath, JSON.stringify(state));
   };
   writeState();
