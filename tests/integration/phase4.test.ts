@@ -86,19 +86,22 @@ describe("phase 4 truthful diagnostics and usability", () => {
       fs.readFileSync(path.join(harness.root, "acct/config.yaml"), "utf8"),
     ).toContain(target + "/nested");
   });
-  it("doctor detects missing executable and stale hook header", () => {
-    setup();
-    const hook = path.join(harness.root, "acct/hooks/pre-commit");
-    let s = fs.readFileSync(hook, "utf8");
-    s = s.replace(process.execPath, "/missing/acct-node");
-    fs.writeFileSync(hook, s);
-    expect(harness.run(["doctor"]).stdout).toContain("shim-target-missing");
-    fs.writeFileSync(
-      hook,
-      s.replace("# acct managed hook v2", "# acct managed hook v1"),
-    );
-    expect(harness.run(["doctor"]).stdout).toContain("hook-version-stale");
-  });
+  it.each(["v1", "v2"])(
+    "doctor detects missing executable and stale %s hook header",
+    (version) => {
+      setup();
+      const hook = path.join(harness.root, "acct/hooks/pre-commit");
+      let s = fs.readFileSync(hook, "utf8");
+      s = s.replace(process.execPath, "/missing/acct-node");
+      fs.writeFileSync(hook, s);
+      expect(harness.run(["doctor"]).stdout).toContain("shim-target-missing");
+      fs.writeFileSync(
+        hook,
+        s.replace("# acct managed hook v3", `# acct managed hook ${version}`),
+      );
+      expect(harness.run(["doctor"]).stdout).toContain("hook-version-stale");
+    },
+  );
   it("doctor detects missing credential-helper JS path", () => {
     setup();
     const shim = path.join(harness.root, "acct/bin/git-credential-acct");

@@ -48,7 +48,7 @@ describe("enforce hooks (I11b)", () => {
     expect(body).toContain(node);
     expect(body).toContain(acctJs);
     if (process.platform === "win32") {
-      expect(body).toContain("# acct managed hook v2");
+      expect(body).toContain("# acct managed hook v3");
     } else {
       expect(
         fs.statSync(path.join(dir, "pre-commit")).mode & 0o111,

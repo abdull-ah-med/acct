@@ -626,7 +626,7 @@ function checkGlobalHooksPath(env: NodeJS.ProcessEnv): DoctorFinding[] {
         {
           severity: "ok",
           code: "global-hooks-path",
-          message: `Global core.hooksPath=${value} — v2 shims chain existing repository hooks`,
+          message: `Global core.hooksPath=${value} — v3 shims chain existing repository hooks`,
         },
       ];
     }

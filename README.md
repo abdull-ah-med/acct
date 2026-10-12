@@ -111,7 +111,7 @@ Doctor also reports credential-helper competition, missing install blocks, orpha
 | **HTTPS** | `git-credential-acct` returns *this* profile’s token; `quit=true` on strict failure |
 | **SSH** | `core.sshCommand` with `IdentitiesOnly=yes` |
 | **gh** | Injects `GH_TOKEN` from the OS keychain — no `gh auth switch` |
-| **Enforce** | pre-commit, pre-merge-commit, post-commit and pre-push checks; all client hooks chain to existing hooks |
+| **Enforce** | pre-commit, pre-merge-commit and pre-push checks; all client hooks chain to existing hooks |
 
 ## Resolution order
 
@@ -146,7 +146,7 @@ acct --help
 ## Upgrading to 0.2.0
 
 After updating the npm package, run `acct install` once to regenerate the scoped
-includes and v2 hook shims. Profiles and bindings retain schema version 1.
+includes and v3 hook shims. Profiles and bindings retain schema version 1.
 Installation is now global by default and chains existing repository hooks. Use
 `acct install --repo` where a local hooksPath overrides it. `acct uninstall`
 restores recorded hook paths and preserves unrelated Git configuration.
@@ -221,3 +221,7 @@ How we test: [docs/testing.md](https://github.com/abdull-ah-med/acct/blob/main/d
 ## License
 
 [MIT](LICENSE)
+
+Pre-commit checks effective author and committer identities, but cannot inspect the final recorded commit. `git commit --author=…` changes invisible to pre-commit are caught at **pre-push**, which re-verifies outgoing commit objects. Post-commit only passes through to existing hooks. Commits in repositories that are never pushed are not re-checked.
+
+Global hook shims bake the previous global `core.hooksPath` at install. `acct install --repo` creates separate shims for the repository’s canonical common Git directory and bakes its previous local hooks path (for example, `.husky`). Re-run install after changing a chain target. Uninstall restores recorded paths and removes per-repository shim directories.

@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  hooksDir,
   loadConfig,
   upsertProfile,
   removeProfile,
@@ -51,13 +52,12 @@ import {
 import { generateSshKey, readPublicKey, testSshAuth } from "../ssh/keys.js";
 import {
   checkCommitIdentity,
-  checkRecordedCommit,
   checkOutgoingCommits,
   checkPushAuth,
   formatBlockMessage,
   defaultGitConfigReader,
 } from "../enforce/checks.js";
-import { installHooks } from "../enforce/hooks.js";
+import { installHooks, isAcctHooksDir } from "../enforce/hooks.js";
 import { hookScript, shellEnvExports, type ShellKind } from "../shell/hooks.js";
 import { formatWelcomeBanner } from "./banner.js";
 import {
@@ -111,10 +111,7 @@ export function configureHooksPath(
   } catch {
     /* unset */
   }
-  if (
-    existing &&
-    normalizePath(path.resolve(cwd, existing)) !== normalizePath(hooks)
-  )
+  if (existing && !isAcctHooksDir(path.resolve(cwd, existing)))
     git(["--replace-all", "acct.chainHooksPath", existing]);
   git(["--replace-all", "core.hooksPath", hooks]);
   failAt("hook-config");
@@ -142,9 +139,10 @@ export function unsetAcctHooksPath(
   const target = path.resolve(cwd, existing);
   let owned = false;
   try {
-    owned = fs
-      .readFileSync(path.join(target, "pre-commit"), "utf8")
-      .includes("# acct managed hook v2");
+    owned =
+      fs
+        .readFileSync(path.join(target, "pre-commit"), "utf8")
+        .match(/# acct managed hook v[23]\b/) !== null;
   } catch {
     /* not owned */
   }
@@ -161,6 +159,9 @@ export function unsetAcctHooksPath(
   } catch {
     /* no record */
   }
+  const perRepoRoot = path.join(path.dirname(hooksDir()), "hooks-repo");
+  if (pathIsPrefix(perRepoRoot, target))
+    fs.rmSync(target, { recursive: true, force: true });
 }
 function preflightToken(profile: Profile): string {
   const token = readGhAuthToken(profile);
@@ -210,7 +211,7 @@ async function performInit(plan: InitPlan): Promise<void> {
   const token = plan.importGh ? preflightToken(profile) : null;
   config.installed = true;
   updateConfig(process.env, () => config);
-  const hooks = installHooks();
+  const hooks = installHooks(process.env, { cwd: bindPath });
   try {
     configureHooksPath(hooks, {
       bindDir: bindPath,
@@ -960,7 +961,10 @@ export async function runCli(argv: string[]): Promise<void> {
       const config = loadConfig();
       config.installed = true;
       updateConfig(process.env, () => config);
-      const hooks = installHooks();
+      const globalHooks = installHooks();
+      const hooks = opts.repo
+        ? installHooks(process.env, { repo: true })
+        : globalHooks;
       configureHooksPath(hooks, {
         global: !opts.repo,
         repo: !!opts.repo,
@@ -1009,15 +1013,12 @@ export async function runCli(argv: string[]): Promise<void> {
   program
     .command("hook-run")
     .description("Internal: run enforce hook (pre-commit|pre-push)")
-    .argument("<hook>", "pre-commit|pre-merge-commit|post-commit|pre-push")
+    .argument("<hook>", "pre-commit|pre-merge-commit|pre-push")
     .argument("[remote]")
     .argument("[url]")
     .action(async (hook, remote, url) => {
-      if (["pre-commit", "pre-merge-commit", "post-commit"].includes(hook)) {
-        const result =
-          hook === "post-commit"
-            ? await checkRecordedCommit(process.cwd(), process.env)
-            : await checkCommitIdentity();
+      if (["pre-commit", "pre-merge-commit"].includes(hook)) {
+        const result = await checkCommitIdentity();
         if (!result.ok) {
           const resolved = resolveFromCwd();
           console.error(

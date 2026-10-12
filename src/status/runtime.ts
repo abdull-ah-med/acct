@@ -3,6 +3,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { canonicalPath } from "../util/paths.js";
 import { hooksDir } from "../config/store.js";
+import { repoHooksDir } from "../enforce/hooks.js";
+import { resolveGitContext } from "../resolution/gitContext.js";
 import { ghActiveLogin } from "../gh/env.js";
 export function activeHook(
   cwd: string,
@@ -15,16 +17,23 @@ export function activeHook(
       ["rev-parse", "--path-format=absolute", "--git-path", "hooks"],
       { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     ).trim();
-    if (canonicalPath(dir) !== canonicalPath(hooksDir(env)))
+    const context = resolveGitContext(cwd, env);
+    const expected = [
+      hooksDir(env),
+      ...(context ? [repoHooksDir(context.commonDir, env)] : []),
+    ];
+    if (
+      !expected.some((target) => canonicalPath(dir) === canonicalPath(target))
+    )
       return {
         active: false,
         reason: `acct hooks not active in this repo (core.hooksPath=${dir}); run acct install --repo`,
       };
     const file = path.join(dir, hook);
-    if (!fs.readFileSync(file, "utf8").includes("# acct managed hook v2"))
+    if (!fs.readFileSync(file, "utf8").includes("# acct managed hook v3"))
       return { active: false, reason: "stale hook; run acct install" };
     fs.accessSync(file, fs.constants.X_OK);
-    return { active: true, reason: "active v2 hook" };
+    return { active: true, reason: "active v3 hook" };
   } catch {
     return {
       active: false,

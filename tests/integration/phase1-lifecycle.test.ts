@@ -44,7 +44,7 @@ it("C27 backend denial propagates rather than masquerading as a missing token", 
   await expect(store.get("x")).rejects.toThrow();
   await expect(store.delete("x")).rejects.toThrow();
 });
-it("C03 installs merge/post hooks and catches a foreign recorded author before push", () => {
+it("C03 catches a foreign --author at pre-push without a post-commit check", () => {
   const add = harness.run([
     "profile",
     "add",
@@ -70,9 +70,8 @@ it("C03 installs merge/post hooks and catches a foreign recorded author before p
     fs.existsSync(path.join(harness.env.ACCT_CONFIG_DIR!, "hooks/post-commit")),
   ).toBe(true);
   const commit = harness.git([
-    "-c",
-    "core.hooksPath=/dev/null",
     "commit",
+    "--no-verify",
     "--allow-empty",
     "--author=Foreign <foreign@example.com>",
     "-m",
@@ -80,8 +79,8 @@ it("C03 installs merge/post hooks and catches a foreign recorded author before p
   ]);
   expect(commit.status, commit.stderr).toBe(0);
   const sha = harness.git(["rev-parse", "HEAD"]).stdout.trim();
-  const post = harness.run(["hook-run", "post-commit"]);
-  expect(post.stderr).toContain("blocked commit");
+  expect(commit.stderr).not.toContain("blocked commit");
+  expect(commit.stderr).not.toContain("foreign@example.com");
   const push = harness.run(
     ["hook-run", "pre-push", "origin", "/tmp/local.git"],
     harness.root,

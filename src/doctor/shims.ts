@@ -28,6 +28,16 @@ function words(line: string): string[] {
 export function checkShims(env: NodeJS.ProcessEnv): DoctorFinding[] {
   if (!loadConfig(env).installed) return [];
   const findings: DoctorFinding[] = [];
+  const perRepoRoot = path.join(acctConfigDir(env), "hooks-repo");
+  const hookDirs = [
+    hooksDir(env),
+    ...(fs.existsSync(perRepoRoot)
+      ? fs
+          .readdirSync(perRepoRoot)
+          .filter((name) => /^[a-f0-9]{16}$/.test(name))
+          .map((name) => path.join(perRepoRoot, name))
+      : []),
+  ];
   const files = [
     path.join(
       acctConfigDir(env),
@@ -36,7 +46,9 @@ export function checkShims(env: NodeJS.ProcessEnv): DoctorFinding[] {
         ? "git-credential-acct.cmd"
         : "git-credential-acct",
     ),
-    ...CLIENT_HOOKS.map((h) => path.join(hooksDir(env), h)),
+    ...hookDirs.flatMap((dir) =>
+      CLIENT_HOOKS.map((hook) => path.join(dir, hook)),
+    ),
   ];
   for (const file of files) {
     let body: string;
@@ -52,8 +64,8 @@ export function checkShims(env: NodeJS.ProcessEnv): DoctorFinding[] {
       });
       continue;
     }
-    const hook = path.dirname(file) === hooksDir(env);
-    if (hook && !body.includes("# acct managed hook v2"))
+    const hook = hookDirs.includes(path.dirname(file));
+    if (hook && !body.includes("# acct managed hook v3"))
       findings.push({
         severity: "error",
         code: "hook-version-stale",
@@ -66,7 +78,7 @@ export function checkShims(env: NodeJS.ProcessEnv): DoctorFinding[] {
     if (!line) {
       if (
         !hook ||
-        ["pre-commit", "pre-merge-commit", "post-commit", "pre-push"].includes(
+        ["pre-commit", "pre-merge-commit", "pre-push"].includes(
           path.basename(file),
         )
       )
