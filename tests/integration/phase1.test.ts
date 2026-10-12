@@ -150,7 +150,8 @@ describe("Phase 1 isolation boundaries", () => {
         path.join(harness.env.ACCT_CONFIG_DIR!, file),
         "SECRET_SENTINEL_BAD_JSON",
       );
-      const helper = `!${process.execPath} ${path.resolve("bin/git-credential-acct.js")}`;
+      const posix = (p: string) => p.replace(/\\/g, "/");
+      const helper = `!'${posix(process.execPath)}' '${posix(path.resolve("bin/git-credential-acct.js"))}'`;
       const r = harness.git(
         [
           "-c",
@@ -158,7 +159,7 @@ describe("Phase 1 isolation boundaries", () => {
           "-c",
           "credential.helper=" + helper,
           "-c",
-          `credential.helper=!touch '${marker}'; printf 'username=other\\npassword=FAKE_FALLBACK\\n'`,
+          `credential.helper=!touch '${posix(marker)}'; printf 'username=other\\npassword=FAKE_FALLBACK\\n'`,
           "credential",
           "fill",
         ],
@@ -211,9 +212,10 @@ describe("Phase 1 isolation boundaries", () => {
       fs.existsSync(path.join(harness.env.ACCT_CONFIG_DIR!, "secrets.json")),
     ).toBe(false);
   });
-  it.each(["bash", "zsh"])(
+  it.for(["bash", "zsh"])(
     "C23 %s clears stale vars and retries after failure",
-    (shell) => {
+    (shell, ctx) => {
+      if (spawnSync(shell, ["-c", "exit 0"]).status !== 0) ctx.skip();
       const fail = path.join(harness.root, "failing-node");
       fs.writeFileSync(fail, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
       const hook = harness.run(["hook", shell], harness.root, {

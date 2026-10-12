@@ -84,7 +84,7 @@ describe("phase 4 truthful diagnostics and usability", () => {
     expect(harness.run(["rebind", old, target]).status).toBe(0);
     expect(
       fs.readFileSync(path.join(harness.root, "acct/config.yaml"), "utf8"),
-    ).toContain(target + "/nested");
+    ).toContain(target.replace(/\\/g, "/") + "/nested");
   });
   it.each(["v1", "v2"])(
     "doctor detects missing executable and stale %s hook header",
@@ -104,7 +104,12 @@ describe("phase 4 truthful diagnostics and usability", () => {
   );
   it("doctor detects missing credential-helper JS path", () => {
     setup();
-    const shim = path.join(harness.root, "acct/bin/git-credential-acct");
+    const shim = path.join(
+      harness.root,
+      process.platform === "win32"
+        ? "acct/bin/git-credential-acct.cmd"
+        : "acct/bin/git-credential-acct",
+    );
     let s = fs.readFileSync(shim, "utf8");
     s = s.replace(
       path.resolve("bin/git-credential-acct.js"),
@@ -144,9 +149,13 @@ describe("phase 4 truthful diagnostics and usability", () => {
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toBe("fake-a");
   });
-  it("wizard Ctrl-C exits one without a config mutation", async () => {
-    const r = await new Promise<{ code: number | null; signal: string | null }>(
-      (resolve) => {
+  it.skipIf(process.platform === "win32")(
+    "wizard Ctrl-C exits one without a config mutation",
+    async () => {
+      const r = await new Promise<{
+        code: number | null;
+        signal: string | null;
+      }>((resolve) => {
         const c = spawn(
           process.execPath,
           [path.resolve("bin/acct.js"), "init"],
@@ -161,13 +170,13 @@ describe("phase 4 truthful diagnostics and usability", () => {
         });
         c.stderr.resume();
         c.on("exit", (code, signal) => resolve({ code, signal }));
-      },
-    );
-    expect(r.code).toBe(1);
-    expect(fs.existsSync(path.join(harness.root, "acct/config.yaml"))).toBe(
-      false,
-    );
-  });
+      });
+      expect(r.code).toBe(1);
+      expect(fs.existsSync(path.join(harness.root, "acct/config.yaml"))).toBe(
+        false,
+      );
+    },
+  );
   it.each([
     ["ALICE", 0],
     ["other", 1],

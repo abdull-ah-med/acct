@@ -187,18 +187,22 @@ describe("phase 3 transaction and lifecycle contracts", () => {
     expect(r.status).toBe(1);
     expect(snapshot()).toEqual(before);
   });
-  it("symlinked gitconfig retains link and 0600 target", () => {
-    add();
-    const target = path.join(harness.root, "dotfile");
-    fs.writeFileSync(target, "[alias]\n mine = status\n", { mode: 0o600 });
-    fs.symlinkSync(target, harness.env.GIT_CONFIG_GLOBAL!);
-    install();
-    expect(fs.lstatSync(harness.env.GIT_CONFIG_GLOBAL!).isSymbolicLink()).toBe(
-      true,
-    );
-    expect(fs.statSync(target).mode & 0o777).toBe(0o600);
-    expect(fs.readFileSync(target, "utf8")).toContain("acct managed");
-  });
+  // Mode bits and unprivileged symlinks are POSIX-only.
+  it.skipIf(process.platform === "win32")(
+    "symlinked gitconfig retains link and 0600 target",
+    () => {
+      add();
+      const target = path.join(harness.root, "dotfile");
+      fs.writeFileSync(target, "[alias]\n mine = status\n", { mode: 0o600 });
+      fs.symlinkSync(target, harness.env.GIT_CONFIG_GLOBAL!);
+      install();
+      expect(
+        fs.lstatSync(harness.env.GIT_CONFIG_GLOBAL!).isSymbolicLink(),
+      ).toBe(true);
+      expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+      expect(fs.readFileSync(target, "utf8")).toContain("acct managed");
+    },
+  );
   it("Git's own held lock prevents a rewrite", () => {
     add();
     fs.writeFileSync(

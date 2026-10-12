@@ -90,7 +90,12 @@ describe("phase 2 real Git configuration and transport contracts", () => {
         "a;b@example.com",
       ]).status,
     ).toBe(0);
-    const dir = repo(path.join(harness.root, 'trees "quoted"'));
+    const dir = repo(
+      path.join(
+        harness.root,
+        process.platform === "win32" ? "trees 'quoted' ;#" : 'trees "quoted"',
+      ),
+    );
     bind(dir, "quoted");
     expect(
       harness

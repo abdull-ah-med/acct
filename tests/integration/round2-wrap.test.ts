@@ -35,7 +35,12 @@ it("R4 installed gh shim forwards an unbound call silently", () => {
       ? spawnSync(
           process.env.ComSpec ?? "cmd.exe",
           ["/d", "/s", "/c", `""${shim}" --version"`],
-          { cwd: harness.root, env, encoding: "utf8" },
+          {
+            cwd: harness.root,
+            env,
+            encoding: "utf8",
+            windowsVerbatimArguments: true,
+          },
         )
       : spawnSync(shim, ["--version"], {
           cwd: harness.root,
