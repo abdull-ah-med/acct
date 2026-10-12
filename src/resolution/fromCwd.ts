@@ -3,7 +3,8 @@ import { findLocalAcct, readLocalAcct, loadConfig } from "../config/store.js";
 import { canonicalPath, pathIsPrefix } from "../util/paths.js";
 import { resolveGitContext } from "./gitContext.js";
 import { resolveProfile } from "./resolve.js";
-import type { ResolveResult } from "../types.js";
+import { canonicalHost } from "../secrets/store.js";
+import type { Profile, ResolveResult } from "../types.js";
 export interface ResolveFromCwdOptions {
   forcedProfileId?: string;
   allowEnvProfile?: boolean;
@@ -38,7 +39,7 @@ export function resolveFromCwd(
   }
   if (gitContext && localAcct == null && !options.forcedProfileId) {
     const applied = resolveProfile({ cwd: gitContext.gitDir, env, config });
-    if (result.profile?.id !== applied.profile?.id) {
+    if (!sameIdentity(result.profile, applied.profile)) {
       result.conflict = {
         directoryProfile: result.profile?.id,
         gitProfile: applied.profile?.id,
@@ -49,4 +50,21 @@ export function resolveFromCwd(
     }
   }
   return result;
+}
+
+/**
+ * Two profiles that Git and acct would treat identically: same account, same
+ * commit identity and same SSH key. Different profile ids with equal values
+ * (e.g. one account bound under two names) are not a conflict.
+ */
+function sameIdentity(a: Profile | null, b: Profile | null): boolean {
+  if (!a || !b) return a === b;
+  if (a.id === b.id) return true;
+  return (
+    canonicalHost(a.host) === canonicalHost(b.host) &&
+    a.githubUser.toLowerCase() === b.githubUser.toLowerCase() &&
+    a.email.toLowerCase() === b.email.toLowerCase() &&
+    a.name === b.name &&
+    (a.sshKeyPath ?? "") === (b.sshKeyPath ?? "")
+  );
 }

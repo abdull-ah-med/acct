@@ -187,6 +187,33 @@ describe("phase 2 real Git configuration and transport contracts", () => {
       ).status,
     ).not.toBe(0);
   });
+  it("linked worktree under an identical profile with another id is allowed", () => {
+    const twin = harness.run([
+      "profile",
+      "add",
+      "--id",
+      "a2",
+      "--user",
+      "A",
+      "--name",
+      "Alice # Team",
+      "--email",
+      "A@example.com",
+    ]);
+    expect(twin.status, twin.stderr).toBe(0);
+    const common = repo(path.join(harness.root, "main"));
+    bind(common, "a");
+    const linked = path.join(harness.root, "linked");
+    expect(
+      harness.git(["worktree", "add", "-q", "-b", "side", linked], common)
+        .status,
+    ).toBe(0);
+    bind(linked, "a2");
+    const status = harness.run(["status"], linked);
+    expect(status.stdout).not.toContain("cross-profile worktrees");
+    expect(status.stdout).toContain("profile: a2");
+    expect(harness.run(["hook-run", "pre-commit"], linked).status).toBe(0);
+  });
   it("unrelated HTTPS helper keeps working inside and outside bindings", () => {
     fs.writeFileSync(
       harness.env.GIT_CONFIG_GLOBAL!,
